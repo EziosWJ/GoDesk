@@ -19,6 +19,7 @@ import (
 	"godesk/internal/auth"
 	"godesk/internal/httpserver"
 	"godesk/internal/monitor"
+	"godesk/internal/services"
 	"godesk/internal/terminal"
 	"godesk/internal/webui"
 
@@ -41,11 +42,12 @@ func command(ctx context.Context, args []string) error {
 	}
 	listen := flag.String("listen", "0.0.0.0:8080", "HTTP listen address")
 	dataDir := flag.String("data-dir", "./data", "directory for persistent goDesk data")
+	serviceBackend := flag.String("service-backend", "auto", "service backend: auto, systemd, or none")
 	_ = flag.CommandLine.Parse(args)
-	return run(ctx, *listen, *dataDir)
+	return run(ctx, *listen, *dataDir, *serviceBackend)
 }
 
-func run(ctx context.Context, address, dataDir string) error {
+func run(ctx context.Context, address, dataDir, serviceBackend string) error {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
@@ -73,12 +75,18 @@ func run(ctx context.Context, address, dataDir string) error {
 	monitoring := monitor.Start(ctx, monitor.DefaultInterval)
 	defer monitoring.Close()
 
+	serviceManager, err := services.Open(serviceBackend)
+	if err != nil {
+		return fmt.Errorf("initialize service backend: %w", err)
+	}
+	slog.Info("service backend ready", "backend", serviceManager.Name())
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", address, err)
 	}
 	server := &http.Server{
-		Handler:           httpserver.New(db, credentials, terminals, monitoring, webui.Handler()),
+		Handler:           httpserver.New(db, credentials, terminals, monitoring, serviceManager, webui.Handler()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)

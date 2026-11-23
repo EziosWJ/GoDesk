@@ -13,7 +13,7 @@ export const apps = {
   files: { name: '文件管理器', icon: FolderClosed, launcherIcon: filesLauncher, width: 684, height: 430 },
   editor: { name: '文本编辑器', icon: FilePenLine, launcherIcon: editorLauncher, width: 720, height: 460 },
   terminal: { name: '终端', icon: Terminal, launcherIcon: terminalLauncher, width: 600, height: 366 },
-  monitor: { name: '系统监控', icon: Activity, launcherIcon: monitorLauncher, Content: SystemMonitor, width: 640, height: 420 },
+  monitor: { name: '系统监控', icon: Activity, launcherIcon: monitorLauncher, Content: SystemMonitor, width: 760, height: 520 },
   services: { name: '服务管理', icon: Cable, launcherIcon: servicesLauncher, Content: Services, width: 720, height: 480 },
   settings: { name: '系统设置', icon: Settings2, launcherIcon: settingsLauncher, Content: Settings, width: 720, height: 480 },
 }

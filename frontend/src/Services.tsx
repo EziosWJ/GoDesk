@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
+  type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent,
+} from 'react'
 import {
   ArrowLeft, CircleCheck, CircleHelp, CircleMinus, CirclePlay, CircleX, Play, Power, PowerOff,
   RefreshCw, RotateCw, Search, Square, type LucideIcon,
@@ -10,6 +13,11 @@ import {
 } from './services'
 
 const LOG_LINES = 200
+const SPLITTER_WIDTH = 6
+const MIN_LIST_WIDTH = 360
+const MIN_DETAIL_WIDTH = 257
+const SPLIT_MIN_WIDTH = MIN_LIST_WIDTH + MIN_DETAIL_WIDTH + SPLITTER_WIDTH
+const SPLIT_STEP = 24
 
 const statuses: Record<ServiceState, { label: string; Icon: LucideIcon }> = {
   running: { label: '运行中', Icon: CirclePlay },
@@ -122,6 +130,8 @@ export function Services({ active = true }: { active?: boolean }) {
   const [logs, setLogs] = useState<string[]>([])
   const [logsLoading, setLogsLoading] = useState(false)
   const [logsError, setLogsError] = useState('')
+  const [listShare, setListShare] = useState(0.5)
+  const [resizing, setResizing] = useState(false)
 
   const dialog = useRef<HTMLDialogElement>(null)
   const cancelButton = useRef<HTMLButtonElement>(null)
@@ -131,7 +141,9 @@ export function Services({ active = true }: { active?: boolean }) {
   const back = useRef<HTMLButtonElement>(null)
   const filterControl = useRef<HTMLSelectElement>(null)
   const list = useRef<HTMLDivElement>(null)
+  const panes = useRef<HTMLDivElement>(null)
   const detail = useRef<HTMLElement>(null)
+  const dragState = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
   const rowButtons = useRef(new Map<string, HTMLButtonElement>())
   const listScrollTop = useRef(0)
   const nextFocus = useRef<'detail' | 'list' | null>(null)
@@ -221,7 +233,7 @@ export function Services({ active = true }: { active?: boolean }) {
     activeTabRef.current = activeTab
   }, [selectedName, activeTab])
 
-  const { root, split } = useSplitLayout(617, wide => {
+  const { root, split } = useSplitLayout(SPLIT_MIN_WIDTH, wide => {
     const activeElement = document.activeElement
     if (wide) {
       if (activeElement === back.current) nextFocus.current = 'detail'
@@ -334,8 +346,67 @@ export function Services({ active = true }: { active?: boolean }) {
     }
   }
 
+  function resizeTo(width: number) {
+    const container = panes.current
+    if (!container) return
+    const available = container.getBoundingClientRect().width - SPLITTER_WIDTH
+    if (available <= 0) return
+    const maximum = Math.max(MIN_LIST_WIDTH, available - MIN_DETAIL_WIDTH)
+    const next = Math.min(Math.max(width, MIN_LIST_WIDTH), maximum)
+    setListShare(next / available)
+  }
+
+  function beginResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0) return
+    const width = list.current?.getBoundingClientRect().width
+    if (!width) return
+    dragState.current = { pointerId: event.pointerId, startX: event.clientX, startWidth: width }
+    event.currentTarget.setPointerCapture(event.pointerId)
+    event.currentTarget.focus()
+    setResizing(true)
+    event.preventDefault()
+  }
+
+  function moveResize(event: ReactPointerEvent<HTMLDivElement>) {
+    const drag = dragState.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    resizeTo(drag.startWidth + event.clientX - drag.startX)
+  }
+
+  function endResize(event: ReactPointerEvent<HTMLDivElement>) {
+    if (dragState.current?.pointerId !== event.pointerId) return
+    dragState.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    setResizing(false)
+  }
+
+  function resizeKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    const container = panes.current
+    const width = list.current?.getBoundingClientRect().width
+    if (!container || width === undefined) return
+    const available = container.getBoundingClientRect().width - SPLITTER_WIDTH
+    const maximum = Math.max(MIN_LIST_WIDTH, available - MIN_DETAIL_WIDTH)
+    let next: number
+    switch (event.key) {
+      case 'ArrowLeft': next = width - SPLIT_STEP; break
+      case 'ArrowRight': next = width + SPLIT_STEP; break
+      case 'Home': next = MIN_LIST_WIDTH; break
+      case 'End': next = maximum; break
+      case 'Enter':
+        event.preventDefault()
+        setListShare(0.5)
+        return
+      default: return
+    }
+    event.preventDefault()
+    resizeTo(next)
+  }
+
   return (
-    <div className="services-page system-page" ref={root} data-split={split}>
+    <div className="services-page system-page" ref={root} data-split={split}
+      data-resizing={resizing ? 'true' : undefined}>
       <header className="services-toolbar">
         <div>
           <h2 className="system-subtitle">{backendLabel(snapshot?.backend)}</h2>
@@ -374,7 +445,8 @@ export function Services({ active = true }: { active?: boolean }) {
             <p className="system-caption">需要 systemd、OpenRC 或 BusyBox init。可以用 <code>-service-backend</code> 指定后端。</p>
           </div>
         ) : (
-          <div className="services-panes">
+          <div ref={panes} className="services-panes"
+            style={split ? { gridTemplateColumns: `minmax(${MIN_LIST_WIDTH}px, ${listShare}fr) ${SPLITTER_WIDTH}px minmax(${MIN_DETAIL_WIDTH}px, ${1 - listShare}fr)` } : undefined}>
             <div ref={list} className="services-list system-scroll" role="region" aria-label="服务列表" hidden={!listVisible}
               onScroll={event => { if (listVisible) listScrollTop.current = event.currentTarget.scrollTop }}>
               {listError && <p className="service-alert service-list-error" role="alert">{listError}</p>}
@@ -416,6 +488,16 @@ export function Services({ active = true }: { active?: boolean }) {
                 </table>
               )}
             </div>
+            {split && (
+              <div className="services-splitter" role="separator" aria-orientation="vertical"
+                aria-label="调整服务列表宽度" aria-valuemin={0} aria-valuemax={100}
+                aria-valuenow={Math.round(listShare * 100)}
+                aria-valuetext={`列表宽度 ${Math.round(listShare * 100)}%`}
+                tabIndex={0} title="拖动调整宽度；双击或按 Enter 恢复默认"
+                onPointerDown={beginResize} onPointerMove={moveResize}
+                onPointerUp={endResize} onPointerCancel={endResize}
+                onDoubleClick={() => setListShare(0.5)} onKeyDown={resizeKeyDown} />
+            )}
             <section ref={detail} id={detailId} className="service-detail system-scroll" aria-label="服务详情" hidden={!split && !showDetail}>
               {!split && <button ref={back} className="app-control system-back" onClick={() => {
                 nextFocus.current = 'list'

@@ -1114,8 +1114,27 @@
 }
 .services-panes { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); min-height: 0; }
 .services-page[data-split="true"] .services-panes {
-  grid-template-columns: minmax(360px, 1.4fr) minmax(257px, 1fr);
+  grid-template-columns: minmax(360px, 1fr) 6px minmax(257px, 1fr);
 }
+.services-splitter {
+  position: relative;
+  cursor: col-resize;
+  background: transparent;
+  touch-action: none;
+}
+.services-splitter::before {
+  content: '';
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 50%;
+  width: 1px;
+  background: var(--react-web-desktop-divider);
+  transform: translateX(-50%);
+}
+.services-splitter:is(:hover, :focus-visible)::before,
+.services-page[data-resizing="true"] .services-splitter::before { background: var(--react-web-desktop-accent); }
+.services-splitter:focus-visible { outline: 2px solid var(--react-web-desktop-focus); outline-offset: -2px; }
+.services-page[data-resizing="true"] { cursor: col-resize; user-select: none; }
 .services-list { scrollbar-width: thin; }
 .services-table :is(th, td) { height: var(--react-web-desktop-row); padding: 0 12px; }
 .services-table td:not(:first-child) {
@@ -1141,7 +1160,7 @@
 .service-status[data-status="failed"] { color: var(--react-web-desktop-danger); }
 .services-empty { color: var(--react-web-desktop-muted); }
 .service-detail { padding: 12px; }
-.services-page[data-split="true"] .service-detail { border-inline-start: 1px solid var(--react-web-desktop-divider); padding: 16px; }
+.services-page[data-split="true"] .service-detail { padding: 16px; }
 .service-detail-name { overflow-wrap: anywhere; font-family: var(--react-web-desktop-font-mono); }
 .service-fields { margin-block: 12px; }
 .service-fields > div { padding-block: 8px; border-top: 1px solid var(--react-web-desktop-divider); }
@@ -1263,8 +1282,8 @@
   margin: 0;
   overflow: auto;
   font-family: var(--react-web-desktop-font-mono);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  font-size: var(--text-react-web-desktop-compact);
+  line-height: var(--text-react-web-desktop-compact--line-height);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   background: var(--react-web-desktop-subtle);

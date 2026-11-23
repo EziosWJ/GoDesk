@@ -1,0 +1,213 @@
+.taskbar {
+  --taskbar-inset: 16px;
+  position: absolute;
+  inset: auto 0 0;
+  z-index: 3;
+  height: var(--react-web-desktop-taskbar-total);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 332px) minmax(0, 1fr);
+  align-items: center;
+  padding: 0 var(--taskbar-inset) var(--react-web-desktop-safe-bottom);
+  border-top: 1px solid var(--react-web-desktop-divider);
+  background: var(--react-web-desktop-shell);
+}
+
+.taskbar-apps, .taskbar-tray, .taskbar-status {
+  display: flex;
+  align-items: center;
+}
+
+.taskbar-apps { grid-column: 2; justify-content: center; gap: 4px; min-width: 0; }
+.taskbar-tray { grid-column: 3; justify-self: end; gap: 8px; }
+.taskbar-status { color: var(--react-web-desktop-muted); }
+
+.taskbar-button {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: var(--react-web-desktop-control-touch);
+  height: var(--react-web-desktop-control-touch);
+  border: 1px solid transparent;
+  border-radius: var(--react-web-desktop-radius-overlay);
+}
+
+.taskbar-button:hover { background: var(--react-web-desktop-hover); }
+.taskbar-button:active { background: var(--react-web-desktop-pressed); }
+.taskbar-button:is([aria-expanded='true'], [aria-pressed='true']) {
+  color: var(--react-web-desktop-accent);
+  background: var(--react-web-desktop-selected);
+}
+.taskbar-button[aria-expanded='true'] { border-color: var(--react-web-desktop-accent); }
+.taskbar-start { color: var(--react-web-desktop-accent); }
+.taskbar-running > svg { translate: 0 -2px; }
+.taskbar-running[aria-pressed='true'] > svg { color: inherit; }
+.taskbar-running::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 99px;
+  background: var(--react-web-desktop-muted);
+}
+.taskbar-running[aria-pressed='true']::after {
+  width: 16px;
+  background: var(--react-web-desktop-accent);
+}
+
+.taskbar-tooltip {
+  position: absolute;
+  z-index: 1;
+  bottom: calc(100% + 10px);
+  left: 50%;
+  translate: -50% 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: 4px 8px;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-control);
+  background: var(--react-web-desktop-raised);
+  box-shadow: var(--react-web-desktop-shadow-overlay);
+  color: var(--react-web-desktop-fg);
+  font-size: var(--text-react-web-desktop-body);
+  font-weight: 400;
+  line-height: var(--text-react-web-desktop-body--line-height);
+  white-space: nowrap;
+}
+
+.taskbar-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -4px;
+  left: calc(50% - 3.5px);
+  width: 7px;
+  height: 7px;
+  rotate: 45deg;
+  border: solid var(--react-web-desktop-divider);
+  border-width: 0 1px 1px 0;
+  background: var(--react-web-desktop-raised);
+}
+
+.taskbar-button:focus-visible:not([aria-expanded='true']) > .taskbar-tooltip { visibility: visible; }
+
+@media (hover: hover) {
+  .taskbar-button:hover:not([aria-expanded='true']) > .taskbar-tooltip { visibility: visible; }
+  .taskbar-apps:has(> .taskbar-button:hover) > .taskbar-button:not(:hover) > .taskbar-tooltip {
+    visibility: hidden;
+  }
+}
+
+.taskbar-clock {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  min-width: 70px;
+  padding-inline-start: 6px;
+  border-inline-start: 1px solid var(--react-web-desktop-divider);
+  color: var(--react-web-desktop-fg);
+  font-size: var(--text-react-web-desktop-caption);
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: var(--text-react-web-desktop-caption--line-height);
+}
+.taskbar-clock span + span { color: var(--react-web-desktop-muted); font-weight: 400; }
+
+.taskbar-popover {
+  --popover-width: min(288px, calc(100% - 2 * var(--taskbar-inset)));
+  --popover-left: clamp(var(--taskbar-inset), calc(var(--popover-anchor) - var(--popover-width) / 2), calc(100% - var(--popover-width) - var(--taskbar-inset)));
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: var(--popover-left);
+  width: var(--popover-width);
+  max-height: calc(100dvh - var(--react-web-desktop-taskbar-total) - 20px);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-window);
+  background: var(--react-web-desktop-raised);
+  box-shadow: var(--react-web-desktop-shadow-overlay);
+  color: var(--react-web-desktop-fg);
+}
+.taskbar-popover-arrow {
+  position: absolute;
+  bottom: calc(100% + 4px);
+  left: calc(var(--popover-anchor) - 4.5px);
+  width: 9px;
+  height: 9px;
+  rotate: 45deg;
+  border: solid var(--react-web-desktop-divider);
+  border-width: 0 1px 1px 0;
+  background: var(--react-web-desktop-raised);
+  pointer-events: none;
+}
+.taskbar-popover:focus-visible { outline: 2px solid var(--react-web-desktop-focus); outline-offset: 2px; }
+.taskbar-popover-body { overflow: auto; padding: 12px 14px; }
+.taskbar-popover h2 { margin-bottom: 10px; font-weight: 650; }
+.taskbar-popover h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: var(--text-react-web-desktop-compact);
+  line-height: var(--text-react-web-desktop-compact--line-height);
+  font-weight: 500;
+}
+.taskbar-quick-status > div + div { border-top: 1px solid var(--react-web-desktop-divider); margin-top: 10px; padding-top: 10px; }
+.taskbar-reading { font-size: 1.125rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.taskbar-reading[data-offline='true'] { color: var(--react-web-desktop-warning); }
+.taskbar-caption {
+  color: var(--react-web-desktop-muted);
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+  font-weight: 400;
+}
+.taskbar-reading .taskbar-caption { margin-inline-start: 4px; }
+.taskbar-charge { display: block; width: 100%; height: 12px; margin-top: 6px; accent-color: var(--react-web-desktop-accent); }
+
+.taskbar-volume { display: grid; grid-template-columns: auto minmax(0, 1fr) 4ch; align-items: center; gap: 8px; }
+.taskbar-volume input { width: 100%; min-height: var(--react-web-desktop-control-touch); accent-color: var(--react-web-desktop-accent); }
+.taskbar-volume > span { text-align: end; font-variant-numeric: tabular-nums; }
+.taskbar-audio-actions { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.taskbar-preview, .taskbar-window-list button {
+  min-height: var(--react-web-desktop-control-touch);
+  border-radius: var(--react-web-desktop-radius-control);
+}
+.taskbar-preview { flex: none; padding-inline: 10px; color: var(--react-web-desktop-accent); }
+.taskbar-preview:disabled { color: var(--react-web-desktop-disabled); cursor: default; }
+.taskbar-preview:enabled:hover, .taskbar-window-list button:hover { background: var(--react-web-desktop-hover); }
+.taskbar-window-list button { display: flex; align-items: center; gap: 10px; width: 100%; padding-inline: 8px; text-align: start; }
+.taskbar-window-list button svg { flex: none; color: var(--react-web-desktop-muted); }
+
+.taskbar-notice {
+  position: absolute;
+  z-index: 3;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  translate: -50% 0;
+  max-width: calc(100% - 24px);
+  pointer-events: none;
+}
+.taskbar-notice > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 14px;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-overlay);
+  background: var(--react-web-desktop-raised);
+  box-shadow: var(--react-web-desktop-shadow-overlay);
+}
+.taskbar-notice svg { flex: none; color: var(--react-web-desktop-muted); }
+
+@media (max-width: 799px) {
+  .taskbar { --taskbar-inset: 8px; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; }
+  .taskbar-apps { grid-column: 1; justify-content: start; }
+  .taskbar-tray { grid-column: 2; }
+}
+
+@media (forced-colors: active) {
+  .taskbar-running::after { forced-color-adjust: none; background: CanvasText; }
+  .taskbar-running[aria-pressed='true']::after { background: Highlight; }
+  .taskbar-popover:focus-visible { outline-color: Highlight; }
+}

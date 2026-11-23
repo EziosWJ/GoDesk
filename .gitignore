@@ -1,0 +1,5 @@
+/data/
+/backend/data/
+/godesk
+/backend/internal/webui/dist/
+/.pnpm-store/

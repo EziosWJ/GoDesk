@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1672 941">
+<defs>
+  <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+    <stop offset="0" stop-color="#0C1228"/>
+    <stop offset=".55" stop-color="#101936"/>
+    <stop offset="1" stop-color="#17113D"/>
+  </linearGradient>
+  <radialGradient id="glowA" cx="0" cy="0" r="1" gradientTransform="matrix(520 0 0 330 60 620)" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#4936D8" stop-opacity=".62"/><stop offset="1" stop-color="#4936D8" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="glowB" cx="0" cy="0" r="1" gradientTransform="matrix(500 0 0 350 1450 70)" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#5737D9" stop-opacity=".42"/><stop offset="1" stop-color="#5737D9" stop-opacity="0"/>
+  </radialGradient>
+  <radialGradient id="glowC" cx="0" cy="0" r="1" gradientTransform="matrix(420 0 0 280 1530 870)" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#4721B8" stop-opacity=".34"/><stop offset="1" stop-color="#4721B8" stop-opacity="0"/>
+  </radialGradient>
+  <linearGradient id="arc" x1="90" y1="760" x2="1500" y2="90" gradientUnits="userSpaceOnUse">
+    <stop stop-color="#6655F5" stop-opacity=".58"/><stop offset=".5" stop-color="#6D65F7" stop-opacity=".12"/><stop offset="1" stop-color="#6655F5" stop-opacity=".34"/>
+  </linearGradient>
+</defs>
+<rect width="1672" height="941" fill="url(#base)"/>
+<rect width="1672" height="941" fill="url(#glowA)"/>
+<rect width="1672" height="941" fill="url(#glowB)"/>
+<rect width="1672" height="941" fill="url(#glowC)"/>
+<path d="M-120 720C110 455 350 345 610 410c220 55 320 205 555 135 195-58 340-220 590-510" stroke="url(#arc)" stroke-width="2" fill="none" opacity=".7"/>
+<path d="M-90 810C180 570 390 490 620 525c250 38 330 190 565 130 190-48 340-190 530-425" stroke="#9B91FF" stroke-opacity=".10" stroke-width="1.5" fill="none"/>
+</svg>

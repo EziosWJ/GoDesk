@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <script>
+      // Apply the saved preference before styles can paint.
+      let preference
+      try {
+        preference = localStorage.getItem('react-web-desktop-theme')
+      } catch {
+        // Storage can be unavailable in restricted browser contexts.
+      }
+      const explicit = preference === 'light' || preference === 'dark'
+      document.documentElement.dataset.themePreference = explicit ? preference : 'system'
+      document.documentElement.dataset.theme = explicit
+        ? preference
+        : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+    </script>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="基于 React、TypeScript 和 Vite 的 Web 桌面前端脚手架。" />
+    <title>React Web Desktop</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

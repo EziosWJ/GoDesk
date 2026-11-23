@@ -1,0 +1,140 @@
+.service-dialog.file-location-dialog {
+  position: fixed;
+  inset: 0;
+  width: min(820px, calc(100% - 24px));
+  height: min(540px, calc(100% - 24px));
+  background: var(--react-web-desktop-surface);
+  font-family: var(--react-web-desktop-font-ui);
+  font-size: var(--text-react-web-desktop-body);
+}
+
+.service-dialog.file-location-dialog[open] { display: flex; overflow: auto; }
+
+.file-location-title, .file-location-navigation, .file-location-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+}
+
+.file-location-title {
+  justify-content: space-between;
+  border-bottom: 1px solid var(--react-web-desktop-divider);
+  background: var(--react-web-desktop-shell);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+
+.file-location-title[data-dragging] { cursor: grabbing; }
+
+.file-location-icon.app-control { padding-inline: 0; width: var(--react-web-desktop-control); }
+.file-location-arrows { display: flex; gap: 2px; }
+.file-location-tools { flex-wrap: wrap; background: var(--react-web-desktop-subtle); border-block: 1px solid var(--react-web-desktop-divider); }
+
+.file-location-breadcrumbs, .file-location-search {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: var(--react-web-desktop-control);
+  border: 1px solid var(--react-web-desktop-border);
+  border-radius: var(--react-web-desktop-radius-control);
+  background: var(--react-web-desktop-surface);
+}
+
+.file-location-breadcrumbs {
+  flex: 1;
+  padding-inline: 3px;
+  overflow: auto;
+  font-family: var(--react-web-desktop-font-mono);
+  font-size: var(--text-react-web-desktop-compact);
+  line-height: var(--text-react-web-desktop-compact--line-height);
+}
+.file-location-breadcrumbs > div { display: flex; flex: none; align-items: center; min-width: 0; }
+.file-location-breadcrumbs .file-location-crumb { display: inline-flex; align-items: center; gap: 6px; padding-inline: 7px; max-width: 20ch; }
+.file-location-breadcrumbs svg, .file-location-search svg, .file-location-places svg { flex: none; }
+.file-location-search { flex: 0 1 190px; gap: 6px; padding-inline: 8px; color: var(--react-web-desktop-muted); }
+.file-location-search input { width: 100%; min-width: 0; min-height: calc(var(--react-web-desktop-control) - 2px); color: var(--react-web-desktop-fg); }
+.file-location-search:focus-within { outline: 2px solid var(--react-web-desktop-focus); outline-offset: 2px; }
+.file-location-search input:focus-visible { outline: none; }
+
+.file-location-browser {
+  display: grid;
+  flex: 1;
+  grid-template-columns: minmax(125px, 23%) minmax(0, 1fr);
+  min-height: 112px;
+}
+
+.file-location-places {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px;
+  overflow: auto;
+  border-inline-end: 1px solid var(--react-web-desktop-divider);
+  background: var(--react-web-desktop-subtle);
+}
+
+.file-location-places .app-control { flex: none; justify-content: flex-start; min-width: 0; }
+.file-location-places [aria-current='location'] { background: var(--react-web-desktop-selected); font-weight: 650; }
+.file-location-list { min-width: 0; overflow: auto; }
+.file-location-list:focus-visible { outline-offset: -2px; }
+.file-location-list table { width: 100%; table-layout: fixed; text-align: start; }
+.file-location-list thead { position: sticky; top: 0; z-index: 1; background: var(--react-web-desktop-surface); }
+.file-location-list :is(th, td) { padding-inline: 10px; text-align: start; }
+.file-location-list th {
+  height: var(--react-web-desktop-row-compact);
+  border-bottom: 1px solid var(--react-web-desktop-divider);
+  color: var(--react-web-desktop-muted);
+  font-size: var(--text-react-web-desktop-compact);
+  line-height: var(--text-react-web-desktop-compact--line-height);
+  font-weight: 500;
+}
+
+.file-location-list :is(th, td):nth-child(2) { width: 27%; }
+.file-location-list :is(th, td):last-child { width: 84px; text-align: end; font-variant-numeric: tabular-nums; }
+.file-location-list td { height: var(--react-web-desktop-row-compact); color: var(--react-web-desktop-muted); }
+.file-location-list td:first-child { padding: 0; color: var(--react-web-desktop-fg); }
+.file-location-list tr[data-folder='true']:is(:hover, :focus-within) { background: var(--react-web-desktop-hover); }
+.file-location-entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--react-web-desktop-row-compact); padding-inline: 10px; text-align: start; }
+.file-location-entry:focus-visible { outline-offset: -2px; }
+.file-location-empty { padding: 18px 12px; color: var(--react-web-desktop-muted); }
+
+.file-location-form { flex: none; border-top: 1px solid var(--react-web-desktop-divider); background: var(--react-web-desktop-subtle); }
+.file-location-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; padding: 10px 16px; }
+.file-location-fields :is(input, select), .file-location-new-folder input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--react-web-desktop-control);
+  padding-inline: 8px;
+  border: 1px solid var(--react-web-desktop-border);
+  border-radius: var(--react-web-desktop-radius-control);
+  background: var(--react-web-desktop-surface);
+  color: var(--react-web-desktop-fg);
+}
+
+.file-location-new-folder { display: flex; flex: 1 1 240px; align-items: center; gap: 6px; min-width: 0; }
+.file-location-new-folder .app-control { flex: none; }
+.file-location-error { padding: 4px 12px; color: var(--react-web-desktop-danger); }
+.file-location-fields .file-location-error { grid-column: 2; padding: 0; }
+.file-location-form .service-dialog-actions { background: var(--react-web-desktop-shell); }
+.file-location-form .service-dialog-actions button { min-width: 76px; }
+
+@media (max-width: 600px) {
+  .file-location-navigation { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .file-location-search { grid-column: 1 / -1; }
+  .file-location-browser { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  .file-location-places { flex-direction: row; border-inline-end: 0; border-bottom: 1px solid var(--react-web-desktop-divider); }
+  .file-location-places .app-control { max-width: 160px; }
+  .file-location-list :is(th, td):last-child { display: none; }
+  .file-location-list :is(th, td):nth-child(2) { width: 35%; }
+}
+
+@media (pointer: coarse) {
+  .file-location-icon.app-control { width: var(--react-web-desktop-control-touch); }
+  .file-location-entry, .file-location-fields :is(input, select), .file-location-new-folder input, .file-location-search input {
+    min-height: var(--react-web-desktop-control-touch);
+  }
+}

@@ -21,3 +21,7 @@ Status: ready-for-human
 - 徽章在各状态场景下正确；自启小点仅在 `bootState=enabled` 时出现（带 title/aria-label）。
 - 搜索高亮与空状态正确；「清除筛选」恢复完整列表。
 - `pnpm --dir frontend lint` 与 `pnpm --dir frontend build` 通过。
+
+## Comments
+
+- 2026-11-23：实现完成。两行式行、状态徽章、开机自启小点、单选与 ↑↓、异常置顶、命中高亮、空状态/清除筛选；刷新保持选中与滚动。Chrome headless 验证搜索、chips 计数、异常过滤与异常置顶排序正确。

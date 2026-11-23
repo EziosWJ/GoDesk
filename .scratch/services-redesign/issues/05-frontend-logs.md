@@ -18,3 +18,7 @@ Status: ready-for-human
 - 500 行加载正常；跟随、行内搜索、换行、复制四个行为符合预期；无日志轮询请求。
 - 切换服务与刷新时按规则重载；跟随开/关的滚动行为正确。
 - `pnpm --dir frontend lint` 与 `pnpm --dir frontend build` 通过。
+
+## Comments
+
+- 2026-11-23：实现完成。500 行加载、跟随尾部、行内搜索高亮、换行开关、复制；无轮询、无面板内刷新按钮。Chrome headless 验证 500 行加载与行内搜索（189 行匹配）。

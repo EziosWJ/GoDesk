@@ -24,6 +24,7 @@ type errorBody struct {
 type handler struct {
 	backend       Backend
 	listTimeout   time.Duration
+	detailTimeout time.Duration
 	actionTimeout time.Duration
 	logsTimeout   time.Duration
 }
@@ -33,10 +34,12 @@ func Register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler
 	h := &handler{
 		backend:       backend,
 		listTimeout:   5 * time.Second,
+		detailTimeout: 10 * time.Second,
 		actionTimeout: 120 * time.Second,
 		logsTimeout:   10 * time.Second,
 	}
 	mux.Handle("GET /api/v1/services", requireSession(http.HandlerFunc(h.list)))
+	mux.Handle("GET /api/v1/services/{unit}", requireSession(http.HandlerFunc(h.detail)))
 	mux.Handle("POST /api/v1/services/{unit}/{action}", requireSession(http.HandlerFunc(h.action)))
 	mux.Handle("GET /api/v1/services/{unit}/logs", requireSession(http.HandlerFunc(h.logs)))
 }
@@ -57,6 +60,22 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request) {
 		Capabilities: h.backend.Capabilities(),
 		Services:     services,
 	})
+}
+
+func (h *handler) detail(w http.ResponseWriter, r *http.Request) {
+	unit := r.PathValue("unit")
+	if !ValidUnit(unit) {
+		writeError(w, http.StatusBadRequest, "invalid_unit", "服务单元名无效")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), h.detailTimeout)
+	defer cancel()
+	detail, err := h.backend.Detail(ctx, unit)
+	if err != nil {
+		failed(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
 }
 
 func (h *handler) action(w http.ResponseWriter, r *http.Request) {

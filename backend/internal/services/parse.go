@@ -1,7 +1,9 @@
 package services
 
 import (
+	"math"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -147,4 +149,71 @@ func bootStateFor(value string) BootState {
 	default:
 		return BootNotApplicable
 	}
+}
+
+// parseShow parses the Property=Value output of `systemctl show`.
+func parseShow(output string) map[string]string {
+	props := make(map[string]string)
+	for _, line := range strings.Split(output, "\n") {
+		key, value, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		props[strings.TrimSpace(key)] = strings.TrimSpace(value)
+	}
+	return props
+}
+
+// buildDetail maps the properties of `systemctl show` to the detail view.
+// It reports false when the unit does not exist.
+func buildDetail(unit string, props map[string]string) (ServiceDetail, bool) {
+	if props["LoadState"] == "not-found" || (props["LoadState"] == "" && props["ActiveState"] == "") {
+		return ServiceDetail{}, false
+	}
+	runtime := runtimeUnit{
+		name:   unit,
+		load:   props["LoadState"],
+		active: props["ActiveState"],
+		sub:    props["SubState"],
+	}
+	return ServiceDetail{
+		Name:                 unit,
+		State:                stateFor(runtime),
+		StateDetail:          detailFor(runtime),
+		BootState:            bootStateFor(props["UnitFileState"]),
+		MainPID:              parsePID(props["MainPID"]),
+		MemoryBytes:          parseUint64Property(props["MemoryCurrent"]),
+		CPUUsageNs:           parseUint64Property(props["CPUUsageNSec"]),
+		ActiveEnterTimestamp: unsetToEmpty(props["ActiveEnterTimestamp"]),
+		FragmentPath:         unsetToEmpty(props["FragmentPath"]),
+	}, true
+}
+
+func parsePID(value string) *int {
+	pid, err := strconv.Atoi(value)
+	if err != nil || pid <= 0 {
+		return nil
+	}
+	return &pid
+}
+
+// parseUint64Property returns nil for unset values and for values that do not
+// fit int64, such as the "infinity" memory counter.
+func parseUint64Property(value string) *int64 {
+	if value == "" || value == "[not set]" {
+		return nil
+	}
+	parsed, err := strconv.ParseUint(value, 10, 64)
+	if err != nil || parsed > math.MaxInt64 {
+		return nil
+	}
+	number := int64(parsed)
+	return &number
+}
+
+func unsetToEmpty(value string) string {
+	if value == "[not set]" {
+		return ""
+	}
+	return value
 }

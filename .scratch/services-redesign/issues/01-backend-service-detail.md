@@ -20,3 +20,7 @@ Status: ready-for-human
 - 单元不存在 404；非法单元名 400；权限 403；超时 504。
 - 不调用 `Backend.List`。
 - `go -C backend test ./...` 通过，新增解析与 handler 测试。
+
+## Comments
+
+- 2026-11-23：实现完成。`ServiceDetail` 类型与 `Backend.Detail`、`systemctl show` 解析、`GET /api/v1/services/{unit}` 路由（不调用 `List`）、错误映射与测试均已落地；`go -C backend test ./...` 通过，真实 systemd 集成测试通过。

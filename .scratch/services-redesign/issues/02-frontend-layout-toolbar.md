@@ -24,3 +24,7 @@ Status: ready-for-human
 - 轮询在最小化/不可见时停止；聚焦恢复立即刷新；刷新后选中与滚动位置保持。
 - chips 计数随搜索结果变化，切换 chip 后 AND 过滤正确。
 - `pnpm --dir frontend lint` 与 `pnpm --dir frontend build` 通过。
+
+## Comments
+
+- 2026-11-23：实现完成。Services 页面重写为两行工具栏 + chips + 状态栏；40/60 分栏（最小 320/420、阈值 746px）与串行返回；10s 可见轮询 + 聚焦/手动刷新；窗口默认 1000×640；服务样式迁移到 `styles/services.css`，删除 `App.css` 旧样式与 `.service-stop` 死代码。

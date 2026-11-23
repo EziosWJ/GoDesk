@@ -1,8 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
-import type { DragEvent, KeyboardEvent, MouseEvent } from 'react'
+import type { DragEvent, FormEvent, KeyboardEvent, MouseEvent } from 'react'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronRight, ClipboardPaste, Copy, Download, Eye, EyeOff, HardDrive,
-  Folder, FolderOpen, FolderPlus, Grid2X2, House, Info, LayoutList, List, MapPin, MoreHorizontal, Pencil, RefreshCw, Scissors, Search, Trash2, Upload, X,
+  Folder, FolderOpen, FolderPlus, Grid2X2, House, Info, LayoutList, List, MapPin, MoreHorizontal, Pencil, RefreshCw, Scissors, Search, Shield, Trash2, Upload, UsersRound, X,
 } from 'lucide-react'
 
 import { CommandMenu, type MenuAnchor, type MenuCommand, type MenuGroup } from './CommandMenu'
@@ -12,7 +12,7 @@ import { FileIcon } from './fileIcons'
 import {
   announceFileChange, canTransfer, downloadFile, editableHostFile, errorMessage,
   FileError, fileAction, filename, managedFile, parentPath, pathCrumbs, readDirectory,
-  regularFile, subscribeToFileChanges, uploadFile, type Conflict, type HostFile,
+  regularFile, subscribeToFileChanges, uploadFile, writeOwnership, writePermissions, type Conflict, type HostFile,
 } from './hostFiles'
 
 type Command = MenuCommand & { group: 'open' | 'edit' | 'organize' | 'transfer' | 'delete' }
@@ -81,12 +81,104 @@ function fileMenuGroups(commands: Command[]): MenuGroup[] {
   ]
 }
 
+type PropertyEdit =
+  | { kind: 'ownership'; owner: string; group: string; originalOwner: string; originalGroup: string }
+  | { kind: 'permissions'; mode: string; originalMode: string }
+
+function FilePropertyActions({ file, open }: { file: HostFile; open: () => void }) {
+  const [form, setForm] = useState<PropertyEdit>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const editOwnership = useRef<HTMLButtonElement>(null)
+  const editPermissions = useRef<HTMLButtonElement>(null)
+  const modeHint = useId()
+  const ownership = form?.kind === 'ownership' ? {
+    owner: form.owner.trim() === form.originalOwner ? undefined : form.owner.trim(),
+    group: form.group.trim() === form.originalGroup ? undefined : form.group.trim(),
+  } : undefined
+  const mode = form?.kind === 'permissions' ? form.mode.trim() : ''
+  const canSave = form?.kind === 'permissions'
+    ? mode.padStart(4, '0') !== form.originalMode
+    : !!ownership && (ownership.owner !== undefined || ownership.group !== undefined)
+
+  function close() {
+    const edit = form?.kind === 'permissions' ? editPermissions : editOwnership
+    setForm(undefined)
+    requestAnimationFrame(() => edit.current?.focus())
+  }
+
+  function start(next: PropertyEdit) {
+    setError('')
+    setForm(next)
+  }
+
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (busy || !canSave) return
+    setBusy(true)
+    setError('')
+    try {
+      if (ownership) await writeOwnership(file.id, ownership)
+      else await writePermissions(file.id, mode)
+      announceFileChange()
+      close()
+    } catch (error) {
+      setError(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (form) return <form className="file-property-form" onSubmit={save} onKeyDown={event => {
+    if (event.key !== 'Escape' || busy) return
+    event.preventDefault()
+    event.stopPropagation()
+    close()
+  }}>
+    {form.kind === 'ownership' ? <>
+      <label>所有者<input autoFocus required value={form.owner} disabled={busy} onChange={event => setForm({ ...form, owner: event.target.value })} /></label>
+      <label>所属组<input required value={form.group} disabled={busy} onChange={event => setForm({ ...form, group: event.target.value })} /></label>
+    </> : <>
+      <label>八进制权限<input autoFocus required className="file-mode-input" inputMode="numeric" value={form.mode}
+        aria-describedby={modeHint} disabled={busy} onFocus={event => event.target.select()}
+        onChange={event => setForm({ ...form, mode: event.target.value })} /></label>
+      <p id={modeHint} className="muted">输入 3 或 4 位八进制值，例如 <code>644</code>、<code>0755</code>。</p>
+    </>}
+    {error && <p role="alert">{error}</p>}
+    <div>
+      <button className="app-control primary-control" type="submit" disabled={busy || !canSave}>保存</button>
+      <button className="app-control" type="button" disabled={busy} onClick={close}>取消</button>
+    </div>
+  </form>
+
+  const editable = editableHostFile(file)
+  const openable = file.directory || regularFile(file) || file.targetError
+  const OpenIcon = file.directory ? FolderOpen : editable ? Pencil : regularFile(file) ? Download : FolderOpen
+  return <div className="file-property-actions">
+    {managedFile(file) && <div className="file-property-edits">
+      <button className="app-control" ref={editOwnership} onClick={() => start({ kind: 'ownership',
+        owner: file.owner, group: file.group, originalOwner: file.owner, originalGroup: file.group })}>
+        <UsersRound size={15} aria-hidden="true" />修改所有权
+      </button>
+      {(file.kind === 'file' || file.kind === 'directory') && <button className="app-control" ref={editPermissions}
+        onClick={() => start({ kind: 'permissions', mode: file.mode, originalMode: file.mode })}>
+        <Shield size={15} aria-hidden="true" />修改权限
+      </button>}
+    </div>}
+    {openable && <button className="app-control file-property-open" onClick={open}>
+      <OpenIcon size={16} aria-hidden="true" />
+      {file.directory ? '打开文件夹' : editable ? '在文本编辑器中打开' : regularFile(file) ? '下载' : '打开链接'}
+    </button>}
+  </div>
+}
+
 export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
   const [history, setHistory] = useState({ locations: [] as string[], index: -1 })
   const [directory, setDirectory] = useState<Awaited<ReturnType<typeof readDirectory>>>()
   const [loading, setLoading] = useState(true)
   const [directoryError, setDirectoryError] = useState('')
   const [address, setAddress] = useState<string>()
+  const currentCrumb = useRef<HTMLButtonElement>(null)
   const [operation, setOperation] = useState('')
   const [outcomes, setOutcomes] = useState<Outcome[]>([])
   const operationLock = useRef(false)
@@ -797,7 +889,8 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
     )
     if (layout === 'list') return (
       <tr key={file.id} {...itemProps}>
-        <td>{name}</td><td>{file.type}</td><td>{file.size ?? '—'}</td>
+        <td>{name}</td><td>{file.type}</td><td>{file.owner}</td><td>{file.group}</td>
+        <td><code>{file.permissions}</code></td><td>{file.size ?? '—'}</td>
       </tr>
     )
     return <li className="file-grid-entry" key={file.id} {...itemProps}>{name}</li>
@@ -820,26 +913,35 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
             <RefreshCw size={16} aria-hidden="true" />
           </button>
         </div>
-        {address !== undefined ? <form className="file-address-form" onSubmit={event => {
+        {address !== undefined ? <form className="file-address-form" onKeyDown={event => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          setAddress(undefined)
+          setFeedback('')
+          requestAnimationFrame(() => currentCrumb.current?.focus())
+        }} onSubmit={event => {
           event.preventDefault()
           if (address.startsWith('/')) navigate(address)
           else setFeedback('请输入以 / 开头的绝对路径')
         }}>
           <input autoFocus aria-label="绝对路径" value={address} onChange={event => setAddress(event.target.value)}
-            onFocus={event => event.target.select()} onKeyDown={event => {
-              if (event.key === 'Escape') { event.stopPropagation(); setAddress(undefined) }
-            }} />
+            onFocus={event => event.target.select()} />
           <button className="app-control" type="submit">前往</button>
-        </form> : <nav className="file-path" aria-label="当前路径" title={pathText}>
+        </form> : <nav className="file-path" aria-label="当前路径" title={pathText} onClick={event => {
+          if (!(event.target as Element).closest('button')) setAddress(path)
+        }}>
           <ol>
             {crumbs.map((crumb, index) => (
               <li key={crumb.id}>
                 {index > 0 && <ChevronRight size={13} aria-hidden="true" />}
-                {crumb.id === path
-                  ? <span aria-current="page" ref={element => {
+                {index === crumbs.length - 1
+                  ? <button type="button" className="app-control" aria-current="page" title="编辑绝对路径"
+                    onClick={() => setAddress(path)} ref={element => {
+                    currentCrumb.current = element
                     const nav = element?.closest('nav')
                     if (nav) nav.scrollLeft = nav.scrollWidth
-                  }}>{index === 0 && <HardDrive size={15} aria-hidden="true" />}{crumb.name}</span>
+                  }}>{index === 0 && <HardDrive size={15} aria-hidden="true" />}{crumb.name}</button>
                   : <button className="app-control" onClick={() => navigate(crumb.id)}>
                     {index === 0 && <HardDrive size={15} aria-hidden="true" />}{crumb.name}
                   </button>}
@@ -847,8 +949,6 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
             ))}
           </ol>
         </nav>}
-        <button className="app-control file-tool" aria-label="输入绝对路径" title="输入绝对路径"
-          onClick={() => setAddress(address === undefined ? path : undefined)}><Pencil size={15} aria-hidden="true" /></button>
         <label className="file-search">
           <Search size={16} aria-hidden="true" />
           <input ref={search} type="search" aria-label="搜索当前文件夹" placeholder="搜索文件"
@@ -939,10 +1039,11 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
           }}>
           {layout === 'list' ? (
             <table className="data-table file-table" aria-label={pathText}>
-              <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">大小</th></tr></thead>
+              <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">所有者</th>
+                <th scope="col">所属组</th><th scope="col">权限</th><th scope="col">大小</th></tr></thead>
               <tbody>
                 {entries.map(renderEntry)}
-                {!entries.length && <tr><td colSpan={3} className="muted">{emptyMessage}</td></tr>}
+                {!entries.length && <tr><td colSpan={6} className="muted">{emptyMessage}</td></tr>}
               </tbody>
             </table>
           ) : (
@@ -965,10 +1066,11 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
               <div><dt>类型</dt><dd>{selected.type}</dd></div>
               <div><dt>位置</dt><dd>{pathText}</dd></div>
               {selected.size && <div><dt>大小</dt><dd>{selected.size}</dd></div>}
+              <div><dt>所有者</dt><dd>{selected.owner}</dd></div>
+              <div><dt>所属组</dt><dd>{selected.group}</dd></div>
+              <div><dt>权限</dt><dd className="file-permission-values"><code>{selected.permissions}</code><code>{selected.mode}</code></dd></div>
             </dl>
-            {(selected.directory || regularFile(selected) || selected.targetError) && <button className="app-control file-open" onClick={() => openEntry(selected)}>
-              {selected.directory ? '打开文件夹' : editableHostFile(selected) ? '在文本编辑器中打开' : regularFile(selected) ? '下载' : '打开链接'}
-            </button>}
+            <FilePropertyActions key={selected.id} file={selected} open={() => openEntry(selected)} />
           </> : <p className="muted">{selectedItems.length ? `已选中 ${selectedItems.length} 项` : '选择文件或文件夹以查看属性。'}</p>}
         </aside>
       </div>

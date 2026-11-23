@@ -32,6 +32,12 @@ function isDirty(draft: Draft) {
   return draft.text !== draft.savedText
 }
 
+function textErrorMessage(error: unknown, path: string) {
+  return error instanceof FileError && (error.code === 'permission' || error.code === 'ownership_preservation_failed')
+    ? `${path}：${error.message}`
+    : errorMessage(error)
+}
+
 function getTheme() {
   return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
 }
@@ -96,7 +102,7 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
       setActiveId(id)
       requestAnimationFrame(() => focusTab(id))
     } catch (error) {
-      if (!controller.signal.aborted) setStatus(errorMessage(error))
+      if (!controller.signal.aborted) setStatus(textErrorMessage(error, target.path))
     } finally {
       if (openController.current === controller) setLoading(false)
     }
@@ -232,11 +238,13 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
           announceFileChange()
         } catch (error) {
           if (created) throw error
-          const message = errorMessage(error)
+          const message = textErrorMessage(error, draft.path!)
           setStatus(message)
           if (error instanceof FileError && ['changed', 'not_found'].includes(error.code)) {
             setDrafts(current => current.map(item => item.id === id ? { ...item, version: undefined } : item))
             if (close) requestSaveAs(draft, ids.slice(index), close, message)
+          } else if (close && error instanceof FileError && ['permission', 'ownership_preservation_failed'].includes(error.code)) {
+            requestSaveAs(draft, ids.slice(index), close, message)
           }
           return
         }

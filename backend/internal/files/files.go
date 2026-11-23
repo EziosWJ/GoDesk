@@ -27,6 +27,10 @@ type entry struct {
 	Path        string `json:"path"`
 	Kind        string `json:"kind"`
 	Size        int64  `json:"size"`
+	Owner       string `json:"owner"`
+	Group       string `json:"group"`
+	Permissions string `json:"permissions"`
+	Mode        string `json:"mode"`
 	TargetKind  string `json:"targetKind,omitempty"`
 	TargetError string `json:"targetError,omitempty"`
 }
@@ -67,6 +71,7 @@ func list(path string) ([]entry, error) {
 		return nil, err
 	}
 	result := make([]entry, 0, len(items))
+	owners, groups := make(accountNames), make(accountNames)
 	for _, item := range items {
 		info, err := item.Info()
 		if errors.Is(err, fs.ErrNotExist) {
@@ -76,7 +81,10 @@ func list(path string) ([]entry, error) {
 			return nil, err
 		}
 		child := filepath.Join(path, item.Name())
-		next := entry{Name: item.Name(), Path: child, Kind: fileKind(info.Mode()), Size: info.Size()}
+		stat := info.Sys().(*syscall.Stat_t)
+		next := entry{Name: item.Name(), Path: child, Kind: fileKind(info.Mode()), Size: info.Size(),
+			Owner: owners.label(stat.Uid, ownerName), Group: groups.label(stat.Gid, groupName),
+			Permissions: permissionLabel(info.Mode()), Mode: fmt.Sprintf("%04o", stat.Mode&07777)}
 		if next.Kind == "symlink" {
 			target, err := os.Stat(child)
 			if err != nil {

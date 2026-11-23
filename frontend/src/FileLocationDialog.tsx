@@ -6,6 +6,31 @@ import './styles/file-location-dialog.css'
 
 type Position = { x: number; y: number }
 type Drag = { pointerId: number; handle: HTMLElement; start: Position; origin: Position }
+type Size = { width: number; height: number }
+type Resize = Drag & { bounds: DOMRect; size?: Size; previousSize?: Size }
+const sizePreference = 'react-web-desktop-file-location-size'
+const minimumSize = { width: 520, height: 380 }
+const defaultSize = { width: 820, height: 540 }
+
+function storedSize(): Size | undefined {
+  try {
+    const size = JSON.parse(localStorage.getItem(sizePreference) ?? 'null')
+    if (size && Number.isFinite(size.width) && size.width >= minimumSize.width
+      && Number.isFinite(size.height) && size.height >= minimumSize.height) return size
+  } catch {
+    // The default size still works when storage is unavailable.
+  }
+}
+
+function applySize(element: HTMLDialogElement, size?: Size) {
+  if (size) {
+    element.style.setProperty('--file-location-width', `${size.width}px`)
+    element.style.setProperty('--file-location-height', `${size.height}px`)
+  } else {
+    element.style.removeProperty('--file-location-width')
+    element.style.removeProperty('--file-location-height')
+  }
+}
 
 type FileLocationDialogProps = {
   title: string
@@ -48,8 +73,11 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   const id = useId()
   const modal = useRef<HTMLDialogElement>(null)
   const drag = useRef<Drag>(undefined)
+  const resize = useRef<Resize>(undefined)
+  const preferredSize = useRef<Size>(undefined)
   const position = useRef<Position>({ x: 0, y: 0 })
   const address = useRef<HTMLElement>(null)
+  const currentCrumb = useRef<HTMLButtonElement>(null)
   const listing = useRef<HTMLDivElement>(null)
   const filenameInput = useRef<HTMLInputElement>(null)
   const folderInput = useRef<HTMLInputElement>(null)
@@ -72,6 +100,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   const [newFolder, setNewFolder] = useState<string>()
   const [folderError, setFolderError] = useState('')
   const directory = data?.path ?? ''
+  const editingLocation = locationInput !== undefined
   const available = !!directory && !loading && !busy
   const breadcrumbs = pathCrumbs(directory)
   const currentName = directory ? pathName(directory) : '主目录'
@@ -82,6 +111,8 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
 
   useLayoutEffect(() => {
     const element = modal.current!
+    preferredSize.current = storedSize()
+    applySize(element, preferredSize.current)
     element.showModal()
     const initialFocus = filenameInput.current ?? listing.current
     initialFocus?.focus()
@@ -100,7 +131,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   useLayoutEffect(() => {
     const element = address.current
     if (element) element.scrollLeft = element.scrollWidth
-  }, [directory, currentName])
+  }, [directory, editingLocation])
 
   useLayoutEffect(() => {
     if (creatingFolder) folderInput.current?.focus()
@@ -150,7 +181,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   }
 
   function startDrag(event: PointerEvent<HTMLElement>) {
-    if (drag.current || event.button !== 0 || (event.target instanceof Element && event.target.closest('button'))) return
+    if (drag.current || resize.current || event.button !== 0 || (event.target instanceof Element && event.target.closest('button'))) return
     event.preventDefault()
     const handle = event.currentTarget
     handle.setPointerCapture(event.pointerId)
@@ -165,6 +196,66 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
     delete active.handle.dataset.dragging
     if (active.handle.hasPointerCapture(pointerId)) active.handle.releasePointerCapture(pointerId)
     if (revert) position.current = placeDialog(modal.current!, active.origin)
+  }
+
+  function startResize(event: PointerEvent<HTMLElement>) {
+    if (drag.current || resize.current || event.button !== 0) return
+    event.preventDefault()
+    const handle = event.currentTarget
+    handle.setPointerCapture(event.pointerId)
+    resize.current = {
+      pointerId: event.pointerId, handle, start: { x: event.clientX, y: event.clientY }, origin: position.current,
+      bounds: modal.current!.getBoundingClientRect(), previousSize: preferredSize.current,
+    }
+  }
+
+  function resizeDialog(event: PointerEvent<HTMLElement>) {
+    const active = resize.current
+    if (active?.pointerId !== event.pointerId) return
+    const element = modal.current!
+    const { clientWidth, clientHeight } = document.documentElement
+    const maxWidth = clientWidth - 24
+    const maxHeight = clientHeight - 24
+    const startWidth = Math.round(active.bounds.width)
+    const startHeight = Math.round(active.bounds.height)
+    const width = Math.min(maxWidth, Math.max(Math.min(startWidth, minimumSize.width), startWidth + event.clientX - active.start.x))
+    const height = Math.min(maxHeight, Math.max(Math.min(startHeight, minimumSize.height), startHeight + event.clientY - active.start.y))
+    if (element.offsetWidth === width && element.offsetHeight === height) return
+    const previous = active.previousSize ?? defaultSize
+    const size = {
+      width: width === startWidth ? previous.width : Math.max(minimumSize.width, width),
+      height: height === startHeight ? previous.height : Math.max(minimumSize.height, height),
+    }
+    applySize(element, size)
+    position.current = placeDialog(element, {
+      x: active.bounds.left - (clientWidth - element.offsetWidth) / 2,
+      y: active.bounds.top - (clientHeight - element.offsetHeight) / 2,
+    })
+    active.size = size
+  }
+
+  function endResize(pointerId: number, revert = false) {
+    const active = resize.current
+    if (active?.pointerId !== pointerId) return
+    resize.current = undefined
+    if (active.handle.hasPointerCapture(pointerId)) active.handle.releasePointerCapture(pointerId)
+    if (revert) {
+      applySize(modal.current!, active.previousSize)
+      position.current = placeDialog(modal.current!, active.origin)
+    } else if (active.size) {
+      preferredSize.current = active.size
+      try {
+        localStorage.setItem(sizePreference, JSON.stringify(active.size))
+      } catch {
+        // The current dialog still keeps the new size.
+      }
+    }
+  }
+
+  function startLocationEdit() {
+    if (busy) return
+    setLocationError('')
+    setLocationInput(directory || '/')
   }
 
   async function saveTo(path: string, conflict?: Conflict) {
@@ -227,7 +318,8 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
       onCancel={event => {
         event.preventDefault()
         event.stopPropagation()
-        if (drag.current) endDrag(drag.current.pointerId, true)
+        if (resize.current) endResize(resize.current.pointerId, true)
+        else if (drag.current) endDrag(drag.current.pointerId, true)
         else if (!busy) onCancel()
       }}>
       <header className="file-location-title" onPointerDown={startDrag} onPointerMove={event => {
@@ -259,7 +351,14 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
             <ArrowUp size={16} aria-hidden="true" />
           </button>
         </div>
-        {locationInput !== undefined ? <form className="file-address-form" onSubmit={event => {
+        {editingLocation ? <form className="file-address-form" onKeyDown={event => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          setLocationInput(undefined)
+          setLocationError('')
+          requestAnimationFrame(() => currentCrumb.current?.focus())
+        }} onSubmit={event => {
           event.preventDefault()
           if (locationInput.startsWith('/')) navigate(locationInput)
           else setLocationError('请输入以 / 开头的绝对路径')
@@ -267,21 +366,23 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
           <input autoFocus aria-label="目标绝对路径" value={locationInput} onChange={event => setLocationInput(event.target.value)}
             onFocus={event => event.target.select()} />
           <button className="app-control" type="submit" disabled={busy}>前往</button>
-        </form> : <nav ref={address} className="file-location-breadcrumbs" aria-label="当前路径">
+        </form> : <nav ref={address} className="file-location-breadcrumbs" aria-label="当前路径" onClick={event => {
+          if (!(event.target as Element).closest('button')) startLocationEdit()
+        }}>
           {breadcrumbs.map((crumb, index) => (
             <div key={crumb.id}>
               {index > 0 && <ChevronRight size={13} aria-hidden="true" />}
               {index === breadcrumbs.length - 1
-                ? <span className="file-location-crumb" title={crumb.name} aria-current="location">
+                ? <button ref={currentCrumb} type="button" className="app-control file-location-crumb" title="编辑绝对路径"
+                  aria-current="location" disabled={busy} onClick={startLocationEdit}>
                   {index === 0 && <House size={15} aria-hidden="true" />}<span className="truncate">{crumb.name}</span>
-                </span>
+                </button>
                 : <button type="button" title={crumb.name} className="app-control file-location-crumb" onClick={() => navigate(crumb.id)}>
                   {index === 0 && <House size={15} aria-hidden="true" />}<span className="truncate">{crumb.name}</span>
                 </button>}
             </div>
           ))}
         </nav>}
-        <button className="app-control" type="button" onClick={() => setLocationInput(locationInput === undefined ? directory : undefined)}>路径</button>
         <label className="file-location-search">
           <Search size={16} aria-hidden="true" />
           <input type="search" aria-label="搜索当前文件夹" placeholder={`搜索${currentName}`}
@@ -370,6 +471,9 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
           <button className="app-control" type="button" disabled={busy} onClick={onCancel}>取消</button>
         </div>
       </footer>}
+      <div className="file-location-resize" aria-hidden="true" onPointerDown={startResize} onPointerMove={resizeDialog}
+        onPointerUp={event => endResize(event.pointerId)} onPointerCancel={event => endResize(event.pointerId, true)}
+        onLostPointerCapture={event => endResize(event.pointerId)} />
     </dialog>
   )
 }

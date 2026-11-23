@@ -12,12 +12,16 @@ type HostEntry = {
   path: string
   kind: string
   size: number
+  owner: string
+  group: string
+  permissions: string
+  mode: string
   targetKind?: string
   targetError?: string
 }
 
 export type HostFile = Pick<Entry, 'id' | 'name' | 'type' | 'size' | 'directory'>
-  & Pick<HostEntry, 'kind' | 'targetKind' | 'targetError'> & { symbolicLink: boolean }
+  & Pick<HostEntry, 'kind' | 'targetKind' | 'targetError' | 'owner' | 'group' | 'permissions' | 'mode'> & { symbolicLink: boolean }
 
 export class FileError extends Error {
   readonly code: string
@@ -104,6 +108,14 @@ export async function readDirectory(path = '', signal?: AbortSignal) {
 
 export function fileAction(operation: FileAction, path: string, options: { destination?: string; name?: string; conflict?: Conflict } = {}) {
   return request<Result>('/action', json('POST', { operation, path, ...options }))
+}
+
+export function writeOwnership(path: string, values: { owner?: string; group?: string }) {
+  return request<Result>('/ownership', json('PUT', { path, ...values }))
+}
+
+export function writePermissions(path: string, mode: string) {
+  return request<Result>('/permissions', json('PUT', { path, mode }))
 }
 
 export function uploadFile(directory: string, file: File, conflict: Conflict | undefined, progress: (percent: number) => void) {

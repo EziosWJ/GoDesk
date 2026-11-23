@@ -164,8 +164,8 @@ func saveText(r *http.Request, path, text, expected string) (fs.FileInfo, error)
 		return nil, err
 	}
 	defer os.Remove(temp.Name())
-	_, writeErr := io.WriteString(temp, text)
-	if err := errors.Join(writeErr, temp.Chmod(info.Mode().Perm()), temp.Close()); err != nil {
+	defer temp.Close()
+	if _, err := io.WriteString(temp, text); err != nil {
 		return nil, err
 	}
 	if err := r.Context().Err(); err != nil {
@@ -179,8 +179,18 @@ func saveText(r *http.Request, path, text, expected string) (fs.FileInfo, error)
 	if err != nil || !os.SameFile(latest, actualTarget) {
 		return nil, errChanged
 	}
-	published, err := os.Stat(temp.Name())
+	if err := preserveOwnership(temp, actualTarget); err != nil {
+		return nil, err
+	}
+	const permissionBits = fs.ModePerm | fs.ModeSetuid | fs.ModeSetgid | fs.ModeSticky
+	if err := temp.Chmod(actualTarget.Mode() & permissionBits); err != nil {
+		return nil, err
+	}
+	published, err := temp.Stat()
 	if err != nil {
+		return nil, err
+	}
+	if err := temp.Close(); err != nil {
 		return nil, err
 	}
 	if err := os.Rename(temp.Name(), target); err != nil {

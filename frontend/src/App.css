@@ -688,6 +688,7 @@
   flex: 1;
   min-width: 0;
   overflow-x: auto;
+  cursor: text;
   border: 1px solid var(--react-web-desktop-divider);
   border-radius: var(--react-web-desktop-radius-overlay);
   background: var(--react-web-desktop-surface);
@@ -829,8 +830,49 @@
 }
 .file-inspector dt { color: var(--react-web-desktop-muted); }
 .file-inspector dd { overflow-wrap: anywhere; }
-.file-open { margin-top: 12px; border: 1px solid var(--react-web-desktop-border); }
+.file-permission-values { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.file-permission-values code + code {
+  padding: 0 4px;
+  border-radius: var(--react-web-desktop-radius-control);
+  background: var(--react-web-desktop-surface);
+  color: var(--react-web-desktop-muted);
+}
+.file-property-actions { display: grid; gap: 10px; margin-top: 14px; }
+.file-property-actions:empty { display: none; }
+.file-property-edits { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 104px), 1fr)); gap: 6px; }
+.file-property-edits .app-control {
+  gap: 6px;
+  min-height: var(--react-web-desktop-control);
+  padding-inline: 7px;
+  border: 1px solid var(--react-web-desktop-divider);
+  background: var(--react-web-desktop-surface);
+}
+.file-property-edits svg { flex: none; color: var(--react-web-desktop-muted); }
+.file-property-actions .file-property-open {
+  justify-content: flex-start;
+  min-height: var(--react-web-desktop-control);
+  padding-inline: 10px;
+  background: var(--react-web-desktop-selected);
+  color: var(--react-web-desktop-accent);
+}
+.file-property-form { display: grid; gap: 8px; margin-top: 14px; }
+.file-property-form label { display: grid; gap: 4px; }
+.file-property-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--react-web-desktop-control);
+  padding-inline: 8px;
+  border: 1px solid var(--react-web-desktop-border);
+  border-radius: var(--react-web-desktop-radius-control);
+  background: var(--react-web-desktop-surface);
+}
+.file-property-form .file-mode-input { font-family: var(--react-web-desktop-font-mono); }
+.file-property-form [role="alert"] { color: var(--react-web-desktop-danger); }
+.file-property-form > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.file-table { min-width: 520px; }
 .file-table th { background: var(--react-web-desktop-surface); }
+.file-table :is(th, td):not(:first-child) { white-space: nowrap; }
+.file-table code, .file-inspector code { font-family: var(--react-web-desktop-font-mono); }
 .file-table tr[data-selected] { cursor: pointer; }
 .file-table tr[data-selected="false"]:hover { background: var(--react-web-desktop-hover); }
 .file-table tr[data-selected="true"] { background: var(--react-web-desktop-selected); }

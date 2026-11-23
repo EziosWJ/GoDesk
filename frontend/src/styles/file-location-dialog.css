@@ -1,14 +1,27 @@
 .service-dialog.file-location-dialog {
   position: fixed;
   inset: 0;
-  width: min(820px, calc(100% - 24px));
-  height: min(540px, calc(100% - 24px));
+  width: min(var(--file-location-width, 820px), calc(100% - 24px));
+  height: min(var(--file-location-height, 540px), calc(100% - 24px));
+  max-width: none;
   background: var(--react-web-desktop-surface);
   font-family: var(--react-web-desktop-font-ui);
   font-size: var(--text-react-web-desktop-body);
 }
 
 .service-dialog.file-location-dialog[open] { display: flex; overflow: auto; }
+
+.file-location-resize {
+  position: absolute;
+  z-index: 2;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  touch-action: none;
+  background: linear-gradient(135deg, transparent 48%, var(--react-web-desktop-border) 49% 55%, transparent 56% 65%, var(--react-web-desktop-border) 66% 72%, transparent 73%) center / 10px 10px no-repeat;
+}
 
 .file-location-title, .file-location-navigation, .file-location-tools {
   display: flex;
@@ -47,6 +60,7 @@
   flex: 1;
   padding-inline: 3px;
   overflow: auto;
+  cursor: text;
   font-family: var(--react-web-desktop-font-mono);
   font-size: var(--text-react-web-desktop-compact);
   line-height: var(--text-react-web-desktop-compact--line-height);
@@ -123,6 +137,8 @@
 .file-location-form .service-dialog-actions button { min-width: 76px; }
 
 @media (max-width: 600px) {
+  .service-dialog.file-location-dialog { width: calc(100% - 24px); height: min(540px, calc(100% - 24px)); }
+  .file-location-resize { display: none; }
   .file-location-navigation { display: grid; grid-template-columns: auto minmax(0, 1fr); }
   .file-location-search { grid-column: 1 / -1; }
   .file-location-browser { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }

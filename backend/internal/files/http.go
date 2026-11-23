@@ -21,6 +21,8 @@ func Register(mux *http.ServeMux) {
 	s := &server{}
 	mux.HandleFunc("GET /directory", directory)
 	mux.HandleFunc("POST /action", s.action)
+	mux.HandleFunc("PUT /ownership", s.ownership)
+	mux.HandleFunc("PUT /permissions", s.permissions)
 	mux.HandleFunc("POST /upload", s.upload)
 	mux.HandleFunc("GET /download", download)
 	mux.HandleFunc("GET /text", getText)
@@ -41,6 +43,10 @@ func failure(w http.ResponseWriter, err error) {
 	switch {
 	case errors.As(err, &cleanup):
 		code, path = "source_cleanup_failed", cleanup.path
+	case errors.Is(err, errAccount):
+		status, code = http.StatusBadRequest, "invalid_account"
+	case errors.Is(err, errPermissionMode):
+		status, code = http.StatusBadRequest, "invalid_mode"
 	case errors.Is(err, errPath):
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, errType), errors.Is(err, errEncoding):
@@ -49,6 +55,8 @@ func failure(w http.ResponseWriter, err error) {
 		status, code = http.StatusRequestEntityTooLarge, "text_too_large"
 	case errors.Is(err, errChanged):
 		status, code = http.StatusConflict, "changed"
+	case errors.Is(err, errPreserveOwnership):
+		status, code = http.StatusForbidden, "ownership_preservation_failed"
 	case errors.Is(err, fs.ErrExist):
 		status, code = http.StatusConflict, "exists"
 	case errors.Is(err, fs.ErrNotExist):
@@ -181,6 +189,57 @@ func (s *server) action(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	jsonResponse(w, outcome)
+}
+
+func (s *server) ownership(w http.ResponseWriter, r *http.Request) {
+	var form struct {
+		Path         string
+		Owner, Group *string
+	}
+	if !readJSON(w, r, &form) {
+		return
+	}
+	path, err := pathOf(form.Path)
+	if err != nil || (form.Owner == nil && form.Group == nil) {
+		failure(w, errPath)
+		return
+	}
+	uid, err := accountID(form.Owner, false)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	gid, err := accountID(form.Group, true)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+	if err := changeOwnership(path, uid, gid); err != nil {
+		failure(w, err)
+		return
+	}
+	jsonResponse(w, result{Path: path})
+}
+
+func (s *server) permissions(w http.ResponseWriter, r *http.Request) {
+	var form struct{ Path, Mode string }
+	if !readJSON(w, r, &form) {
+		return
+	}
+	path, err := pathOf(form.Path)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	s.mutations.Lock()
+	defer s.mutations.Unlock()
+	if err := changePermissions(path, form.Mode); err != nil {
+		failure(w, err)
+		return
+	}
+	jsonResponse(w, result{Path: path})
 }
 
 func (s *server) upload(w http.ResponseWriter, r *http.Request) {

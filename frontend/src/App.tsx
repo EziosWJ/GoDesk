@@ -6,6 +6,7 @@ import {
   Image, LogOut, Minus, RefreshCw, Search, Square, SquaresSubtract, X,
 } from 'lucide-react'
 import { apps, type AppId } from './apps.ts'
+import type { Session } from './auth'
 import { CommandMenu, type MenuAnchor } from './CommandMenu'
 import { FileManager } from './FileManager'
 import { TextEditorApp, type EditorWindowHandle } from './TextEditorApp'
@@ -160,7 +161,10 @@ function AppWindow({ binder, win, appId, closing, children, onRequestClose, onEx
   )
 }
 
-export default function App({ onLogout }: { onLogout: () => void }) {
+export default function App({ onLogout, onSession }: {
+  onLogout: () => Promise<void>
+  onSession: (session: Session) => void
+}) {
   const wm = useWindowManager({ keepInViewport: true, minVisible: 164, historyLimit: 0 })
   const { ref, binder } = useDesktop(wm, workAreaOptions)
   const { windows, focusedId } = useWmState(wm)
@@ -172,6 +176,8 @@ export default function App({ onLogout }: { onLogout: () => void }) {
   const startButton = useRef<HTMLButtonElement>(null)
   const startSearch = useRef<HTMLInputElement>(null)
   const logoutDialog = useRef<HTMLDialogElement>(null)
+  const [logoutPending, setLogoutPending] = useState(false)
+  const [logoutError, setLogoutError] = useState('')
   const pendingWindowFocus = useRef<AppId | null>(null)
   const [files, setFiles] = useState(initialFiles)
   const nextFileId = useRef(1)
@@ -316,8 +322,21 @@ export default function App({ onLogout }: { onLogout: () => void }) {
         <TerminalPage files={files} active={!closing && focusedId === id && windows[id].stage !== 'minimized'} />
       </Suspense>
     )
+    if (id === 'settings') return <apps.settings.Content onSession={onSession} />
     const { Content } = apps[id]
     return <Content />
+  }
+
+  async function confirmLogout() {
+    setLogoutPending(true)
+    setLogoutError('')
+    try {
+      await onLogout()
+    } catch {
+      setLogoutError('无法退出登录，请重试')
+    } finally {
+      setLogoutPending(false)
+    }
   }
 
   function showContextMenu(event: MouseEvent<HTMLElement>) {
@@ -441,14 +460,18 @@ export default function App({ onLogout }: { onLogout: () => void }) {
         onFocusApp={id => wm.focus(id)} onOpenPopup={() => setStartOpen(false)} />
 
       <dialog ref={logoutDialog} className="service-dialog" aria-labelledby="logout-dialog-title"
-        aria-describedby="logout-dialog-message" onClose={() => startButton.current?.focus()}>
+        aria-describedby="logout-dialog-message" onClose={() => {
+          setLogoutError('')
+          startButton.current?.focus()
+        }}>
         <div className="service-dialog-body">
           <h2 id="logout-dialog-title">退出登录？</h2>
           <p id="logout-dialog-message">退出后将关闭所有窗口、清除草稿，并重置示例文件。</p>
+          {logoutError && <p className="authentication-error" role="alert">{logoutError}</p>}
         </div>
         <div className="service-dialog-actions">
           <button className="app-control" type="button" onClick={() => logoutDialog.current?.close()}>取消</button>
-          <button className="app-control danger-control" type="button" onClick={onLogout}>退出登录</button>
+          <button className="app-control danger-control" type="button" disabled={logoutPending} onClick={confirmLogout}>退出登录</button>
         </div>
       </dialog>
     </main>

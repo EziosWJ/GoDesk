@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+
+	"godesk/internal/auth"
 )
 
-func New(db *sql.DB, desktop http.Handler) http.Handler {
+func New(db *sql.DB, credentials *auth.Store, desktop http.Handler) http.Handler {
 	mux := http.NewServeMux()
+	credentials.Register(mux)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), time.Second)
 		defer cancel()

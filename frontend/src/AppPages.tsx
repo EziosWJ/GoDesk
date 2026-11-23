@@ -1,11 +1,13 @@
-import { useLayoutEffect, useRef, useState } from 'react'
-import { ArrowLeft, AudioLines, ChevronRight, Monitor, Settings2, Timer } from 'lucide-react'
+import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import { ArrowLeft, AudioLines, ChevronRight, LockKeyhole, Monitor, Settings2, Timer } from 'lucide-react'
+import { AuthError, authSession, type Session } from './auth'
 import { getThemePreference, setThemePreference, themeOptions, type ThemePreference } from './theme'
 import { useSplitLayout } from './useSplitLayout'
 
 const categories = {
   appearance: { label: '外观', Icon: Monitor },
   general: { label: '常规', Icon: Settings2 },
+  account: { label: '账户', Icon: LockKeyhole },
 }
 
 type Category = keyof typeof categories
@@ -16,7 +18,7 @@ const generalSettings = [
   { name: '系统音量', value: '75%', Icon: AudioLines },
 ]
 
-export function Settings() {
+export function Settings({ onSession }: { onSession: (session: Session) => void }) {
   const [theme, setTheme] = useState(getThemePreference)
   const [category, setCategory] = useState<Category>('appearance')
   const [showPage, setShowPage] = useState(false)
@@ -81,7 +83,7 @@ export function Settings() {
               ))}
             </fieldset>
           </>
-        ) : (
+        ) : category === 'account' ? <ChangePassword onSession={onSession} /> : (
           <>
             <p className="system-caption settings-note">示例设置</p>
             <dl className="settings-list">
@@ -93,5 +95,55 @@ export function Settings() {
         )}
       </section>
     </div>
+  )
+}
+
+function ChangePassword({ onSession }: { onSession: (session: Session) => void }) {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const form = event.currentTarget
+    const fields = new FormData(form)
+    const currentPassword = String(fields.get('currentPassword'))
+    const password = String(fields.get('password'))
+    setSuccess(false)
+    if (password !== fields.get('confirmation')) {
+      setError('两次输入的新密码不一致')
+      return
+    }
+    setError('')
+    setPending(true)
+    try {
+      onSession(await authSession('password', { currentPassword, password }))
+      form.reset()
+      setSuccess(true)
+    } catch (failure) {
+      if (failure instanceof AuthError && failure.status === 401) {
+        onSession({ status: 'login' })
+      } else if (failure instanceof AuthError && failure.status === 403) {
+        setError('当前密码错误')
+      } else {
+        setError('无法修改密码，请重试')
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <form className="settings-password-form" onSubmit={submit} onChange={() => {
+      setError('')
+      setSuccess(false)
+    }}>
+      <label>当前密码<input name="currentPassword" type="password" autoComplete="current-password" required /></label>
+      <label>新密码<input name="password" type="password" autoComplete="new-password" required /></label>
+      <label>确认新密码<input name="confirmation" type="password" autoComplete="new-password" required /></label>
+      {error && <p className="authentication-error" role="alert">{error}</p>}
+      {success && <p role="status">密码已修改，其他设备需要重新登录。</p>}
+      <button className="app-control primary-control" type="submit" disabled={pending}>修改密码</button>
+    </form>
   )
 }

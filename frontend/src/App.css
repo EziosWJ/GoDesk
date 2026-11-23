@@ -456,6 +456,23 @@
 .settings-content { padding: 12px; }
 .settings-page[data-split="true"] .settings-content { padding: 16px; }
 .settings-note { margin-block: 4px 12px; }
+.settings-password-form {
+  display: grid;
+  gap: 12px;
+  max-width: 320px;
+  margin-block: 12px;
+}
+.settings-password-form label { display: grid; gap: 4px; }
+.settings-password-form input {
+  width: 100%;
+  min-height: var(--react-web-desktop-control);
+  padding-inline: 8px;
+  border: 1px solid var(--react-web-desktop-border);
+  border-radius: 6px;
+  background: var(--react-web-desktop-panel);
+}
+.settings-password-form button { justify-self: start; }
+.authentication-error { color: var(--react-web-desktop-danger); }
 .settings-list > div, .theme-option {
   display: flex;
   align-items: center;

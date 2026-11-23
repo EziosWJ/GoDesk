@@ -1,6 +1,6 @@
 # React Web Desktop
 
-goDesk 的 `frontend/` 基于 React Web Desktop 脚手架，使用 React、TypeScript、Vite、Tailwind CSS 4 和 WMKit。它支持独立开发预览，也可由 goDesk 后端提供静态页面。完整项目的联调和发布步骤见 [goDesk 项目说明](../README.md)。
+goDesk 的 `frontend/` 基于 React Web Desktop 脚手架，使用 React、TypeScript、Vite、Tailwind CSS 4 和 WMKit。桌面入口通过 Go 服务完成认证。完整项目的联调和发布步骤见 [goDesk 项目说明](../README.md)。
 
 桌面外壳包含桌面快捷方式、开始菜单、任务栏和右键菜单。应用可以在可拖动、缩放、最小化和最大化的窗口中打开。内置文件管理器、文本编辑器、终端、系统监控、服务管理和系统设置，可作为接入自有应用的参考。
 
@@ -21,7 +21,7 @@ pnpm install --frozen-lockfile
 pnpm dev
 ```
 
-在浏览器打开 Vite 输出的本地地址，默认是 `http://localhost:5173`。使用演示密码 **`react-web-desktop`** 登录。
+同时启动监听 `8080` 端口的 Go 服务，再在浏览器打开 Vite 输出的地址，默认是 `http://localhost:5173`。首次访问按提示创建密码。
 
 在本地地址后加上 `?window-theme=glass` 可预览 WMKit Glass 窗口外观。
 
@@ -30,7 +30,7 @@ pnpm dev
 1. 在 `src/` 创建应用组件，并参照 `src/apps.ts` 中的 `monitor` 条目注册应用 ID、名称、图标、窗口默认尺寸和 `Content` 组件。桌面快捷方式和开始菜单会自动列出新应用，启动后可在任务栏切换。
 2. 在 `src/styles/theme.css` 统一调整颜色、字体和尺寸。新增界面可复用 `--react-web-desktop-*` CSS 变量及其 Tailwind 映射。布局和交互细节见 [UI 设计规范](docs/ui-design/01-design-principles.md) 和 [设计 Token](docs/ui-design/02-design-tokens.md)。
 3. 定制品牌时，修改 `package.json` 中的包名、`index.html` 的页面标题、`public/favicon.svg` 的标识，以及登录页和桌面外壳中的显示名称。
-4. 接入业务时，在 `src/main.tsx` 替换 `DemoSession` 为应用自己的入口和会话管理。内置登录、文件、终端、监控、服务和托盘使用浏览器内的示例逻辑或数据，可按需保留或接入后端。
+4. `src/Session.tsx` 根据后端会话状态显示初始化页、登录页或桌面。文件、终端、监控、服务和托盘仍使用浏览器内的示例逻辑或数据。
 
 ## 构建与部署
 
@@ -42,11 +42,11 @@ pnpm build
 pnpm preview
 ```
 
-`pnpm build` 先运行 TypeScript 检查，再生成 `dist/` 静态产物。可将 `dist/` 部署到静态文件服务器。部署到子路径时，先在 `vite.config.ts` 中设置对应的 `base`。
+`pnpm build` 先运行 TypeScript 检查，再生成 `dist/` 静态产物。预览时需要运行 Go 服务。项目发布使用根目录的 `make build`，将静态资源与认证接口一起交付。
 
 ## 体验内置应用
 
-- 登录状态在当前标签页刷新后保留。通过「开始 → 退出登录」结束演示会话并重置桌面、草稿和示例文件。
+- 通过「开始 → 退出登录」清除当前浏览器的登录 Cookie，并重置桌面、草稿和示例文件。在「系统设置 → 账户」可以修改密码。
 - 单击桌面快捷方式选中，双击打开。也可以用 Tab 聚焦后按 Enter 打开，或在开始菜单中搜索并启动。
 - 拖住窗口标题栏可移动窗口，拖动边缘和四角可改变尺寸。标题栏按钮支持最小化、最大化、还原和关闭。
 - 任务栏显示运行中的应用和当前焦点。点击应用可激活窗口或恢复最小化的窗口。
@@ -83,4 +83,4 @@ pnpm preview
 
 ## 浏览器状态
 
-刷新会重置打开的窗口、桌面壁纸和示例文件。主题、窗口尺寸、文件布局和音量使用浏览器本地存储。项目改名后使用新的存储键，已有的演示会话和浏览器偏好需重新设置。
+刷新会重置打开的窗口、桌面壁纸和示例文件。主题、窗口尺寸、文件布局和音量使用浏览器本地存储。JWT 存在浏览器的持久 Cookie 中，有效期为 7 天。

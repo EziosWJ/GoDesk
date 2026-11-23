@@ -2,7 +2,12 @@ module godesk
 
 go 1.26.0
 
-require modernc.org/sqlite v1.63.0
+require (
+	github.com/golang-jwt/jwt/v5 v5.3.1
+	golang.org/x/crypto v0.55.0
+	golang.org/x/term v0.45.0
+	modernc.org/sqlite v1.63.0
+)
 
 require (
 	github.com/dustin/go-humanize v1.1.0 // indirect

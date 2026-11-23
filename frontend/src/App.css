@@ -314,6 +314,110 @@
 .terminal-host .xterm { height: 100%; }
 /* xterm only paints whole text rows. Match the background in the space below them. */
 .terminal-host .xterm .xterm-viewport { background-color: var(--react-web-desktop-surface); }
+.terminal-toolbar {
+  display: flex;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--react-web-desktop-divider);
+  background: var(--react-web-desktop-subtle);
+}
+.terminal-manager { background: var(--react-web-desktop-panel); }
+.terminal-manager .terminal-toolbar {
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--react-web-desktop-surface);
+}
+.terminal-manager .terminal-toolbar .primary-control { font-weight: 600; }
+.terminal-sessions {
+  flex: 1;
+  container: terminal-sessions / inline-size;
+  padding: 16px;
+}
+.terminal-sessions > p { margin: 0 0 12px; }
+.terminal-session-list {
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-overlay);
+  background: var(--react-web-desktop-surface);
+}
+.terminal-session {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 76px;
+  padding: 12px;
+  border-bottom: 1px solid var(--react-web-desktop-divider);
+}
+.terminal-session:last-child { border-bottom: 0; }
+.terminal-session-info { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px; }
+.terminal-session-icon {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: var(--react-web-desktop-radius-overlay);
+  background: var(--react-web-desktop-selected);
+  color: var(--react-web-desktop-accent);
+}
+.terminal-session-info strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.terminal-session-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  color: var(--react-web-desktop-muted);
+  font-size: var(--text-react-web-desktop-caption);
+}
+.terminal-session-status::before {
+  content: '';
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+.terminal-session-status[data-status="background"] { color: var(--react-web-desktop-success); }
+.terminal-session-status[data-status="remote"] { color: var(--react-web-desktop-info); }
+.terminal-session-status[data-status="visible"] { color: var(--react-web-desktop-accent); }
+.terminal-session-status:not([data-status="minimized"])::before { background: currentColor; }
+.terminal-session-times {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 8px;
+  color: var(--react-web-desktop-muted);
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+  font-variant-numeric: tabular-nums;
+}
+.terminal-session-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.terminal-session-actions .app-control { white-space: nowrap; }
+.terminal-session-actions .terminal-session-open {
+  min-inline-size: 72px;
+  background: var(--react-web-desktop-selected);
+  color: var(--react-web-desktop-accent);
+  font-weight: 600;
+}
+.terminal-session-actions .danger-control:not(:disabled) { color: var(--react-web-desktop-danger); }
+.terminal-sessions-empty {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 10px;
+  min-height: 144px;
+  border: 1px dashed var(--react-web-desktop-window-border);
+  border-radius: var(--react-web-desktop-radius-overlay);
+  color: var(--react-web-desktop-muted);
+}
+.terminal-sessions-empty svg { color: var(--react-web-desktop-accent); }
+@container terminal-sessions (max-width: 520px) {
+  .terminal-session { grid-template-columns: minmax(0, 1fr) auto; gap: 10px 12px; }
+  .terminal-session-times { grid-column: 1 / -1; grid-row: 2; justify-self: start; }
+}
+@container terminal-sessions (max-width: 420px) {
+  .terminal-session { grid-template-columns: minmax(0, 1fr); }
+  .terminal-session-times { grid-row: auto; }
+}
+.terminal-name-field { display: grid; gap: 6px; }
 .app-statusbar {
   display: flex;
   align-items: center;
@@ -463,7 +567,7 @@
   margin-block: 12px;
 }
 .settings-password-form label { display: grid; gap: 4px; }
-.settings-password-form input {
+.settings-password-form input, .terminal-name-field input {
   width: 100%;
   min-height: var(--react-web-desktop-control);
   padding-inline: 8px;

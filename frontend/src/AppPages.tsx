@@ -1,12 +1,14 @@
 import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowLeft, AudioLines, ChevronRight, LockKeyhole, Monitor, Settings2, Timer } from 'lucide-react'
+import { ArrowLeft, AudioLines, ChevronRight, LockKeyhole, Monitor, Settings2, Terminal, Timer } from 'lucide-react'
 import { AuthError, authSession, type Session } from './auth'
 import { getThemePreference, setThemePreference, themeOptions, type ThemePreference } from './theme'
 import { useSplitLayout } from './useSplitLayout'
+import { TerminalSettings } from './TerminalSettings'
 
 const categories = {
   appearance: { label: '外观', Icon: Monitor },
   general: { label: '常规', Icon: Settings2 },
+  terminal: { label: '终端', Icon: Terminal },
   account: { label: '账户', Icon: LockKeyhole },
 }
 
@@ -83,7 +85,7 @@ export function Settings({ onSession }: { onSession: (session: Session) => void 
               ))}
             </fieldset>
           </>
-        ) : category === 'account' ? <ChangePassword onSession={onSession} /> : (
+        ) : category === 'account' ? <ChangePassword onSession={onSession} /> : category === 'terminal' ? <TerminalSettings /> : (
           <>
             <p className="system-caption settings-note">示例设置</p>
             <dl className="settings-list">

@@ -7,7 +7,7 @@ goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当�
 ## 当前功能
 
 - 首次访问时创建操作者密码。登录会话持续 7 天，关闭浏览器或重启服务后可继续使用有效会话。
-- 文件管理器和文本编辑器可读写 Linux 主机文件，使用运行 goDesk 的账号权限。终端、系统监控、服务管理和主机设置仍使用示例逻辑，后续实现范围见 [首版规格](.scratch/backend-v1/spec.md)。
+- 文件管理器、文本编辑器和终端使用运行 goDesk 的账号权限操作 Linux 主机。终端支持多窗口和后台会话，关闭窗口后可重新接回。系统监控、服务管理和主机设置仍使用示例逻辑，后续实现范围见 [首版规格](.scratch/backend-v1/spec.md)。
 - 发布构建将前端资源嵌入 Go 二进制，由同一个进程提供桌面、认证接口、文件接口和健康检查。
 
 ## 项目结构
@@ -55,7 +55,7 @@ make build
 | 命令或选项 | 用途 |
 | --- | --- |
 | `make build` | 构建并嵌入静态资源，生成 `./godesk`。 |
-| `make build-backend` | 生成提供认证接口、文件接口和健康检查的纯后端二进制。 |
+| `make build-backend` | 生成纯后端二进制，提供认证、文件管理、终端和健康检查接口。 |
 | `make help` | 列出构建和开发命令。 |
 | `OUTPUT` | 覆盖二进制路径，例如 `make build OUTPUT=/tmp/godesk`。 |
 | `FRONTEND_DIR` | 覆盖用于开发和构建的前端源码目录，默认为 `frontend`。 |
@@ -72,10 +72,15 @@ make build
 ./godesk reset-password -data-dir ./data
 ```
 
+## 终端
+
+从桌面或开始菜单打开「终端」。关闭窗口、浏览器或退出登录后，可以从「会话管理」接回仍在运行的 Shell。停止或重启 goDesk 会结束所有终端会话。回看行数在「系统设置 → 终端」中调整，默认为 5,000 行。
+
 ## 相关文档
 
 - [认证行为与 HTTP 接口](docs/authentication.md)
 - [文件管理与文本编辑契约](docs/file-management.md)
+- [终端会话及接口契约](docs/terminal.md)
 - [前端使用与开发说明](frontend/README.md)
 - [UI 设计规范](frontend/docs/ui-design/01-design-principles.md)
 - [项目术语](GLOSSARY.md)

@@ -18,6 +18,7 @@ import (
 
 	"godesk/internal/auth"
 	"godesk/internal/httpserver"
+	"godesk/internal/terminal"
 	"godesk/internal/webui"
 
 	_ "modernc.org/sqlite"
@@ -62,13 +63,18 @@ func run(ctx context.Context, address, dataDir string) error {
 	if err != nil {
 		return fmt.Errorf("initialize authentication storage: %w", err)
 	}
+	terminals, err := terminal.Open(ctx, db)
+	if err != nil {
+		return fmt.Errorf("initialize terminal storage: %w", err)
+	}
+	defer terminals.Close()
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", address, err)
 	}
 	server := &http.Server{
-		Handler:           httpserver.New(db, credentials, webui.Handler()),
+		Handler:           httpserver.New(db, credentials, terminals, webui.Handler()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)
@@ -81,6 +87,7 @@ func run(ctx context.Context, address, dataDir string) error {
 	case err := <-serveErr:
 		return fmt.Errorf("serve HTTP: %w", err)
 	case <-ctx.Done():
+		terminals.Close()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

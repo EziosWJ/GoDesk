@@ -10,8 +10,9 @@ import type { Session } from './auth'
 import { CommandMenu, type MenuAnchor } from './CommandMenu'
 import { FileManager } from './FileManager'
 import { TextEditorApp, type EditorWindowHandle } from './TextEditorApp'
-import { initialFiles } from './fileSystem'
 import { Taskbar } from './Taskbar'
+import { TerminalSessions } from './TerminalSessions'
+import { terminalApi, terminalWindowId, type TerminalSession } from './terminal'
 import './App.css'
 
 const workAreaOptions = {
@@ -29,6 +30,10 @@ const TerminalPage = lazy(() => import('./TerminalPage'))
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 const appIds = Object.keys(apps) as AppId[]
 const previewGlass = new URLSearchParams(window.location.search).get('window-theme') === 'glass'
+
+function windowApp(id: string): AppId {
+  return id.startsWith('terminal-') ? 'terminal' : id as AppId
+}
 
 function windowMotionDuration(style: CSSStyleDeclaration, token: 'overlay' | 'feedback') {
   const duration = style.getPropertyValue(`--react-web-desktop-duration-${token}`).trim()
@@ -168,7 +173,7 @@ export default function App({ onLogout, onSession }: {
   const wm = useWindowManager({ keepInViewport: true, minVisible: 164, historyLimit: 0 })
   const { ref, binder } = useDesktop(wm, workAreaOptions)
   const { windows, focusedId } = useWmState(wm)
-  const running = Object.keys(windows) as AppId[]
+  const running = Object.values(windows).map(win => ({ id: win.id, appId: windowApp(win.id), title: win.title }))
   const [closingWindows, setClosingWindows] = useState<WindowState[]>([])
   const [selected, setSelected] = useState<AppId | null>(null)
   const [startOpen, setStartOpen] = useState(false)
@@ -178,8 +183,9 @@ export default function App({ onLogout, onSession }: {
   const logoutDialog = useRef<HTMLDialogElement>(null)
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutError, setLogoutError] = useState('')
-  const pendingWindowFocus = useRef<AppId | null>(null)
-  const files = initialFiles
+  const pendingWindowFocus = useRef<string | null>(null)
+  const launchingTerminal = useRef(false)
+  const [terminalLaunchError, setTerminalLaunchError] = useState('')
   const editor = useRef<EditorWindowHandle>(null)
   const [editorRequest, setEditorRequest] = useState<{ path: string }>()
 
@@ -269,18 +275,27 @@ export default function App({ onLogout, onSession }: {
   }, [startOpen])
 
   function openApp(id: AppId) {
+    if (id === 'terminal') {
+      setStartOpen(false)
+      void launchTerminal()
+      return
+    }
+    openWindow(id)
+  }
+
+  function openWindow(appId: AppId, id: string = appId, title = apps[appId].name, meta?: WindowState['meta']) {
     const { windows: openWindows, viewport } = wm.getState()
     if (openWindows[id]) {
       wm.focus(id)
     } else {
       setClosingWindows(current => current.some(win => win.id === id) ? current.filter(win => win.id !== id) : current)
-      const app = apps[id]
-      const size = (id === 'files' && readFileWindowSize()) || app
+      const app = apps[appId]
+      const size = (appId === 'files' && readFileWindowSize()) || app
       const width = Math.max(minWindowWidth, Math.min(size.width, viewport.width - 24))
       const height = Math.max(minWindowHeight, Math.min(size.height, viewport.height - 24))
       const offset = (Object.keys(openWindows).length % 5) * 25
       wm.open({
-        id, title: app.name, width, height,
+        id, title, width, height, meta,
         x: Math.min(Math.max(0, viewport.width - width), Math.max(12, (viewport.width - width) / 2 - 42 + offset)),
         y: Math.min(Math.max(0, viewport.height - height), Math.max(12, (viewport.height - height) / 2 - 38 + offset)),
         minWidth: minWindowWidth, minHeight: minWindowHeight, snappable: false,
@@ -288,6 +303,30 @@ export default function App({ onLogout, onSession }: {
     }
     if (startOpen) pendingWindowFocus.current = id
     setStartOpen(false)
+  }
+
+  function openSession(session: TerminalSession, takeover = false) {
+    openWindow('terminal', terminalWindowId(session.id), session.name, { session, takeover })
+  }
+
+  function openSessionManager() {
+    openWindow('terminal', 'terminal', '会话管理')
+  }
+
+  async function launchTerminal() {
+    if (launchingTerminal.current) return
+    launchingTerminal.current = true
+    setTerminalLaunchError('')
+    try {
+      const sessions = await terminalApi.list()
+      if (sessions.length) openSessionManager()
+      else openSession(await terminalApi.create())
+    } catch {
+      setTerminalLaunchError('无法打开终端，请重试')
+      openSessionManager()
+    } finally {
+      launchingTerminal.current = false
+    }
   }
 
   function openDesktopMenu(anchor: MenuAnchor) {
@@ -306,17 +345,29 @@ export default function App({ onLogout, onSession }: {
     wm.close('editor')
   }
 
-  function renderApp(id: AppId, closing: boolean) {
+  function renderApp(id: AppId, win: WindowState, closing: boolean) {
     if (id === 'files') return <FileManager onEdit={editFile} />
     if (id === 'editor') return (
       <TextEditorApp ref={closing ? null : editor}
         openRequest={editorRequest} onClose={closeEditor} />
     )
-    if (id === 'terminal') return (
-      <Suspense fallback={<p className="app-body" role="status">正在打开终端…</p>}>
-        <TerminalPage files={files} active={!closing && focusedId === id && windows[id].stage !== 'minimized'} />
-      </Suspense>
-    )
+    if (id === 'terminal') {
+      if (win.id === 'terminal') return (
+        <TerminalSessions active={!closing && win.stage !== 'minimized'} windows={windows}
+          launchError={terminalLaunchError} onOpen={(session, takeover) => {
+            setTerminalLaunchError('')
+            openSession(session, takeover)
+          }}
+          onRename={session => wm.update(terminalWindowId(session.id), { title: session.name })} />
+      )
+      return (
+        <Suspense fallback={<p className="app-body" role="status">正在打开终端…</p>}>
+          <TerminalPage session={win.meta.session as TerminalSession} initialTakeover={win.meta.takeover === true}
+            active={!closing && focusedId === win.id && win.stage !== 'minimized'} closing={closing}
+            onManage={openSessionManager} />
+        </Suspense>
+      )
+    }
     if (id === 'settings') return <apps.settings.Content onSession={onSession} />
     const { Content } = apps[id]
     return <Content />
@@ -385,13 +436,13 @@ export default function App({ onLogout, onSession }: {
           })}
         </nav>
         {[...Object.values(windows), ...closingWindows].map(win => {
-          const id = win.id as AppId
-          const closing = windows[id]?.openedSeq !== win.openedSeq
+          const id = windowApp(win.id)
+          const closing = windows[win.id]?.openedSeq !== win.openedSeq
           return (
             <AppWindow key={win.openedSeq} binder={binder} win={win} appId={id} closing={closing}
               onRequestClose={id === 'editor' ? () => editor.current?.requestClose() : undefined}
               onExited={removeClosingWindow}>
-              {renderApp(id, closing)}
+              {renderApp(id, win, closing)}
             </AppWindow>
           )
         })}
@@ -461,7 +512,7 @@ export default function App({ onLogout, onSession }: {
         }}>
         <div className="service-dialog-body">
           <h2 id="logout-dialog-title">退出登录？</h2>
-          <p id="logout-dialog-message">退出后将关闭所有窗口、清除草稿，并重置示例文件。</p>
+          <p id="logout-dialog-message">退出后将关闭所有窗口并清除草稿。终端会话会继续运行。</p>
           {logoutError && <p className="authentication-error" role="alert">{logoutError}</p>}
         </div>
         <div className="service-dialog-actions">

@@ -80,12 +80,12 @@ const compactTray = window.matchMedia('(max-width: 520px)')
 const popupId = 'taskbar-popover'
 
 type TaskbarProps = {
-  running: AppId[]
+  running: { id: string; appId: AppId; title: string }[]
   focusedId: string | null | undefined
   startOpen: boolean
   startButton: Ref<HTMLButtonElement>
   onStart: () => void
-  onFocusApp: (id: AppId) => void
+  onFocusApp: (id: string) => void
   onOpenPopup: () => void
 }
 
@@ -97,7 +97,7 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
   const [compact, setCompact] = useState(compactTray.matches)
   const [popup, setPopup] = useState<Popup | null>(null)
   const [anchorX, setAnchorX] = useState(0)
-  const pendingAppFocus = useRef<AppId | null>(null)
+  const pendingAppFocus = useRef<string | null>(null)
   const [online, setOnline] = useState(navigator.onLine)
   const [networkNotice, setNetworkNotice] = useState('')
   const battery = useBatteryStatus()
@@ -155,10 +155,10 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
 
   const hasOverflow = running.length > slots
   const directApps = hasOverflow ? running.slice(0, Math.max(0, slots - 1)) : running
-  const activeApp = running.find(id => id === focusedId)
+  const activeApp = running.find(win => win.id === focusedId)
   const visibleApps = hasOverflow && directApps.length && activeApp && !directApps.includes(activeApp)
     ? [...directApps.slice(0, -1), activeApp] : directApps
-  const hiddenApps = hasOverflow ? running.filter(id => !visibleApps.includes(id)) : []
+  const hiddenApps = hasOverflow ? running.filter(win => !visibleApps.includes(win)) : []
 
   function triggerFor(kind: Popup) {
     return footer.current?.querySelector<HTMLButtonElement>(`[data-task-popup="${kind}"]`)
@@ -329,13 +329,13 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
             <Grid2X2 size={22} strokeWidth={2.4} aria-hidden="true" />
             <span className="taskbar-tooltip" aria-hidden="true">开始</span>
           </button>
-          {visibleApps.map(id => {
-            const { icon: Icon, name } = apps[id]
+          {visibleApps.map(({ id, appId, title }) => {
+            const { icon: Icon } = apps[appId]
             return (
               <button key={id} type="button" className="taskbar-button taskbar-running" data-task-app={id} aria-pressed={focusedId === id}
-                aria-label={name} onClick={() => onFocusApp(id)}>
-                <Icon className={`app-icon ${id}`} size={20} aria-hidden="true" />
-                <span className="taskbar-tooltip" aria-hidden="true">{name}</span>
+                aria-label={title} onClick={() => onFocusApp(id)}>
+                <Icon className={`app-icon ${appId}`} size={20} aria-hidden="true" />
+                <span className="taskbar-tooltip" aria-hidden="true">{title}</span>
               </button>
             )
           })}
@@ -357,13 +357,13 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
               <h2 id={`${popupId}-title`}>{popupLabels[popup]}</h2>
               {popup === 'windows' ? (
                 <ul className="taskbar-window-list">
-                  {hiddenApps.map(id => {
-                    const { icon: Icon, name } = apps[id]
+                  {hiddenApps.map(({ id, appId, title }) => {
+                    const { icon: Icon } = apps[appId]
                     return <li key={id}><button type="button" onClick={() => {
                       pendingAppFocus.current = id
                       setPopup(null)
                       onFocusApp(id)
-                    }}><Icon size={18} aria-hidden="true" />{name}</button></li>
+                    }}><Icon size={18} aria-hidden="true" />{title}</button></li>
                   })}
                 </ul>
               ) : popup === 'status' ? (

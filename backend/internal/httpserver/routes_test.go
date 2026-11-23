@@ -9,6 +9,7 @@ import (
 
 	"godesk/internal/auth"
 	"godesk/internal/monitor"
+	"godesk/internal/services"
 	"godesk/internal/terminal"
 
 	_ "modernc.org/sqlite"
@@ -31,7 +32,7 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 	defer terminals.Close()
 	monitoring := monitor.Start(t.Context(), time.Second)
 	defer monitoring.Close()
-	mux := New(db, store, terminals, monitoring, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux := New(db, store, terminals, monitoring, services.None(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	for path, code := range map[string]int{
@@ -41,6 +42,7 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 		"/api/v1/settings/terminal": http.StatusUnauthorized,
 		"/api/v1/system/metrics":    http.StatusUnauthorized,
 		"/api/v1/system/ports":      http.StatusUnauthorized,
+		"/api/v1/services":          http.StatusUnauthorized,
 	} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))

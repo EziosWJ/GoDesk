@@ -352,6 +352,9 @@ export default function App({ onLogout, onSession }: {
           active={!closing && focusedId === win.id && win.stage !== 'minimized'} closing={closing} />
       </Suspense>
     )
+    if (id === 'services') return (
+      <apps.services.Content active={!closing && win.stage !== 'minimized'} />
+    )
     if (id === 'settings') return <apps.settings.Content onSession={onSession} />
     const { Content } = apps[id]
     return <Content />

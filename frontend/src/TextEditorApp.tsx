@@ -1,16 +1,22 @@
 import {
-  useEffect, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore,
-  type Dispatch, type KeyboardEvent, type Ref, type SetStateAction,
+  useEffect, useEffectEvent, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore,
+  type KeyboardEvent, type Ref,
 } from 'react'
 import { FilePenLine, FilePlus, Save, SaveAll, X } from 'lucide-react'
-import { editableFile, folder, textFileSize, textFileType, textFileTypes, type Entry } from './fileSystem'
+import { textFileType, textFileTypes } from './fileSystem'
+import {
+  announceFileChange, errorMessage, FileError, filename, parentPath, readText, subscribeToFileChanges, writeText,
+  type Conflict, type PathChange,
+} from './hostFiles'
 import { FileLocationDialog } from './FileLocationDialog'
 import { TextEditor } from './text-editor'
 import './styles/text-editor.css'
 
 type Draft = {
   id: string
-  fileId?: string
+  path?: string
+  version?: string
+  checking?: boolean
   name: string
   text: string
   savedText: string
@@ -18,7 +24,7 @@ type Draft = {
 
 type Dialog =
   | { kind: 'confirm'; close: string; drafts: string[] }
-  | { kind: 'save-as'; drafts: string[]; close?: string; name: string; directory?: string }
+  | { kind: 'save-as'; drafts: string[]; close?: string; name: string; directory?: string; warning?: string }
 
 export type EditorWindowHandle = { requestClose: () => void }
 
@@ -36,19 +42,19 @@ function subscribeToTheme(listener: () => void) {
   return () => observer.disconnect()
 }
 
-export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClose }: {
+export function TextEditorApp({ ref, openRequest, onClose }: {
   ref: Ref<EditorWindowHandle>
-  files: Entry[]
-  setFiles: Dispatch<SetStateAction<Entry[]>>
-  makeId: () => string
-  openRequest?: { id: string }
+  openRequest?: { path: string }
   onClose: () => void
 }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
   const [activeId, setActiveId] = useState<string>()
   const [dialog, setDialog] = useState<Dialog>()
   const [status, setStatus] = useState('')
-  const [previousFiles, setPreviousFiles] = useState(files)
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const saveLock = useRef(false)
+  const openController = useRef<AbortController>(undefined)
   const root = useRef<HTMLElement>(null)
   const modal = useRef<HTMLDialogElement>(null)
   const handledRequest = useRef<typeof openRequest>(undefined)
@@ -57,21 +63,11 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
   const prefix = useId()
   const theme = useSyncExternalStore(subscribeToTheme, getTheme)
 
-  if (files !== previousFiles) {
-    setPreviousFiles(files)
-    const updated = drafts.map(draft => {
-      const entry = files.find(file => file.id === draft.fileId)
-      return !entry || entry.name === draft.name ? draft : { ...draft, name: entry.name }
-    })
-    if (updated.some((draft, index) => draft !== drafts[index])) setDrafts(updated)
-  }
-
   const active = drafts.find(draft => draft.id === activeId)
   const hasDirty = drafts.some(isDirty)
-  const activeEntry = files.find(file => file.id === active?.fileId)
-  const unavailable = !!active?.fileId && (!activeEntry || !editableFile(files, activeEntry))
+  const unavailable = !!active?.path && !active.checking && (!active.version || !textFileType(active.name))
   const pendingDraft = drafts.find(draft => draft.id === dialog?.drafts[0])
-  const pendingName = pendingDraft && (files.find(file => file.id === pendingDraft.fileId)?.name ?? pendingDraft.name)
+  const pendingName = pendingDraft?.name
 
   function focusTab(id: string) {
     const tab = document.getElementById(`${id}-tab`)
@@ -79,22 +75,67 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
     tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
-  useLayoutEffect(() => {
+  const openDocument = useEffectEvent(async (target: NonNullable<typeof openRequest>) => {
+    const existing = drafts.find(draft => draft.path === target.path)
+    if (existing) {
+      setActiveId(existing.id)
+      setLoading(false)
+      requestAnimationFrame(() => focusTab(existing.id))
+      return
+    }
+    const controller = new AbortController()
+    openController.current = controller
+    setStatus('')
+    setLoading(true)
+    try {
+      const data = await readText(target.path, controller.signal)
+      if (controller.signal.aborted) return
+      const id = `${prefix}-${nextDocument.current++}`
+      setDrafts(current => [...current, { id, path: data.path, version: data.version,
+        name: filename(data.path), text: data.text, savedText: data.text }])
+      setActiveId(id)
+      requestAnimationFrame(() => focusTab(id))
+    } catch (error) {
+      if (!controller.signal.aborted) setStatus(errorMessage(error))
+    } finally {
+      if (openController.current === controller) setLoading(false)
+    }
+  })
+
+  useEffect(() => {
     if (!openRequest || handledRequest.current === openRequest) return
     handledRequest.current = openRequest
-    const entry = files.find(file => file.id === openRequest.id)
-    if (!entry || !editableFile(files, entry)) return
-    const existing = drafts.find(draft => draft.fileId === entry.id)
-    const id = existing?.id ?? `${prefix}-${nextDocument.current++}`
-    if (!existing) {
-      const text = entry.content ?? ''
-      setDrafts(current => [...current, { id, fileId: entry.id, name: entry.name, text, savedText: text }])
+    openController.current?.abort()
+    void openDocument(openRequest)
+    return () => {
+      handledRequest.current = undefined
+      openController.current?.abort()
     }
-    setActiveId(id)
-    requestAnimationFrame(() => {
-      if (handledRequest.current === openRequest) focusTab(id)
-    })
-  }, [openRequest, files, drafts, prefix])
+  }, [openRequest])
+
+  const updatePaths = useEffectEvent((change?: PathChange) => {
+    if (!change) return
+    const { from, to } = change
+    function movedPath(path?: string) {
+      if (path === from || path?.startsWith(`${from}/`)) return to + path.slice(from.length)
+    }
+    setDrafts(current => current.map(draft => {
+      const path = movedPath(draft.path)
+      return path ? { ...draft, path, name: filename(path), checking: change.copied } : draft
+    }))
+    if (change.copied) {
+      for (const draft of drafts) {
+        const path = movedPath(draft.path)
+        if (!path) continue
+        void readText(path).then(data => data.text === draft.savedText ? data.version : undefined)
+          .catch(() => undefined).then(version => setDrafts(current => current.map(item =>
+            item.id === draft.id && item.path === path && item.checking ? { ...item, version, checking: false } : item,
+          )))
+      }
+    }
+  })
+
+  useEffect(() => subscribeToFileChanges(updatePaths), [])
 
   useEffect(() => {
     if (!hasDirty) return
@@ -136,7 +177,7 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
     }
     const index = drafts.findIndex(draft => draft.id === target)
     const remaining = drafts.filter(draft => draft.id !== target)
-    setDrafts(remaining)
+    setDrafts(current => current.filter(draft => draft.id !== target))
     const next = activeId === target ? remaining[Math.min(index, remaining.length - 1)]?.id : activeId
     setActiveId(next)
     requestAnimationFrame(() => {
@@ -146,7 +187,7 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
   }
 
   function requestClose(target: string) {
-    if (dialog) return
+    if (dialog || saveLock.current) return
     const dirty = drafts.filter(draft => (target === 'window' || draft.id === target) && isDirty(draft))
     if (dirty.length) setDialog({ kind: 'confirm', close: target, drafts: dirty.map(draft => draft.id) })
     else finishClose(target)
@@ -154,56 +195,58 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
 
   useImperativeHandle(ref, () => ({ requestClose: () => requestClose('window') }))
 
-  function requestSaveAs(draft: Draft, ids: string[], close?: string) {
-    const entry = files.find(file => file.id === draft.fileId)
-    const original = entry?.name ?? draft.name
-    const name = draft.fileId
-      ? textFileType(original) ? original : `${original.replace(/\.[^.]+$/, '')}.txt`
+  function requestSaveAs(draft: Draft, ids: string[], close?: string, warning?: string) {
+    const name = draft.path
+      ? textFileType(draft.name) ? draft.name : `${draft.name.replace(/\.[^.]+$/, '')}.txt`
       : ''
     modal.current?.close()
     setDialog({
-      kind: 'save-as', drafts: ids, close, name,
-      directory: entry && editableFile(files, entry) ? entry.parent : undefined,
+      kind: 'save-as', drafts: ids, close, name, warning,
+      directory: draft.path ? parentPath(draft.path) : undefined,
     })
   }
 
-  function saveDrafts(ids: string[], close?: string, newFile?: Entry) {
-    let nextFiles = files
-    let nextDrafts = drafts
-    let savedName = ''
-    let needsDestination = false
-    for (const [index, id] of ids.entries()) {
-      const draft = drafts.find(item => item.id === id)
-      if (!draft) continue
-      const entry = nextFiles.find(file => file.id === draft.fileId)
-      const created = index === 0 ? newFile : undefined
-      const target = created ?? (entry && editableFile(nextFiles, entry) ? entry : undefined)
-      if (!target) {
-        requestSaveAs(draft, ids.slice(index), close)
-        needsDestination = true
-        break
+  async function saveDrafts(ids: string[], close?: string, newPath?: string, conflict?: Conflict) {
+    if (saveLock.current) return
+    saveLock.current = true
+    setSaving(true)
+    try {
+      for (const [index, id] of ids.entries()) {
+        const draft = drafts.find(item => item.id === id)
+        if (!draft) continue
+        const created = index === 0 ? newPath : undefined
+        if (!created && (!draft.path || !draft.version || !textFileType(draft.name))) {
+          requestSaveAs(draft, ids.slice(index), close)
+          return
+        }
+        if (draft.checking && !created) return
+        try {
+          const data = await writeText(created ?? draft.path!, draft.text, created ? undefined : draft.version, conflict)
+          setDrafts(current => current.map(item => {
+            if (item.id !== id) return item
+            const path = created ? data.path : item.path ?? data.path
+            if (!created && item.checking) return { ...item, savedText: draft.text }
+            return { ...item, path, name: filename(path), version: data.version, savedText: draft.text, checking: false }
+          }))
+          setStatus(`已保存「${filename(data.path)}」`)
+          announceFileChange()
+        } catch (error) {
+          if (created) throw error
+          const message = errorMessage(error)
+          setStatus(message)
+          if (error instanceof FileError && ['changed', 'not_found'].includes(error.code)) {
+            setDrafts(current => current.map(item => item.id === id ? { ...item, version: undefined } : item))
+            if (close) requestSaveAs(draft, ids.slice(index), close, message)
+          }
+          return
+        }
       }
-      const updated = { ...target, content: draft.text, size: textFileSize(draft.text) }
-      nextFiles = created ? [...nextFiles, updated] : nextFiles.map(file => file.id === target.id ? updated : file)
-      nextDrafts = nextDrafts.map(item => item.id === id
-        ? { ...item, fileId: target.id, name: target.name, savedText: draft.text }
-        : item)
-      savedName = target.name
+      if (close) finishClose(close)
+      else closeDialog()
+    } finally {
+      saveLock.current = false
+      setSaving(false)
     }
-    if (nextFiles !== files) {
-      setFiles(nextFiles)
-      setDrafts(nextDrafts)
-      setStatus(`已保存「${savedName}」`)
-    }
-    if (needsDestination) return
-    if (close) finishClose(close)
-    else closeDialog()
-  }
-
-  function createFolder(parent: string, name: string) {
-    const id = makeId()
-    setFiles(current => [...current, folder(id, parent, name)])
-    return id
   }
 
   function handleShortcut(event: KeyboardEvent<HTMLElement>) {
@@ -211,7 +254,7 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
         event.key.toLowerCase() !== 's' || event.nativeEvent.isComposing) return
     event.preventDefault()
     event.stopPropagation()
-    if (!dialog && active) {
+    if (!dialog && active && !saving && !active.checking) {
       if (event.shiftKey) requestSaveAs(active, [active.id])
       else saveDrafts([active.id])
     }
@@ -239,24 +282,24 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
   return (
     <section className="text-editor-app" ref={root} onKeyDownCapture={handleShortcut}>
       <header className="editor-toolbar" aria-label="编辑器操作">
-        <button className="app-control" onClick={newDraft}><FilePlus size={16} />新建文件</button>
-        <button className="app-control primary-control" disabled={!active} aria-keyshortcuts="Control+s Meta+s"
+        <button className="app-control" disabled={saving} onClick={newDraft}><FilePlus size={16} />新建文件</button>
+        <button className="app-control primary-control" disabled={!active || saving || active.checking} aria-keyshortcuts="Control+s Meta+s"
           onClick={() => { if (active) saveDrafts([active.id]) }}>
-          <Save size={16} />{unavailable ? '另存为…' : '保存'}
+          <Save size={16} />{!active?.path || unavailable ? '另存为…' : '保存'}
         </button>
-        {active?.fileId && !unavailable && <button className="app-control" aria-keyshortcuts="Control+Shift+s Meta+Shift+s"
+        {active?.path && !unavailable && <button className="app-control" disabled={saving || active.checking} aria-keyshortcuts="Control+Shift+s Meta+Shift+s"
           onClick={() => requestSaveAs(active, [active.id])}>
           <SaveAll size={16} />另存为…
         </button>}
       </header>
       {drafts.length > 0 && <div className="editor-tabs" role="tablist" aria-label="打开的文件">
         {drafts.map((draft, index) => {
-          const name = files.find(file => file.id === draft.fileId)?.name ?? draft.name
+          const name = draft.name
           const selected = activeId === draft.id
           return (
             <div key={draft.id} className="editor-tab" data-selected={selected}>
               <button type="button" role="tab" id={`${draft.id}-tab`} aria-selected={selected}
-                aria-controls={`${draft.id}-panel`} tabIndex={selected ? 0 : -1} title={name}
+                aria-controls={`${draft.id}-panel`} tabIndex={selected ? 0 : -1} title={draft.path ?? name}
                 onClick={() => setActiveId(draft.id)} onKeyDown={event => handleTabKey(event, index)}>
                 <span className="truncate">{name}</span>
                 {isDirty(draft) && <span className="editor-dirty" role="img" aria-label="未保存" />}
@@ -273,39 +316,40 @@ export function TextEditorApp({ ref, files, setFiles, makeId, openRequest, onClo
           <div key={draft.id} role="tabpanel" id={`${draft.id}-panel`} aria-labelledby={`${draft.id}-tab`}
             className="editor-panel" hidden={activeId !== draft.id}>
             <TextEditor documentId={draft.id} value={draft.text}
-              language={textFileType(draft.name)?.language ?? 'plaintext'} theme={theme}
+              language={textFileType(draft.name)?.language ?? 'plaintext'} theme={theme} readOnly={saving}
               onChange={text => setDrafts(current => current.map(item => item.id === draft.id ? { ...item, text } : item))} />
           </div>
         )) : <div className="editor-empty">
           <FilePenLine size={30} strokeWidth={1.5} aria-hidden="true" />
-          <p>新建文件，或从文件管理器打开文本文件。</p>
+          <p>{loading ? '正在读取主机文件…' : '新建文件，或从文件管理器打开文本文件。'}</p>
         </div>}
       </div>
       <footer className="app-statusbar editor-status">
-        <span role="status" data-warning={unavailable} title={unavailable ? '原文件已不可编辑，可另存为新文件。' : status}>
-          {unavailable ? '原文件已不可编辑，可另存为新文件。' : status}
+        <span role="status" data-warning={unavailable} title={status}>
+          {saving ? '正在保存…' : loading ? '正在读取主机文件…' : status || (unavailable ? '原文件已不可编辑，可另存为新文件。' : '')}
         </span>
         {active && <span>{textFileType(active.name)?.type ?? '纯文本'}</span>}
       </footer>
       {dialog?.kind === 'confirm' && <dialog ref={modal} className="service-dialog editor-dialog" aria-labelledby={`${prefix}-dialog-title`}
-        onCancel={event => { event.preventDefault(); event.stopPropagation(); closeDialog() }}>
+        onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!saving) closeDialog() }}>
         <div className="service-dialog-body">
           <h2 id={`${prefix}-dialog-title`}>保存修改？</h2>
+          {status && <p role="status">{status}</p>}
           <p className="muted editor-dialog-message">{dialog.drafts.length === 1
             ? `「${pendingName}」有未保存的修改。`
             : `有 ${dialog.drafts.length} 个标签页尚未保存。`}</p>
         </div>
         <div className="service-dialog-actions">
-          <button className="app-control" data-cancel onClick={closeDialog}>取消</button>
-          <button className="app-control" onClick={() => finishClose(dialog.close)}>放弃修改</button>
-          <button className="app-control primary-control" onClick={() => saveDrafts(dialog.drafts, dialog.close)}>保存</button>
+          <button className="app-control" data-cancel disabled={saving} onClick={closeDialog}>取消</button>
+          <button className="app-control" disabled={saving} onClick={() => finishClose(dialog.close)}>放弃修改</button>
+          <button className="app-control primary-control" disabled={saving} onClick={() => void saveDrafts(dialog.drafts, dialog.close)}>保存</button>
         </div>
       </dialog>}
       {dialog?.kind === 'save-as' && <FileLocationDialog key={dialog.drafts[0]} mode="save"
-        title={pendingDraft?.fileId ? '另存为' : '保存新文件'} files={files} formats={textFileTypes}
+        title={pendingDraft?.path ? '另存为' : '保存新文件'} formats={textFileTypes} warning={dialog.warning}
         defaultExtension="txt" initialDirectory={dialog.directory} initialName={dialog.name}
-        onCancel={closeDialog} onCreateFolder={createFolder}
-        onSave={file => saveDrafts(dialog.drafts, dialog.close, { ...file, id: makeId() })} />}
+        onCancel={closeDialog}
+        onSave={(path, conflict) => saveDrafts(dialog.drafts, dialog.close, path, conflict)} />}
     </section>
   )
 }

@@ -1,8 +1,8 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
-import type { Dispatch, DragEvent, KeyboardEvent, MouseEvent, SetStateAction } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import type { DragEvent, KeyboardEvent, MouseEvent } from 'react'
 import {
-  Archive, ArchiveRestore, ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronRight, ClipboardPaste, Copy, Download, Eye, EyeOff, FileText,
-  Folder, FolderOpen, FolderPlus, Grid2X2, House, Info, LayoutList, List, MapPin, MoreHorizontal, Pencil, Scissors, Search, Trash2, Undo2, X,
+  ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronRight, ClipboardPaste, Copy, Download, Eye, EyeOff, HardDrive,
+  Folder, FolderOpen, FolderPlus, Grid2X2, House, Info, LayoutList, List, MapPin, MoreHorizontal, Pencil, RefreshCw, Scissors, Search, Trash2, Upload, X,
 } from 'lucide-react'
 
 import { CommandMenu, type MenuAnchor, type MenuCommand, type MenuGroup } from './CommandMenu'
@@ -10,19 +10,29 @@ import { FileLocationDialog } from './FileLocationDialog'
 import { FileIcon } from './fileIcons'
 
 import {
-  availableName, canTransfer, editableFile, folder, home, homePath, inTrash, locationChain, locationName, transferConflicts, transferFiles, trash, undoFileOperation,
-} from './fileSystem'
-import type { ConflictChoice, Entry, Transfer } from './fileSystem'
+  announceFileChange, canTransfer, downloadFile, editableHostFile, errorMessage,
+  FileError, fileAction, filename, managedFile, parentPath, pathCrumbs, readDirectory,
+  regularFile, subscribeToFileChanges, uploadFile, type Conflict, type HostFile,
+} from './hostFiles'
 
-type Command = MenuCommand & { group: 'open' | 'edit' | 'organize' | 'transfer' | 'history' | 'delete' }
+type Command = MenuCommand & { group: 'open' | 'edit' | 'organize' | 'transfer' | 'delete' }
 type Popup = MenuAnchor & { groups: MenuGroup[]; kind: 'context' | 'actions' | 'layout'; layer: HTMLElement; zIndex: number }
+type Transfer = { kind: 'move' | 'copy'; ids: string[]; target: string }
+type Job =
+  | { kind: 'copy' | 'move' | 'delete'; path: string; target?: string }
+  | { kind: 'upload'; file: File; target: string }
+type Outcome = { job: Job; status: 'success' | 'skipped' | 'conflict' | 'failed'; message: string; retry?: boolean }
 type Modal =
-  | { kind: 'preview'; entry: Entry }
   | { kind: 'destination'; operation: Transfer['kind']; ids: string[] }
-  | { kind: 'conflict'; transfer: Transfer }
+  | { kind: 'delete'; jobs: Job[] }
+  | { kind: 'conflict' }
+  | { kind: 'results' }
 
-const operationLabel = { move: '移动', copy: '复制', extract: '解压' }
+const operationLabel = { move: '移动', copy: '复制' }
 
+function jobName(job: Job) {
+  return job.kind === 'upload' ? job.file.name : filename(job.path)
+}
 type Panel = 'locations' | 'properties'
 
 const layouts = {
@@ -34,19 +44,14 @@ type FileLayout = keyof typeof layouts
 const layoutPreference = 'react-web-desktop-file-layout'
 const layoutKeys = Object.keys(layouts) as FileLayout[]
 const popupLabels = { context: '文件上下文菜单', actions: '更多操作', layout: '文件布局' }
-const quickFolders = [
-  { id: 'docs', Icon: FileText },
-  { id: 'downloads', Icon: Download },
-  { id: 'projects', Icon: Folder },
-]
 const clipboardActions = [
   { label: '剪切', Icon: Scissors },
   { label: '复制', Icon: Copy },
   { label: '粘贴', Icon: ClipboardPaste },
 ]
 const managementActions = [
-  { label: '移到回收站', Icon: Trash2 },
-  { label: '撤销', Icon: Undo2 },
+  { label: '下载', Icon: Download },
+  { label: '永久删除', Icon: Trash2 },
 ]
 
 function readLayout(): FileLayout {
@@ -58,7 +63,7 @@ function readLayout(): FileLayout {
   }
 }
 
-function isHiddenEntry(file: Entry) {
+function isHiddenEntry(file: HostFile) {
   return file.name.startsWith('.')
 }
 
@@ -72,33 +77,38 @@ function fileMenuGroups(commands: Command[]): MenuGroup[] {
       ...group('organize'),
       ...(transfers.length ? [{ label: '移动或复制', icon: Folder, groups: [transfers] }] : []),
     ],
-    group('history'),
     group('delete'),
   ]
 }
 
-export function FileManager({ files, setFiles, makeId, onEdit }: {
-  files: Entry[]
-  setFiles: Dispatch<SetStateAction<Entry[]>>
-  makeId: () => string
-  onEdit: (id: string) => void
-}) {
-  const [history, setHistory] = useState({ locations: [home], index: 0 })
-  const requestedPath = history.locations[history.index]
-  const path = requestedPath === trash || !inTrash(files, requestedPath) && files.some(file => file.id === requestedPath)
-    ? requestedPath : home
+export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
+  const [history, setHistory] = useState({ locations: [] as string[], index: -1 })
+  const [directory, setDirectory] = useState<Awaited<ReturnType<typeof readDirectory>>>()
+  const [loading, setLoading] = useState(true)
+  const [directoryError, setDirectoryError] = useState('')
+  const [address, setAddress] = useState<string>()
+  const [operation, setOperation] = useState('')
+  const [outcomes, setOutcomes] = useState<Outcome[]>([])
+  const operationLock = useRef(false)
+  const currentPath = useRef('')
+  const directoryRequest = useRef<AbortController>(undefined)
+  const navigating = useRef(false)
+  const uploadInput = useRef<HTMLInputElement>(null)
+  const fileDragDepth = useRef(0)
+  const [fileDragging, setFileDragging] = useState(false)
+  const path = directory?.path ?? ''
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<string[]>([])
   const [layout, setLayout] = useState(readLayout)
   const [showHidden, setShowHidden] = useState(false)
   const layoutScrollTarget = useRef<string>(undefined)
   const [clipboard, setClipboard] = useState<{ kind: 'move' | 'copy'; ids: string[] }>()
-  const [undoStack, setUndoStack] = useState<{ before: Entry[]; after: Entry[]; selection: string[]; path: string }[]>([])
   const [feedback, setFeedback] = useState('')
   const [rename, setRename] = useState<{ id: string; name: string }>()
   const [popup, setPopup] = useState<Popup>()
   const popupId = useId()
   const [modal, setModal] = useState<Modal>()
+  const canUpload = !!path && !loading && !directoryError && !operation && !modal
   const [dropTarget, setDropTarget] = useState<string>()
   const dragItems = useRef<string[]>([])
   const anchor = useRef<string>(undefined)
@@ -167,27 +177,28 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     if (panel === 'properties') inspectorClose.current?.focus()
   }, [panel])
 
-  const directoryEntries = files.filter(file => file.parent === path)
+  const directoryEntries = directory?.entries ?? []
   const filter = query.trim().toLocaleLowerCase()
   const entries = directoryEntries.filter(file =>
     (showHidden || !isHiddenEntry(file)) && (!filter || file.name.toLocaleLowerCase().includes(filter)),
   )
   const selectedItems = entries.filter(file => selection.includes(file.id))
   const selected = selectedItems.length === 1 ? selectedItems[0] : undefined
-  const crumbs = locationChain(files, path)
-  const pathText = path === trash ? '回收站' : [homePath, ...crumbs.map(file => file.name)].join('/')
-  const parent = crumbs.at(-1)?.parent
+  const crumbs = pathCrumbs(path)
+  const pathText = path || '主目录'
+  const parent = path && path !== '/' ? parentPath(path) : undefined
   const locations = [
-    { id: home, name: '主目录', Icon: House },
-    ...quickFolders.flatMap(({ id, Icon }) => {
-      const entry = files.find(file => file.id === id && (showHidden || !isHiddenEntry(file)) && !inTrash(files, id))
-      return entry ? [{ id, name: entry.name, Icon }] : []
-    }),
+    { id: directory?.home ?? '', name: '主目录', Icon: House },
+    { id: '/', name: '根目录', Icon: HardDrive },
   ]
-  const clipboardIds = clipboard?.ids.filter(id => files.some(file => file.id === id) && !inTrash(files, id)) ?? []
+  const clipboardIds = clipboard?.ids ?? []
+
+  function rowElement(id: string, selector = '') {
+    return list.current?.querySelector<HTMLButtonElement>(`[data-entry-id="${CSS.escape(id)}"]${selector}`)
+  }
 
   function focusRow(id?: string, preventScroll = true) {
-    const row = id && list.current?.querySelector<HTMLButtonElement>(`[data-entry-id="${id}"] .file-name`)
+    const row = id && rowElement(id, ' .file-name')
     if (row) row.focus({ preventScroll })
     else list.current?.focus({ preventScroll })
   }
@@ -195,7 +206,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
   useLayoutEffect(() => {
     const id = layoutScrollTarget.current
     layoutScrollTarget.current = undefined
-    if (id) list.current?.querySelector(`[data-entry-id="${id}"]`)?.scrollIntoView({ block: 'nearest' })
+    if (id) rowElement(id)?.scrollIntoView({ block: 'nearest' })
   }, [layout])
 
   function changeLayout(next: FileLayout) {
@@ -214,7 +225,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     if (pendingView.current === path) {
       pendingView.current = undefined
       if (list.current) list.current.scrollTop = view?.scroll ?? 0
-      const row = view?.focused && list.current?.querySelector<HTMLButtonElement>(`[data-entry-id="${view.focused}"] .file-name`)
+      const row = view?.focused && rowElement(view.focused, ' .file-name')
       if (row) row.focus({ preventScroll: true })
       else list.current?.focus({ preventScroll: true })
     }
@@ -224,7 +235,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     const id = needsRowFocus.current
     if (id === undefined) return
     needsRowFocus.current = undefined
-    const row = list.current?.querySelector<HTMLButtonElement>(`[data-entry-id="${id}"] .file-name`)
+    const row = rowElement(id, ' .file-name')
     if (row) row.focus()
     else list.current?.focus({ preventScroll: true })
   })
@@ -236,34 +247,74 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     element.querySelector<HTMLElement>('select, button')?.focus()
   }, [modal])
 
-  function navigate(next: string, historyIndex?: number) {
-    if (next === path && historyIndex === undefined) {
-      if (panel) closePanel(panel)
-      return
+  async function loadDirectory(next: string, navigation?: (target: string) => void) {
+    if (!navigation && navigating.current) return
+    directoryRequest.current?.abort()
+    const controller = new AbortController()
+    directoryRequest.current = controller
+    navigating.current = !!navigation
+    setLoading(true)
+    try {
+      const data = await readDirectory(next, controller.signal)
+      if (controller.signal.aborted) return
+      navigation?.(data.path)
+      currentPath.current = data.path
+      setDirectory(data)
+      setDirectoryError('')
+    } catch (error) {
+      if (controller.signal.aborted) return
+      if (navigation && currentPath.current) setFeedback(errorMessage(error))
+      else {
+        setDirectory(previous => previous && { ...previous, entries: [] })
+        setDirectoryError(errorMessage(error))
+      }
+    } finally {
+      if (directoryRequest.current === controller) {
+        navigating.current = false
+        setLoading(false)
+      }
     }
-    views.current.set(path, {
-      selection,
-      scroll: list.current?.scrollTop ?? 0,
-      focused: focusedEntry.current,
+  }
+
+  useEffect(() => {
+    let active = true
+    void Promise.resolve().then(() => {
+      if (!active) return
+      return loadDirectory('', target => setHistory({ locations: [target], index: 0 }))
     })
-    if (next !== path) pendingView.current = next
-    focusedEntry.current = views.current.get(next)?.focused
-    anchor.current = focusedEntry.current
-    setSelection(views.current.get(next)?.selection ?? [])
-    setQuery('')
-    setRename(undefined)
-    setPopup(undefined)
-    setPanel(undefined)
-    setHistory(historyIndex === undefined
-      ? { locations: [...history.locations.slice(0, history.index + 1), next], index: history.index + 1 }
-      : { ...history, index: historyIndex })
+    const unsubscribe = subscribeToFileChanges(() => void loadDirectory(currentPath.current))
+    return () => {
+      active = false
+      directoryRequest.current?.abort()
+      unsubscribe()
+    }
+  }, [])
+
+  function navigate(next: string, historyIndex?: number) {
+    void loadDirectory(next, target => {
+      if (target !== path) {
+        views.current.set(path, { selection, scroll: list.current?.scrollTop ?? 0, focused: focusedEntry.current })
+        pendingView.current = target
+        focusedEntry.current = views.current.get(target)?.focused
+        anchor.current = focusedEntry.current
+        setSelection(views.current.get(target)?.selection ?? [])
+        setQuery('')
+        setRename(undefined)
+        setHistory(historyIndex === undefined
+          ? { locations: [...history.locations.slice(0, history.index + 1), target], index: history.index + 1 }
+          : { ...history, index: historyIndex })
+      }
+      setFeedback('')
+      setAddress(undefined)
+      setPopup(undefined)
+      setPanel(undefined)
+    })
   }
 
   function historyTarget(direction: number) {
-    for (let index = history.index + direction; index >= 0 && index < history.locations.length; index += direction) {
-      const id = history.locations[index]
-      if (id === home || id === trash || files.some(file => file.id === id && !inTrash(files, id))) return { id, index }
-    }
+    const index = history.index + direction
+    const id = history.locations[index]
+    return id ? { id, index } : undefined
   }
 
   function closePanel(which: Panel) {
@@ -281,26 +332,6 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
   const previous = historyTarget(-1)
   const forward = historyTarget(1)
 
-  function commit(next: Entry[], message: string, nextSelection = selection) {
-    setUndoStack(stack => [...stack, { before: files, after: next, selection, path }])
-    setFiles(next)
-    setSelection(nextSelection)
-    setFeedback(message)
-  }
-
-  function undo() {
-    const previous = undoStack.at(-1)
-    if (!previous) return
-    setUndoStack(undoStack.slice(0, -1))
-    setFiles(current => undoFileOperation(previous.before, previous.after, current))
-    if (previous.path === path) {
-      setQuery('')
-      setSelection(previous.selection)
-      needsRowFocus.current = previous.selection[0] ?? ''
-    }
-    setFeedback('已撤销上次文件操作')
-  }
-
   function showModal(next: Modal) {
     if (!modal) modalSource.current = popup?.source ?? (document.activeElement instanceof HTMLElement ? document.activeElement : null)
     if (next.kind === 'destination') dialog.current?.close()
@@ -317,89 +348,135 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     })
   }
 
-  function openEntry(file: Entry) {
-    if (file.directory && path !== trash) navigate(file.id)
-    else if (editableFile(files, file)) onEdit(file.id)
-    else if (!file.directory) showModal({ kind: 'preview', entry: file })
+  function openEntry(file: HostFile) {
+    if (file.directory) navigate(file.id)
+    else if (editableHostFile(file)) onEdit(file.id)
+    else if (regularFile(file)) downloadFile(file.id)
+    else if (file.targetError) setFeedback(file.targetError)
   }
 
-  function createFolder() {
-    const id = makeId()
-    const entry = folder(id, path, availableName(files, path, '新建文件夹'))
-    anchor.current = id
-    setQuery('')
-    commit([...files, entry], `已新建「${entry.name}」`, [id])
-    setRename({ id, name: entry.name })
-  }
-
-  function createDestinationFolder(parent: string, name: string) {
-    const id = makeId()
-    commit([...files, folder(id, parent, name)], `已新建「${name}」`)
-    return id
-  }
-
-  function finishRename() {
-    if (!rename) return
-    const entry = files.find(file => file.id === rename.id)
-    if (!entry) return
-    const name = rename.name.trim()
-    const invalidCharacter = [...name].some(character => character === '/' || character === '\\' || character.charCodeAt(0) < 32)
-    if (!name || name === '.' || name === '..' || invalidCharacter) {
-      setFeedback('请输入有效名称，名称中不能包含斜杠或控制字符')
-      return
-    }
-    if (directoryEntries.some(file => file.id !== entry.id && file.name === name)) {
-      setFeedback(`此位置已有「${name}」，请输入其他名称`)
-      return
-    }
-    setRename(undefined)
-    needsRowFocus.current = entry.id
-    if (name !== entry.name) {
-      if (!name.toLocaleLowerCase().includes(filter)) setQuery('')
-      commit(files.map(file => file.id === entry.id ? { ...file, name } : file), `已重命名为「${name}」`)
-    }
-  }
-
-  function putInTrash(ids: string[]) {
-    commit(files.map(file => ids.includes(file.id) ? { ...file, parent: trash } : file), `已将 ${ids.length} 项移到回收站`, [])
-    needsRowFocus.current = entries.find(entry => !ids.includes(entry.id))?.id ?? ''
-  }
-
-  function executeTransfer(transfer: Transfer, choice: ConflictChoice = 'keep') {
-    const { files: next, completed, skipped } = transferFiles(files, transfer, choice, makeId)
-    if (completed.length) {
-      const nextSelection = transfer.kind === 'move' ? selection.filter(id => !completed.includes(id)) : selection
-      commit(next, `已${operationLabel[transfer.kind]} ${completed.length} 项${skipped ? `，已跳过 ${skipped} 项` : ''}`, nextSelection)
-      if (transfer.kind === 'move' && clipboard?.kind === 'move') {
-        setClipboard({ ...clipboard, ids: clipboard.ids.filter(id => !completed.includes(id)) })
+  async function createFolder() {
+    if (!path || directoryError || operationLock.current) return
+    operationLock.current = true
+    setOperation('正在新建文件夹…')
+    try {
+      for (let number = 0; ; number++) {
+        const name = number ? `新建文件夹 (${number})` : '新建文件夹'
+        try {
+          const result = await fileAction('mkdir', path, { name })
+          if (currentPath.current === path) {
+            setQuery('')
+            setSelection([result.path])
+            setRename({ id: result.path, name })
+          }
+          setFeedback(`已新建「${name}」`)
+          announceFileChange()
+          break
+        } catch (error) {
+          if (!(error instanceof FileError) || error.code !== 'exists') throw error
+        }
       }
-      if (!modal) needsRowFocus.current = nextSelection[0] ?? ''
-    } else setFeedback(`已跳过 ${skipped} 项同名内容`)
+    } catch (error) {
+      setFeedback(errorMessage(error))
+    } finally {
+      operationLock.current = false
+      setOperation('')
+    }
+  }
+
+  async function finishRename() {
+    if (!rename || operationLock.current) return
+    const name = rename.name
+    if (!name || name === '.' || name === '..' || name.includes('/')) {
+      setFeedback('请输入有效名称，名称中不能包含斜杠')
+      return
+    }
+    operationLock.current = true
+    setOperation('正在重命名…')
+    try {
+      const result = await fileAction('rename', rename.id, { name })
+      setRename(undefined)
+      if (currentPath.current === path) {
+        setSelection([result.path])
+        if (!name.toLocaleLowerCase().includes(filter)) setQuery('')
+      }
+      setFeedback(`已重命名为「${name}」`)
+      if (rename.id !== result.path) announceFileChange({ from: rename.id, to: result.path })
+    } catch (error) {
+      setFeedback(error instanceof FileError && error.code === 'exists' ? `此位置已有「${name}」，请输入其他名称` : errorMessage(error))
+    } finally {
+      operationLock.current = false
+      setOperation('')
+    }
+  }
+
+  async function runJobs(jobs: Job[], conflict?: Conflict, previous: Outcome[] = []) {
+    if (!jobs.length || operationLock.current) return
+    operationLock.current = true
+    let results = previous
+    setOutcomes(results)
+    for (const [index, job] of jobs.entries()) {
+      const name = jobName(job)
+      const progress = `${index + 1}/${jobs.length} · ${name}`
+      setOperation(progress)
+      let outcome: Outcome
+      try {
+        const result = job.kind === 'upload'
+          ? await uploadFile(job.target, job.file, conflict, percent => setOperation(`${progress} · ${percent}%`))
+          : await fileAction(job.kind, job.path, { destination: job.target, conflict })
+        outcome = result.skipped
+          ? { job, status: 'skipped', message: '已跳过' }
+          : { job, status: 'success', message: `已完成 · ${result.path}` }
+        if (!result.skipped && job.kind === 'move') {
+          announceFileChange({ from: job.path, to: result.path, copied: result.copied })
+          setClipboard(current => current?.kind === 'move' ? { ...current, ids: current.ids.filter(id => id !== job.path) } : current)
+        }
+      } catch (error) {
+        const fileError = error instanceof FileError ? error : undefined
+        outcome = fileError?.code === 'exists' && job.kind !== 'delete'
+          ? { job, status: 'conflict', message: '目标位置有同名项' }
+          : { job, status: 'failed', message: fileError?.path ? `${errorMessage(error)} · ${fileError.path}` : errorMessage(error),
+            retry: fileError?.code !== 'source_cleanup_failed' }
+      }
+      results = [...results, outcome]
+      setOutcomes(results)
+    }
+    operationLock.current = false
+    setOperation('')
+    const succeeded = results.filter(item => item.status === 'success').length
+    const skipped = results.filter(item => item.status === 'skipped').length
+    const failed = results.filter(item => item.status === 'failed').length
+    const conflicts = results.filter(item => item.status === 'conflict').length
+    setFeedback(`完成 ${succeeded} 项，跳过 ${skipped} 项，失败 ${failed} 项${conflicts ? `，${conflicts} 项待处理` : ''}`)
+    announceFileChange()
+    if (conflicts) showModal({ kind: 'conflict' })
+    else if (failed) showModal({ kind: 'results' })
   }
 
   function requestTransfer(transfer: Transfer) {
-    if (!canTransfer(files, transfer.ids, transfer.target, transfer.kind === 'move')) {
+    if (!canTransfer(transfer.ids, transfer.target, transfer.kind === 'move')) {
       setFeedback('请选择其他目标文件夹')
       return
     }
-    if (transferConflicts(files, transfer).length) showModal({ kind: 'conflict', transfer })
-    else {
-      if (modal) closeModal()
-      executeTransfer(transfer)
-    }
+    if (modal) closeModal()
+    void runJobs(transfer.ids.map(id => ({ kind: transfer.kind, path: id, target: transfer.target })))
   }
 
-  function commandsFor(ids: string[], contextEntry?: Entry): Command[] {
+  function commandsFor(ids: string[], contextEntry?: HostFile): Command[] {
     const entry = ids.length === 1 ? entries.find(file => file.id === ids[0]) : undefined
     const pasteTarget = contextEntry?.directory ?? path
-    const canEdit = path !== trash
+    const canEdit = !!path && !directoryError && !operation
+    const actionable = ids.length > 0 && ids.every(id => entries.some(file => file.id === id && managedFile(file)))
     const result: Command[] = []
-    if (entry && (canEdit || !entry.directory)) result.push({
-      label: entry.directory ? '打开' : entry.archive ? '查看压缩包' : editableFile(files, entry) ? '在文本编辑器中打开' : '预览',
-      icon: entry.directory ? FolderOpen : entry.archive ? Archive : editableFile(files, entry) ? Pencil : Eye,
+    if (entry && (entry.directory || editableHostFile(entry) || entry.targetError)) result.push({
+      label: entry.directory ? '打开' : editableHostFile(entry) ? '在文本编辑器中打开' : '打开链接',
+      icon: entry.directory ? FolderOpen : editableHostFile(entry) ? Pencil : Download,
       group: 'open', shortcut: 'Enter', run: () => openEntry(entry),
     })
-    if (canEdit && ids.length) {
+    if (entry && regularFile(entry)) result.push({
+      label: '下载', icon: Download, group: 'open', run: () => downloadFile(entry.id),
+    })
+    if (canEdit && actionable) {
       if (entry) result.push({ label: '重命名', icon: Pencil, group: 'edit', shortcut: 'F2', run: () => setRename({ id: entry.id, name: entry.name }) })
       for (const kind of ['move', 'copy'] as const) {
         result.push({
@@ -411,22 +488,22 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
           },
         })
       }
-      for (const operation of ['move', 'copy'] as const) result.push({
-        label: `${operationLabel[operation]}到…`, icon: operation === 'move' ? FolderOpen : Copy,
-        group: 'transfer', run: () => showModal({ kind: 'destination', operation, ids }),
-      })
-      if (entry?.archive) result.push({
-        label: '解压到…', icon: ArchiveRestore, group: 'organize', run: () => showModal({ kind: 'destination', operation: 'extract', ids }),
-      })
-      result.push({ label: '移到回收站', icon: Trash2, group: 'delete', danger: true, shortcut: 'Delete', run: () => putInTrash(ids) })
+      for (const operation of ['move', 'copy'] as const) {
+        result.push({
+          label: `${operationLabel[operation]}到…`, icon: operation === 'move' ? FolderOpen : Copy,
+          group: 'transfer', run: () => showModal({ kind: 'destination', operation, ids }),
+        })
+      }
+      result.push({ label: '永久删除', icon: Trash2, group: 'delete', danger: true, shortcut: 'Delete',
+        run: () => showModal({ kind: 'delete', jobs: ids.map(path => ({ kind: 'delete', path })) }) })
     }
     if (canEdit) result.push(
       { label: '新建文件夹', icon: FolderPlus, group: 'organize', shortcut: 'Ctrl+Shift+N', run: createFolder },
+      { label: '上传文件', icon: Upload, group: 'organize', disabled: !canUpload, run: () => uploadInput.current?.click() },
       { label: '粘贴', icon: ClipboardPaste, group: 'edit', shortcut: 'Ctrl+V',
-        disabled: !clipboard || !canTransfer(files, clipboardIds, pasteTarget, clipboard.kind === 'move'),
+        disabled: !clipboard || !canTransfer(clipboardIds, pasteTarget, clipboard.kind === 'move'),
         run: () => { if (clipboard) requestTransfer({ ...clipboard, ids: clipboardIds, target: pasteTarget }) } },
     )
-    result.push({ label: '撤销', icon: Undo2, group: 'history', shortcut: 'Ctrl+Z', disabled: !undoStack.length, run: undo })
     return result
   }
 
@@ -450,7 +527,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     }))], 'layout')
   }
 
-  function contextMenu(event: MouseEvent<HTMLElement>, entry?: Entry) {
+  function contextMenu(event: MouseEvent<HTMLElement>, entry?: HostFile) {
     event.preventDefault()
     event.stopPropagation()
     if (rename) return
@@ -469,7 +546,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     else focusRow(selection[0])
   }
 
-  function select(entry: Entry, extend: boolean, toggle: boolean) {
+  function select(entry: HostFile, extend: boolean, toggle: boolean) {
     const first = entries.findIndex(file => file.id === anchor.current)
     const last = entries.indexOf(entry)
     const range = entries.slice(Math.min(first, last), Math.max(first, last) + 1).map(file => file.id)
@@ -480,6 +557,47 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     }
   }
 
+  function uploadFiles(files: File[]) {
+    if (!canUpload || operationLock.current || !files.length) return
+    setPopup(undefined)
+    void runJobs(files.map(file => ({ kind: 'upload', file, target: path })))
+  }
+
+  function handleFileDragEnter(event: DragEvent) {
+    if (!event.dataTransfer.types.includes('Files')) return
+    fileDragDepth.current++
+    setFileDragging(true)
+  }
+
+  function handleFileDragOver(event: DragEvent) {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = canUpload ? 'copy' : 'none'
+  }
+
+  function handleFileDragLeave() {
+    if (fileDragDepth.current > 0 && --fileDragDepth.current === 0) setFileDragging(false)
+  }
+
+  function handleFileDrop(event: DragEvent) {
+    const transfer = event.dataTransfer
+    if (!transfer.types.includes('Files')) return
+    event.preventDefault()
+    fileDragDepth.current = 0
+    setFileDragging(false)
+    if (!canUpload) return
+    const items = Array.from(transfer.items)
+    const files = items.length
+      ? items.flatMap(item => {
+        if (item.kind !== 'file' || item.webkitGetAsEntry?.()?.isDirectory) return []
+        const file = item.getAsFile()
+        return file ? [file] : []
+      })
+      : Array.from(transfer.files)
+    if (files.length) uploadFiles(files)
+    else setFeedback('请拖入本地文件，文件夹暂不支持上传')
+  }
+
   function clearDrag() {
     dragItems.current = []
     setDropTarget(undefined)
@@ -488,7 +606,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
   function dropHandlers(target: string) {
     return {
       onDragOver(event: DragEvent) {
-        if (!canTransfer(files, dragItems.current, target, true)) return
+        if (!canTransfer(dragItems.current, target, true) || operationLock.current) return
         event.preventDefault()
         event.dataTransfer.dropEffect = 'move'
         setDropTarget(target)
@@ -502,7 +620,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
         event.preventDefault()
         const ids = dragItems.current
         clearDrag()
-        if (canTransfer(files, ids, target, true)) requestTransfer({ kind: 'move', ids, target })
+        if (canTransfer(ids, target, true)) requestTransfer({ kind: 'move', ids, target })
       },
       'data-drop-target': dropTarget === target || undefined,
     }
@@ -583,18 +701,8 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
   }
 
   const selectedIds = selectedItems.map(file => file.id)
-  const pasteAvailable = clipboard && canTransfer(files, clipboardIds, path, clipboard.kind === 'move')
-  const toolbarDisabled: Record<string, boolean> = {
-    剪切: !selectedIds.length,
-    复制: !selectedIds.length,
-    粘贴: !pasteAvailable,
-    移到回收站: !selectedIds.length,
-    撤销: !undoStack.length,
-  }
   const LayoutIcon = layouts[layout].icon
-  const RootIcon = path === trash ? Trash2 : House
-
-  const emptyMessage = filter ? '没有匹配的文件或文件夹' : path === trash ? '回收站为空' : '此文件夹为空'
+  const emptyMessage = loading ? '正在读取目录…' : directoryError || (filter ? '没有匹配的文件或文件夹' : '此文件夹为空')
 
   function changeQuery(value: string) {
     setQuery(value)
@@ -615,10 +723,15 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     setShowHidden(!showHidden)
   }
 
-  function toolbarAction({ label, Icon }: (typeof clipboardActions)[number]) {
+  function toolbarAction({ label, Icon }: { label: string; Icon: typeof Copy }) {
+    const manageable = selectedItems.length > 0 && selectedItems.every(managedFile)
+    const disabled = label === '下载' ? !regularFile(selected)
+      : !!operation || !!directoryError || (label === '粘贴'
+        ? !clipboard || !canTransfer(clipboardIds, path, clipboard.kind === 'move')
+        : !manageable)
     return (
       <button key={label} className="app-control file-tool file-extra-action" aria-label={label} title={label}
-        disabled={toolbarDisabled[label]} onClick={() => commandsFor(selectedIds).find(item => item.label === label)?.run()}>
+        disabled={disabled} onClick={() => commandsFor(selectedIds).find(item => item.label === label)?.run()}>
         <Icon size={16} aria-hidden="true" />
       </button>
     )
@@ -633,7 +746,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     )
   }
 
-  function renderEntry(file: Entry) {
+  function renderEntry(file: HostFile) {
     const active = selection.includes(file.id)
     const editing = rename?.id === file.id
     const details = layout === 'tiles' ? [file.type, file.size].filter(Boolean).join(' · ') : undefined
@@ -641,15 +754,15 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
       'data-entry-id': file.id,
       'data-selected': active,
       'data-cut': clipboard?.kind === 'move' && clipboardIds.includes(file.id),
-      draggable: path !== trash && !editing,
+      draggable: managedFile(file) && !editing && !operation,
       onDragStart(event: DragEvent) {
-        if (editing || path === trash) return event.preventDefault()
-        dragItems.current = active ? selectedItems.map(item => item.id) : [file.id]
+        if (editing || !managedFile(file) || operationLock.current) return event.preventDefault()
+        dragItems.current = active ? selectedItems.filter(managedFile).map(item => item.id) : [file.id]
         event.dataTransfer.effectAllowed = 'move'
         event.dataTransfer.setData('application/x-react-web-desktop-files', 'move')
       },
       onDragEnd: clearDrag,
-      ...(file.directory && path !== trash ? dropHandlers(file.id) : {}),
+      ...(file.directory ? dropHandlers(file.id) : {}),
       onContextMenu: (event: MouseEvent<HTMLElement>) => contextMenu(event, file),
       onClick(event: MouseEvent) {
         if (editing) return
@@ -675,9 +788,7 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
       </form>
     ) : (
       <button className="app-control file-name" aria-pressed={active} aria-label={file.name} aria-description={details}>
-        {layout === 'icons' && file.image
-          ? <img className="file-thumbnail" src={file.image} alt="" draggable={false} />
-          : <FileIcon file={file} />}
+        <FileIcon file={file} />
         <span className="file-name-text">
           <span className="file-display-name" title={file.name}>{file.name}</span>
           {details && <small title={details}>{details}</small>}
@@ -692,13 +803,11 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
     return <li className="file-grid-entry" key={file.id} {...itemProps}>{name}</li>
   }
 
-  function archiveNames(entry: Entry) {
-    return entry.archive?.map(file => [...locationChain(entry.archive ?? [], file.parent).map(parent => parent.name), file.name].join('/'))
-  }
-
   return (
     <div ref={root} className="file-manager @container/app" data-panel={panel}
-      data-inspector-collapsed={inspectorCollapsed} onKeyDown={handleKey}>
+      data-inspector-collapsed={inspectorCollapsed} onKeyDown={handleKey}
+      onDragEnter={handleFileDragEnter} onDragOver={handleFileDragOver}
+      onDragLeave={handleFileDragLeave} onDrop={handleFileDrop}>
       <div className="file-toolbar file-navigation">
         <div className="file-tool-group" role="group" aria-label="目录导航">
           <button className="app-control file-tool" aria-label="返回" title="返回" disabled={!previous}
@@ -707,24 +816,39 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
             onClick={() => forward && navigate(forward.id, forward.index)}><ArrowRight size={16} aria-hidden="true" /></button>
           <button className="app-control file-tool" aria-label="上一级" title="上一级" disabled={!parent}
             onClick={() => parent && navigate(parent)}><ArrowUp size={16} aria-hidden="true" /></button>
+          <button className="app-control file-tool" aria-label="刷新" title="刷新" onClick={() => void loadDirectory(path)}>
+            <RefreshCw size={16} aria-hidden="true" />
+          </button>
         </div>
-        <nav className="file-path" aria-label="当前路径" title={pathText}>
+        {address !== undefined ? <form className="file-address-form" onSubmit={event => {
+          event.preventDefault()
+          if (address.startsWith('/')) navigate(address)
+          else setFeedback('请输入以 / 开头的绝对路径')
+        }}>
+          <input autoFocus aria-label="绝对路径" value={address} onChange={event => setAddress(event.target.value)}
+            onFocus={event => event.target.select()} onKeyDown={event => {
+              if (event.key === 'Escape') { event.stopPropagation(); setAddress(undefined) }
+            }} />
+          <button className="app-control" type="submit">前往</button>
+        </form> : <nav className="file-path" aria-label="当前路径" title={pathText}>
           <ol>
-            {[{ id: path === trash ? trash : home, name: locationName(path) }, ...crumbs].map((crumb, index) => (
+            {crumbs.map((crumb, index) => (
               <li key={crumb.id}>
                 {index > 0 && <ChevronRight size={13} aria-hidden="true" />}
                 {crumb.id === path
                   ? <span aria-current="page" ref={element => {
                     const nav = element?.closest('nav')
                     if (nav) nav.scrollLeft = nav.scrollWidth
-                  }}>{index === 0 && <RootIcon size={15} aria-hidden="true" />}{crumb.name}</span>
+                  }}>{index === 0 && <HardDrive size={15} aria-hidden="true" />}{crumb.name}</span>
                   : <button className="app-control" onClick={() => navigate(crumb.id)}>
-                    {index === 0 && <RootIcon size={15} aria-hidden="true" />}{crumb.name}
+                    {index === 0 && <HardDrive size={15} aria-hidden="true" />}{crumb.name}
                   </button>}
               </li>
             ))}
           </ol>
-        </nav>
+        </nav>}
+        <button className="app-control file-tool" aria-label="输入绝对路径" title="输入绝对路径"
+          onClick={() => setAddress(address === undefined ? path : undefined)}><Pencil size={15} aria-hidden="true" /></button>
         <label className="file-search">
           <Search size={16} aria-hidden="true" />
           <input ref={search} type="search" aria-label="搜索当前文件夹" placeholder="搜索文件"
@@ -736,14 +860,24 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
           aria-expanded={panel === 'locations'} onClick={() => panel === 'locations' ? closePanel('locations') : setPanel('locations')}>
           <MapPin size={16} aria-hidden="true" /><span>位置</span>
         </button>
-        {path !== trash && <button className="app-control primary-control" onClick={createFolder} title="新建文件夹 (Ctrl+Shift+N)" aria-label="新建文件夹">
+        <button className="app-control primary-control" disabled={!path || !!directoryError || !!operation}
+          onClick={createFolder} title="新建文件夹 (Ctrl+Shift+N)" aria-label="新建文件夹">
           <FolderPlus size={16} aria-hidden="true" /><span className="file-new-label">新建文件夹</span>
-        </button>}
-        {path !== trash && <div className="file-tool-group file-extra-tools" role="group" aria-label="剪贴板">
+        </button>
+        <button className="app-control file-tool" aria-label="上传文件" title="上传文件"
+          disabled={!canUpload} onClick={() => uploadInput.current?.click()}>
+          <Upload size={16} aria-hidden="true" />
+        </button>
+        <input ref={uploadInput} type="file" aria-label="选择上传文件" hidden multiple onChange={event => {
+          const files = Array.from(event.target.files ?? [])
+          event.target.value = ''
+          uploadFiles(files)
+        }} />
+        <div className="file-tool-group file-extra-tools" role="group" aria-label="剪贴板">
           {clipboardActions.map(toolbarAction)}
-        </div>}
+        </div>
         <div className="file-tool-group file-extra-tools" role="group" aria-label="管理文件">
-          {(path === trash ? managementActions.slice(1) : managementActions).map(toolbarAction)}
+          {managementActions.map(toolbarAction)}
         </div>
         <button ref={more} className="app-control file-tool file-more" aria-label="更多" title="更多操作"
           aria-haspopup="menu" aria-expanded={popup?.kind === 'actions'}
@@ -795,10 +929,6 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
             <h3>快速访问</h3>
             {locations.map(locationItem)}
           </div>
-          <div className="file-location-group">
-            <h3>其他位置</h3>
-            {locationItem({ id: trash, name: '回收站', Icon: Trash2 })}
-          </div>
         </nav>
         <div ref={list} className="file-list" role="region" aria-label={layout === 'list' ? '文件列表' : '文件'} tabIndex={0}
           onContextMenu={event => contextMenu(event)}
@@ -836,49 +966,59 @@ export function FileManager({ files, setFiles, makeId, onEdit }: {
               <div><dt>位置</dt><dd>{pathText}</dd></div>
               {selected.size && <div><dt>大小</dt><dd>{selected.size}</dd></div>}
             </dl>
-            {!(selected.directory && path === trash) && <button className="app-control file-open" onClick={() => openEntry(selected)}>
-              {selected.directory ? '打开文件夹' : selected.archive ? '查看压缩包' : editableFile(files, selected) ? '在文本编辑器中打开' : '预览文件'}
+            {(selected.directory || regularFile(selected) || selected.targetError) && <button className="app-control file-open" onClick={() => openEntry(selected)}>
+              {selected.directory ? '打开文件夹' : editableHostFile(selected) ? '在文本编辑器中打开' : regularFile(selected) ? '下载' : '打开链接'}
             </button>}
           </> : <p className="muted">{selectedItems.length ? `已选中 ${selectedItems.length} 项` : '选择文件或文件夹以查看属性。'}</p>}
         </aside>
       </div>
       <footer className="app-statusbar file-status">
         <span>{selectedItems.length ? `已选中 ${selectedItems.length} 项` : `${entries.length} 项`}</span>
-        <span role="status" title={feedback}>{feedback}</span>
-        {undoStack.length > 0 && <button className="app-control" onClick={undo}>撤销</button>}
+        <span role="status" title={operation || feedback}>{operation || feedback}</span>
+        {outcomes.length > 0 && <button className="app-control" disabled={!!operation} onClick={() =>
+          showModal({ kind: outcomes.some(item => item.status === 'conflict') ? 'conflict' : 'results' })}>操作结果</button>}
       </footer>
+      {fileDragging && canUpload && <div className="file-upload-drop" aria-hidden="true">
+        <span><Upload size={18} />松开以上传到当前目录</span>
+      </div>}
       {popup && <CommandMenu key={popup.kind} id={popupId} label={popupLabels[popup.kind]}
         variant={popup.kind === 'layout' ? 'choice' : undefined}
         anchor={popup} groups={popup.groups} layer={popup.layer}
         boundary={popup.kind === 'layout' ? popup.source.closest<HTMLElement>('[data-app-window]') ?? popup.layer : popup.layer}
         zIndex={popup.zIndex}
         onClose={() => setPopup(undefined)} restoreFocus={() => restorePopupFocus(popup.source)} />}
-      {modal?.kind === 'destination' && <FileLocationDialog mode="folder" files={files}
+      {modal?.kind === 'destination' && <FileLocationDialog mode="folder" initialDirectory={path}
         title={`${operationLabel[modal.operation]}到…`} actionLabel={operationLabel[modal.operation]}
-        canSelect={directory => canTransfer(files, modal.ids, directory, modal.operation === 'move')}
+        canSelect={directory => canTransfer(modal.ids, directory, modal.operation === 'move')}
         onSelect={target => requestTransfer({ kind: modal.operation, ids: modal.ids, target })}
-        onCreateFolder={createDestinationFolder} onCancel={() => closeModal()} />}
+        onCancel={() => closeModal()} />}
       {modal && modal.kind !== 'destination' && <dialog className="service-dialog file-dialog" ref={dialog} aria-labelledby="file-dialog-title"
         onCancel={event => { event.preventDefault(); event.stopPropagation(); closeModal() }}>
         <div className="service-dialog-body">
-          <h2 id="file-dialog-title">{modal.kind === 'preview' ? modal.entry.name : '目标目录已有同名项'}</h2>
-          {modal.kind === 'preview' && (modal.entry.archive
-            ? <ul className="file-archive-list">{archiveNames(modal.entry)?.map(name => <li key={name}>{name}</li>)}</ul>
-            : modal.entry.image ? <img className="file-image-preview" src={modal.entry.image} alt={modal.entry.name} />
-              : <pre className="file-preview">{modal.entry.content ?? '暂无预览内容'}</pre>)}
-          {modal.kind === 'conflict' && <>
-            <ul className="file-archive-list">{transferConflicts(files, modal.transfer).map(file => <li key={file.id}>{file.name}</li>)}</ul>
-            <p className="muted">替换会将目标中的旧项移到回收站。同目录复制时，源项始终保留。</p>
-          </>}
+          <h2 id="file-dialog-title">{modal.kind === 'delete' ? `永久删除 ${modal.jobs.length} 项？`
+            : modal.kind === 'conflict' ? '目标位置有同名项' : '操作结果'}</h2>
+          {modal.kind === 'delete' ? <ul className="file-dialog-list">{modal.jobs.map(job => <li key={jobName(job)}>{jobName(job)}</li>)}</ul>
+            : <ul className="file-dialog-list">{outcomes.map((item, index) => (
+              <li key={index}>
+                <strong>{jobName(item.job)}</strong> · {item.message}
+                {item.retry && <button className="app-control" onClick={() => {
+                  closeModal()
+                  void runJobs([item.job], undefined, outcomes.filter(outcome => outcome !== item))
+                }}>重试</button>}
+              </li>
+            ))}</ul>}
         </div>
         <div className="service-dialog-actions">
-          <button className="app-control" onClick={() => closeModal()}>{modal.kind === 'preview' ? '关闭' : '取消'}</button>
-          {modal.kind === 'preview' && modal.entry.archive && path !== trash && <button className="app-control"
-            onClick={() => showModal({ kind: 'destination', operation: 'extract', ids: [modal.entry.id] })}>解压到…</button>}
-          {modal.kind === 'conflict' && ([['skip', '跳过同名项'], ['replace', '替换'], ['keep', '保留两者']] as const).map(([choice, label]) =>
+          <button className="app-control" onClick={() => closeModal()}>{modal.kind === 'results' ? '关闭' : '取消'}</button>
+          {modal.kind === 'delete' && <button className="app-control" onClick={() => {
+            closeModal()
+            void runJobs(modal.jobs)
+          }}>永久删除</button>}
+          {modal.kind === 'conflict' && ([['skip', '跳过同名项'], ['keep', '保留两者']] as const).map(([choice, label]) =>
             <button key={choice} className="app-control" onClick={() => {
               closeModal()
-              executeTransfer(modal.transfer, choice)
+              void runJobs(outcomes.filter(item => item.status === 'conflict').map(item => item.job), choice,
+                outcomes.filter(item => item.status !== 'conflict'))
             }}>{label}</button>)}
         </div>
       </dialog>}

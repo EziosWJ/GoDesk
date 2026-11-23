@@ -110,13 +110,8 @@ func logout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Store) changePassword(w http.ResponseWriter, r *http.Request) {
-	current, err := s.read(r.Context())
-	if err != nil && !errors.Is(err, ErrNotInitialized) {
-		internalError(w, err)
-		return
-	}
-	if err != nil || sessionExpiry(r, current.signingKey) == nil {
-		http.Error(w, "login required", http.StatusUnauthorized)
+	current, ok := s.authenticated(w, r)
+	if !ok {
 		return
 	}
 	form, ok := readPassword(w, r)
@@ -138,6 +133,27 @@ func (s *Store) changePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startSession(w, r, next.signingKey)
+}
+
+func (s *Store) RequireSession(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, ok := s.authenticated(w, r); ok {
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+func (s *Store) authenticated(w http.ResponseWriter, r *http.Request) (credentials, bool) {
+	current, err := s.read(r.Context())
+	if err != nil && !errors.Is(err, ErrNotInitialized) {
+		internalError(w, err)
+		return current, false
+	}
+	if err != nil || sessionExpiry(r, current.signingKey) == nil {
+		http.Error(w, "login required", http.StatusUnauthorized)
+		return current, false
+	}
+	return current, true
 }
 
 func requireJSON(w http.ResponseWriter, r *http.Request) bool {

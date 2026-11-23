@@ -13,13 +13,13 @@ goDesk 首版面向一台 Linux 被管理主机和一位操作者。后端以普
 | 登录凭证 | `github.com/golang-jwt/jwt/v5` |
 | 主机终端 | `os/exec`、`github.com/creack/pty`、`github.com/coder/websocket` |
 | 系统指标和网卡地址 | `github.com/shirou/gopsutil/v4`、标准库 `net` |
-| 文件操作 | 标准库 `os`、`io`、`path/filepath` |
+| 文件操作 | 标准库 `os`、`io`、`path/filepath` 和 `golang.org/x/sys/unix` 的 Linux 无覆盖重命名 |
 | 生产前端产物 | 标准库 `embed`、`io/fs`、`net/http` |
 
 ## 首版功能
 
 - **初始化与登录**。首次访问未初始化实例时设置密码并自动登录。密码哈希和 JWT 签名密钥保存在 SQLite。有效期 7 天的 JWT 通过持久 `HttpOnly` Cookie 携带，关闭浏览器或重启 goDesk 后仍可恢复登录。支持网页改密、退出和 CLI 重置密码。行为与接口见 [认证文档](../../docs/authentication.md)。
-- **文件管理器**。浏览目录、创建目录、上传、下载、重命名、复制、移动和永久删除。使用主机绝对路径，操作权限取决于运行 goDesk 的 Linux 账号。上传和下载使用流式传输。回收站、撤销和 ZIP 解压排到后续。
+- **文件管理器**。浏览目录、创建目录、上传、下载、重命名、复制、移动和永久删除。使用主机绝对路径，操作权限取决于运行 goDesk 的 Linux 账号。上传和下载使用流式传输。文本编辑器与文件管理器共用主机文件。交互、失败处理和接口见 [文件管理契约](../../docs/file-management.md)。
 - **终端**。每个窗口通过 WebSocket 连接一个由 PTY 驱动的真实 Shell，支持输入、输出和窗口尺寸调整。连接断开后保留会话五分钟，浏览器刷新可以在期限内重新接入。主动关闭立即结束会话，超时清理，goDesk 重启后开启新会话。会话保存在进程内存中。
 - **系统监控**。每秒采集 CPU、内存、磁盘用量和网卡收发速率，保留最近一分钟的采样供前端轮询。每块网卡同时提供名称、MAC、IPv4 和 IPv6 地址。
 - **系统设置**。后端读取网络、主机名、系统版本、运行时长和当前时区。网络、主机和时区在前端提供可编辑表单，保存时提示主机写入功能将在后续提供。主题与显示语言按浏览器保存。
@@ -27,7 +27,7 @@ goDesk 首版面向一台 Linux 被管理主机和一位操作者。后端以普
 ## 服务结构
 
 - `backend/cmd/godesk` 是服务入口，负责启动参数、SQLite 连接、HTTP 服务和退出处理。
-- `backend/internal/httpserver` 集中注册路由，后续在这里接入统一的登录校验。各功能随实际实现拆为 `backend/internal/` 下的独立包。
+- `backend/internal/httpserver` 集中注册路由，并对文件接口接入统一的登录校验。各功能随实际实现拆为 `backend/internal/` 下的独立包。
 - 业务 API 使用 `/api/v1`，普通请求以 JSON 为主，文件传输和终端分别使用 HTTP 数据流和 WebSocket。登录校验覆盖业务 API 和终端连接，初始化、登录和健康检查入口可在登录前访问。
 - 默认监听 `0.0.0.0:8080`，用 `-listen` 覆盖。默认数据目录是 `./data`，用 `-data-dir` 覆盖，SQLite 文件名为 `godesk.db`。
 

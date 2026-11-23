@@ -29,15 +29,6 @@ export function textFileType(name: string) {
   return Object.hasOwn(textFileTypes, extension) ? textFileTypes[extension as keyof typeof textFileTypes] : undefined
 }
 
-export function editableFile(files: Entry[], entry: Entry) {
-  return !entry.directory && !entry.archive && !!textFileType(entry.name) && !inTrash(files, entry.id)
-}
-
-export function textFileSize(text: string) {
-  const bytes = new TextEncoder().encode(text).length
-  return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
-}
-
 export function folder(id: string, parent: string, name: string): Entry {
   return { id, parent, name, type: '文件夹', directory: id }
 }
@@ -78,86 +69,4 @@ export function locationChain(files: Entry[], id: string) {
 
 export function inTrash(files: Entry[], id: string) {
   return id === trash || locationChain(files, id)[0]?.parent === trash
-}
-
-export function locationName(id: string) {
-  return id === trash ? '回收站' : '主目录'
-}
-
-export function canTransfer(files: Entry[], ids: string[], target: string, move: boolean) {
-  if (!ids.length || inTrash(files, target) || (target !== home && !files.some(file => file.id === target && file.directory))) return false
-  if (locationChain(files, target).some(file => ids.includes(file.id))) return false
-  return ids.every(id => files.some(file => file.id === id && (!move || file.parent !== target)) && !inTrash(files, id))
-}
-
-export type Transfer = { kind: 'move' | 'copy' | 'extract'; ids: string[]; target: string }
-export type ConflictChoice = 'keep' | 'replace' | 'skip'
-
-function sourceEntries(files: Entry[], transfer: Transfer) {
-  const archive = transfer.kind === 'extract' ? files.find(file => file.id === transfer.ids[0])?.archive ?? [] : files
-  return { archive, entries: archive.filter(file => transfer.kind === 'extract' ? file.parent === home : transfer.ids.includes(file.id)) }
-}
-
-export function transferConflicts(files: Entry[], transfer: Transfer) {
-  return sourceEntries(files, transfer).entries.filter(source =>
-    files.some(file => file.parent === transfer.target && file.name === source.name),
-  )
-}
-
-export function availableName(files: Entry[], parent: string, name: string) {
-  const taken = (candidate: string) => files.some(file => file.parent === parent && file.name === candidate)
-  const extension = name.lastIndexOf('.')
-  const base = extension > 0 ? name.slice(0, extension) : name
-  const suffix = extension > 0 ? name.slice(extension) : ''
-  let candidate = name
-  for (let index = 2; taken(candidate); index++) candidate = `${base} (${index})${suffix}`
-  return candidate
-}
-
-export function undoFileOperation(before: Entry[], after: Entry[], current: Entry[]) {
-  const oldEntries = new Map(before.map(entry => [entry.id, entry]))
-  const operationEntries = new Map(after.map(entry => [entry.id, entry]))
-  const currentEntries = new Map(current.map(entry => [entry.id, entry]))
-  const restored = before.map(entry => {
-    const latest = currentEntries.get(entry.id)
-    if (!latest) return entry
-    if (entry === operationEntries.get(entry.id)) return latest
-    return { ...latest, name: entry.name, parent: entry.parent }
-  })
-  for (const entry of current) {
-    if (oldEntries.has(entry.id) || operationEntries.has(entry.id)) continue
-    // A document saved after the operation can outlive the folder the operation created.
-    const parent = operationEntries.has(entry.parent) && !oldEntries.has(entry.parent) ? home : entry.parent
-    const name = availableName(restored, parent, entry.name)
-    restored.push(parent === entry.parent && entry.name === name ? entry : { ...entry, parent, name })
-  }
-  return restored
-}
-
-export function transferFiles(files: Entry[], transfer: Transfer, choice: ConflictChoice, makeId: () => string) {
-  const { archive, entries } = sourceEntries(files, transfer)
-  let next = [...files]
-  const completed: string[] = []
-
-  function clone(entry: Entry, parent: string, name: string) {
-    const id = makeId()
-    next.push({ ...entry, id, parent, name, directory: entry.directory ? id : undefined })
-    for (const child of archive.filter(file => file.parent === entry.id)) clone(child, id, child.name)
-  }
-
-  for (const entry of entries) {
-    const collision = files.find(file => file.parent === transfer.target && file.name === entry.name)
-    if (collision && choice === 'skip') continue
-    // Keep the source of a same-folder copy and the ancestry of an item being copied.
-    const replace = collision && choice === 'replace' && !transfer.ids.includes(collision.id)
-      && !entries.some(source => locationChain(files, source.id).some(ancestor => ancestor.id === collision.id))
-    if (replace) next = next.map(file => file.id === collision.id ? { ...file, parent: trash } : file)
-    const reserved = entries.filter(source => source.id !== entry.id).map(source => ({ ...source, parent: transfer.target }))
-    const name = availableName([...next, ...reserved], transfer.target, entry.name)
-    if (transfer.kind === 'move') next = next.map(file => file.id === entry.id ? { ...file, parent: transfer.target, name } : file)
-    else clone(entry, transfer.target, name)
-    completed.push(entry.id)
-  }
-
-  return { files: next, completed, skipped: entries.length - completed.length }
 }

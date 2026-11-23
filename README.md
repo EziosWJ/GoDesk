@@ -1,14 +1,14 @@
 # goDesk
 
-goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当前版本提供桌面前端、操作者认证和 SQLite 就绪检查。
+goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当前版本提供桌面前端、操作者认证、主机文件管理、文本编辑和 SQLite 就绪检查。
 
 ![goDesk 桌面与文件管理器](frontend/docs/screenshots/desktop-light.png)
 
 ## 当前功能
 
 - 首次访问时创建操作者密码。登录会话持续 7 天，关闭浏览器或重启服务后可继续使用有效会话。
-- 前端提供文件管理器、文本编辑器、终端、系统监控、服务管理和设置。主机相关应用目前仍使用浏览器内的示例逻辑，后续实现范围见 [首版规格](.scratch/backend-v1/spec.md)。
-- 发布构建将前端资源嵌入 Go 二进制，由同一个进程提供桌面、认证接口和健康检查。
+- 文件管理器和文本编辑器可读写 Linux 主机文件，使用运行 goDesk 的账号权限。终端、系统监控、服务管理和主机设置仍使用示例逻辑，后续实现范围见 [首版规格](.scratch/backend-v1/spec.md)。
+- 发布构建将前端资源嵌入 Go 二进制，由同一个进程提供桌面、认证接口、文件接口和健康检查。
 
 ## 项目结构
 
@@ -55,7 +55,7 @@ make build
 | 命令或选项 | 用途 |
 | --- | --- |
 | `make build` | 构建并嵌入静态资源，生成 `./godesk`。 |
-| `make build-backend` | 生成提供认证接口和健康检查的纯后端二进制。 |
+| `make build-backend` | 生成提供认证接口、文件接口和健康检查的纯后端二进制。 |
 | `make help` | 列出构建和开发命令。 |
 | `OUTPUT` | 覆盖二进制路径，例如 `make build OUTPUT=/tmp/godesk`。 |
 | `FRONTEND_DIR` | 覆盖用于开发和构建的前端源码目录，默认为 `frontend`。 |
@@ -75,6 +75,7 @@ make build
 ## 相关文档
 
 - [认证行为与 HTTP 接口](docs/authentication.md)
+- [文件管理与文本编辑契约](docs/file-management.md)
 - [前端使用与开发说明](frontend/README.md)
 - [UI 设计规范](frontend/docs/ui-design/01-design-principles.md)
 - [项目术语](GLOSSARY.md)

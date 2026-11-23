@@ -27,12 +27,13 @@ const (
 var errShuttingDown = errors.New("terminal manager is shutting down")
 
 type Summary struct {
-	ID              string     `json:"id"`
-	Name            string     `json:"name"`
-	CreatedAt       time.Time  `json:"createdAt"`
-	LastAttachedAt  *time.Time `json:"lastAttachedAt"`
-	Attached        bool       `json:"attached"`
-	ScrollbackLines int32      `json:"scrollbackLines"`
+	ID                 string     `json:"id"`
+	Name               string     `json:"name"`
+	CreatedAt          time.Time  `json:"createdAt"`
+	LastAttachedAt     *time.Time `json:"lastAttachedAt"`
+	Attached           bool       `json:"attached"`
+	ControllerClientID *string    `json:"controllerClientId"`
+	ScrollbackLines    int32      `json:"scrollbackLines"`
 }
 
 type Manager struct {
@@ -45,26 +46,42 @@ type Manager struct {
 }
 
 type session struct {
-	mu       sync.Mutex
-	summary  Summary
-	cmd      *exec.Cmd
-	pty      *os.File
-	control  syscall.RawConn
-	display  *display
-	ended    bool
-	attached *connection
+	mu          sync.Mutex
+	summary     Summary
+	cmd         *exec.Cmd
+	pty         *os.File
+	control     syscall.RawConn
+	display     *display
+	ended       bool
+	connections map[string]*connection
+	controller  *connection
 }
 
 type connection struct {
 	clientID string
-	output   chan []byte
+	output   chan terminalFrame
 	done     chan struct{}
 	reason   int
 }
 
+type terminalFrame struct {
+	output []byte
+	event  any
+}
+
+type controlEvent struct {
+	Type       string `json:"type"`
+	Controller bool   `json:"controller"`
+}
+
+type resizeEvent struct {
+	Type string `json:"type"`
+	Cols int    `json:"cols"`
+	Rows int    `json:"rows"`
+}
+
 const (
 	closeEnded   = 4404
-	closeBusy    = 4409
 	closeRetry   = 1013
 	closeReplace = 1000
 )
@@ -82,7 +99,7 @@ func (m *Manager) list() []Summary {
 	for _, s := range m.sessions {
 		s.mu.Lock()
 		if !s.ended {
-			list = append(list, s.summary)
+			list = append(list, s.summaryLocked())
 		}
 		s.mu.Unlock()
 	}
@@ -134,7 +151,7 @@ func (m *Manager) start(settings Settings) (Summary, error) {
 		ID: rand.Text(), Name: fmt.Sprintf("终端 %d", m.next),
 		CreatedAt: time.Now().UTC(), ScrollbackLines: settings.ScrollbackLines,
 	}
-	s := &session{summary: summary, cmd: cmd, pty: file, control: control}
+	s := &session{summary: summary, cmd: cmd, pty: file, control: control, connections: make(map[string]*connection)}
 	s.display = newDisplay(int(settings.ScrollbackLines), s.reply)
 	m.sessions[summary.ID] = s
 	m.workers.Go(func() { m.run(s) })
@@ -207,11 +224,11 @@ func (s *session) finish(kill bool) bool {
 	_ = s.pty.Close()
 	s.display.close()
 	s.display = nil
-	if s.attached != nil {
-		s.attached.close(closeEnded)
-		s.attached = nil
-		s.summary.Attached = false
+	for _, conn := range s.connections {
+		conn.close(closeEnded)
 	}
+	clear(s.connections)
+	s.controller = nil
 	return true
 }
 
@@ -222,7 +239,16 @@ func (s *session) rename(name string) (Summary, bool) {
 		return Summary{}, false
 	}
 	s.summary.Name = name
-	return s.summary, true
+	return s.summaryLocked(), true
+}
+
+func (s *session) summaryLocked() Summary {
+	summary := s.summary
+	summary.Attached = len(s.connections) > 0
+	if s.controller != nil {
+		summary.ControllerClientID = &s.controller.clientID
+	}
+	return summary
 }
 
 func (s *session) attach(clientID string, takeover bool) (*connection, snapshot, int) {
@@ -232,31 +258,71 @@ func (s *session) attach(clientID string, takeover bool) (*connection, snapshot,
 	if s.ended {
 		return nil, snapshot{}, closeEnded
 	}
-	if current := s.attached; current != nil {
-		sameWindow := clientID != "" && current.clientID == clientID
-		if !sameWindow && !takeover {
-			return nil, snapshot{}, closeBusy
-		}
-		reason := closeBusy
-		if sameWindow {
-			reason = closeReplace
-		}
-		current.close(reason)
+	if clientID == "" {
+		clientID = rand.Text()
 	}
-	conn := &connection{clientID: clientID, output: make(chan []byte, 64), done: make(chan struct{})}
+	previous := s.connections[clientID]
+	controls := len(s.connections) == 0 || (previous != nil && previous == s.controller) || takeover
+	if previous != nil {
+		s.removeConnection(previous)
+		previous.close(closeReplace)
+	}
+	conn := &connection{clientID: clientID, output: make(chan terminalFrame, 64), done: make(chan struct{})}
+	s.connections[clientID] = conn
+	if controls {
+		s.setController(conn, false)
+	}
 	now := time.Now().UTC()
 	s.summary.LastAttachedAt = &now
-	s.summary.Attached = true
-	s.attached = conn
-	return conn, s.display.snapshot(), 0
+	initial := s.display.snapshot()
+	initial.Controller = controls
+	return conn, initial, 0
 }
 
 func (s *session) detach(conn *connection) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.attached == conn {
-		s.attached = nil
-		s.summary.Attached = false
+	s.removeConnection(conn)
+}
+
+func (s *session) removeConnection(conn *connection) {
+	if s.connections[conn.clientID] != conn {
+		return
+	}
+	delete(s.connections, conn.clientID)
+	if s.controller == conn {
+		s.controller = nil
+	}
+}
+
+func (s *session) takeControl(conn *connection) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.connections[conn.clientID] == conn {
+		s.setController(conn, true)
+	}
+}
+
+func (s *session) setController(conn *connection, notify bool) {
+	previous := s.controller
+	if previous == conn {
+		return
+	}
+	s.controller = conn
+	if previous != nil {
+		s.deliver(previous, terminalFrame{event: controlEvent{Type: "control", Controller: false}})
+	}
+	if notify {
+		s.deliver(conn, terminalFrame{event: controlEvent{Type: "control", Controller: true}})
+	}
+}
+
+func (s *session) deliver(conn *connection, frame terminalFrame) {
+	select {
+	case conn.output <- frame:
+	default:
+		s.removeConnection(conn)
+		conn.close(closeRetry)
 	}
 }
 
@@ -279,14 +345,11 @@ func (s *session) recordOutput(data []byte) {
 	if s.ended {
 		return
 	}
-	s.display.write(data, s.attached == nil)
-	if current := s.attached; current != nil {
-		select {
-		case current.output <- slices.Clone(data):
-		default:
-			current.close(closeRetry)
-			s.attached = nil
-			s.summary.Attached = false
+	s.display.write(data, s.controller == nil)
+	if len(s.connections) > 0 {
+		frame := terminalFrame{output: slices.Clone(data)}
+		for _, conn := range s.connections {
+			s.deliver(conn, frame)
 		}
 	}
 }
@@ -310,9 +373,13 @@ func (s *session) writePTY(data []byte) (n int, err error) {
 func (s *session) input(ctx context.Context, conn *connection, data []byte) error {
 	for len(data) > 0 {
 		s.mu.Lock()
-		if s.attached != conn {
+		if s.connections[conn.clientID] != conn {
 			s.mu.Unlock()
 			return io.ErrClosedPipe
+		}
+		if s.controller != conn {
+			s.mu.Unlock()
+			return nil
 		}
 		n, err := s.writePTY(data)
 		s.mu.Unlock()
@@ -342,7 +409,7 @@ func (s *session) resize(conn *connection, cols, rows int) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.attached != conn || (cols == s.display.Width() && rows == s.display.Height()) {
+	if s.controller != conn || (cols == s.display.Width() && rows == s.display.Height()) {
 		return
 	}
 	var resizeErr error
@@ -350,5 +417,9 @@ func (s *session) resize(conn *connection, cols, rows int) {
 		resizeErr = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ, &unix.Winsize{Col: uint16(cols), Row: uint16(rows)})
 	}); err == nil && resizeErr == nil {
 		s.display.resize(cols, rows)
+		frame := terminalFrame{event: resizeEvent{Type: "resize", Cols: cols, Rows: rows}}
+		for _, viewer := range s.connections {
+			s.deliver(viewer, frame)
+		}
 	}
 }

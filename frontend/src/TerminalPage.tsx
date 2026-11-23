@@ -1,33 +1,37 @@
 import { useEffect, useRef, useState } from 'react'
-import { List } from 'lucide-react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { connectTerminal, terminalApi, type TerminalSession } from './terminal'
+import { connectTerminal, type TerminalSession } from './terminal'
 
 const connectionLabels = {
   connecting: '正在连接…',
-  connected: '已连接',
+  controller: '可输入',
+  viewer: '只读',
   reconnecting: '连接中断，正在重连…',
-  busy: '会话已在其他位置打开',
   ended: '会话已结束',
 }
 type ConnectionStatus = keyof typeof connectionLabels
 type Size = { cols: number; rows: number }
-type Snapshot = Size & { type: 'snapshot'; output: string }
+type TerminalEvent =
+  | (Size & { type: 'snapshot'; output: string; controller: boolean })
+  | (Size & { type: 'resize' })
+  | { type: 'control'; controller: boolean }
 
-export default function TerminalPage({ session, active, closing, initialTakeover, onManage }: {
+export default function TerminalPage({ session, clientId, controlRequest, active, closing }: {
   session: TerminalSession
+  clientId: string
+  controlRequest: number
   active: boolean
   closing: boolean
-  initialTakeover: boolean
-  onManage: () => void
 }) {
   const host = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal>(null)
-  const fitRef = useRef<() => void>(null)
-  const takeoverRef = useRef<() => void>(null)
-  const [clientId] = useState(() => Array.from(crypto.getRandomValues(new Uint8Array(16)), octet => octet.toString(16).padStart(2, '0')).join(''))
+  const measureRef = useRef<() => Size | undefined>(null)
+  const sendSizeRef = useRef<() => void>(null)
+  const requestControlRef = useRef<() => void>(null)
+  const requestedControl = useRef(0)
+  const sentControl = useRef(0)
   const [size, setSize] = useState<Size>()
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
 
@@ -65,21 +69,17 @@ export default function TerminalPage({ session, active, closing, initialTakeover
       !((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && terminal.hasSelection()))
     const themeObserver = new MutationObserver(updateTheme)
     themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
-    const resize = () => {
-      if (element.clientWidth && element.clientHeight) fit.fit()
-    }
-    fitRef.current = resize
+    measureRef.current = () => element.clientWidth && element.clientHeight ? fit.proposeDimensions() : undefined
+    const sendSize = () => sendSizeRef.current?.()
     void document.fonts.load(`${fontSize}px ${fontFamily}`).then(() => {
       if (terminalRef.current !== terminal) return
       terminal.options.fontFamily = fontFamily
-      resize()
+      sendSize()
     }).catch(() => {
       // Keep measuring with the fallback stack if the web font is unavailable.
     })
     const sizeChange = terminal.onResize(setSize)
-    resize()
-    setSize({ cols: terminal.cols, rows: terminal.rows })
-    const resizeObserver = new ResizeObserver(resize)
+    const resizeObserver = new ResizeObserver(sendSize)
     resizeObserver.observe(element)
     return () => {
       resizeObserver.disconnect()
@@ -87,7 +87,7 @@ export default function TerminalPage({ session, active, closing, initialTakeover
       sizeChange.dispose()
       terminal.dispose()
       terminalRef.current = null
-      fitRef.current = null
+      measureRef.current = null
     }
   }, [session.scrollbackLines])
 
@@ -96,55 +96,97 @@ export default function TerminalPage({ session, active, closing, initialTakeover
     const terminal = terminalRef.current!
     const encoder = new TextEncoder()
     let socket: WebSocket | undefined
+    let renderingSocket: WebSocket | undefined
     let retry: number | undefined
     let retryDelay = 1000
     let ready = false
-    let stopped = false
+    let controller = false
+    let ended = false
+    let requestedSize: Size | undefined
 
     function send(data: string | Uint8Array<ArrayBuffer>) {
-      if (ready && socket?.readyState === WebSocket.OPEN) socket.send(data)
+      if (ready && controller && socket?.readyState === WebSocket.OPEN) socket.send(data)
     }
 
-    function resize({ cols, rows }: Size) {
-      send(JSON.stringify({ type: 'resize', cols, rows }))
+    function sendSize() {
+      if (!ready || !controller) return
+      const size = measureRef.current?.()
+      if (!size || (size.cols === requestedSize?.cols && size.rows === requestedSize.rows)) return
+      requestedSize = size
+      send(JSON.stringify({ type: 'resize', ...size }))
     }
 
-    function connect(takeover = false) {
+    function requestControl() {
+      if (!ready || sentControl.current === requestedControl.current || socket?.readyState !== WebSocket.OPEN) return
+      socket.send(JSON.stringify({ type: 'takeover' }))
+      sentControl.current = requestedControl.current
+    }
+
+    function updateRole() {
+      terminal.options.disableStdin = !(ready && controller)
+      if (!ready) return
+      setStatus(controller ? 'controller' : 'viewer')
+      if (controller) sendSize()
+      else requestedSize = undefined
+    }
+
+    function resetConnection() {
+      ready = false
+      controller = false
+      requestedSize = undefined
+      updateRole()
+    }
+
+    function connect() {
       window.clearTimeout(retry)
       socket?.close()
-      ready = false
-      terminal.options.disableStdin = true
-      const current = connectTerminal(session.id, clientId, takeover)
+      resetConnection()
+      const current = connectTerminal(session.id, clientId)
       socket = current
+      renderingSocket = current
       current.onmessage = event => {
         if (socket !== current) return
         if (typeof event.data !== 'string') {
           terminal.write(new Uint8Array(event.data as ArrayBuffer))
           return
         }
-        const initial = JSON.parse(event.data) as Snapshot
-        terminal.resize(initial.cols, initial.rows)
-        // Queue the reset after any output still buffered from the old socket.
-        terminal.write('\x1bc' + initial.output, () => {
-          if (socket !== current || current.readyState !== WebSocket.OPEN) return
-          ready = true
-          terminal.options.disableStdin = false
-          retryDelay = 1000
-          setStatus('connected')
-          fitRef.current?.()
-          resize({ cols: terminal.cols, rows: terminal.rows })
-          const terminalWindow = host.current?.closest('[data-app-window]')
-          if (document.activeElement === terminalWindow) terminal.focus()
-        })
+        const message = JSON.parse(event.data) as TerminalEvent
+        switch (message.type) {
+          case 'snapshot': {
+            controller = message.controller
+            terminal.resize(message.cols, message.rows)
+            setSize({ cols: message.cols, rows: message.rows })
+            // The reset follows any bytes already queued by the old connection.
+            terminal.write('\x1bc' + message.output, () => {
+              if (socket !== current || current.readyState !== WebSocket.OPEN) return
+              ready = true
+              retryDelay = 1000
+              updateRole()
+              requestControl()
+              const terminalWindow = host.current?.closest('[data-app-window]')
+              if (document.activeElement === terminalWindow) terminal.focus()
+            })
+            break
+          }
+          case 'control':
+            controller = message.controller
+            updateRole()
+            break
+          case 'resize':
+            // Apply dimensions after earlier output has been parsed.
+            terminal.write('', () => {
+              if (renderingSocket === current) terminal.resize(message.cols, message.rows)
+            })
+            break
+        }
       }
       current.onclose = event => {
         if (socket !== current) return
         socket = undefined
-        ready = false
-        terminal.options.disableStdin = true
-        if (event.code === 4404 || event.code === 4409) {
-          stopped = true
-          setStatus(event.code === 4404 ? 'ended' : 'busy')
+        resetConnection()
+        if (event.code === 4404) {
+          ended = true
+          setStatus('ended')
           return
         }
         setStatus('reconnecting')
@@ -156,58 +198,45 @@ export default function TerminalPage({ session, active, closing, initialTakeover
     }
 
     function online() {
-      if (!stopped && !ready) connect()
+      if (!ended && !socket) connect()
     }
 
     function offline() {
-      if (stopped) return
+      if (ended) return
       window.clearTimeout(retry)
       const current = socket
       socket = undefined
-      ready = false
-      terminal.options.disableStdin = true
+      resetConnection()
       current?.close()
       setStatus('reconnecting')
     }
 
-    takeoverRef.current = () => {
-      stopped = false
-      setStatus('connecting')
-      connect(true)
-    }
+    sendSizeRef.current = sendSize
+    requestControlRef.current = requestControl
     const userInput = terminal.onData(data => send(encoder.encode(data)))
     const binaryInput = terminal.onBinary(data => send(Uint8Array.from(data, char => char.charCodeAt(0))))
-    const sizeChange = terminal.onResize(resize)
     window.addEventListener('online', online)
     window.addEventListener('offline', offline)
-    connect(initialTakeover)
+    connect()
     return () => {
       window.removeEventListener('online', online)
       window.removeEventListener('offline', offline)
       window.clearTimeout(retry)
       userInput.dispose()
       binaryInput.dispose()
-      sizeChange.dispose()
       const current = socket
       socket = undefined
       current?.close()
-      takeoverRef.current = null
+      renderingSocket = undefined
+      sendSizeRef.current = null
+      requestControlRef.current = null
     }
-  }, [clientId, closing, initialTakeover, session.id])
+  }, [clientId, closing, session.id])
 
   useEffect(() => {
-    if (status !== 'busy' || closing) return
-    const controller = new AbortController()
-    const timer = window.setInterval(() => {
-      void terminalApi.list(controller.signal).then(sessions => {
-        if (!controller.signal.aborted && !sessions.some(item => item.id === session.id)) setStatus('ended')
-      }, () => {})
-    }, 3000)
-    return () => {
-      controller.abort()
-      window.clearInterval(timer)
-    }
-  }, [closing, session.id, status])
+    requestedControl.current = controlRequest
+    requestControlRef.current?.()
+  }, [controlRequest])
 
   useEffect(() => {
     if (!active) return
@@ -220,13 +249,9 @@ export default function TerminalPage({ session, active, closing, initialTakeover
 
   return (
     <section className="terminal-page" aria-label="主机终端">
-      <div className="terminal-toolbar">
-        <button className="app-control" type="button" onClick={onManage}>
-          <List size={16} aria-hidden="true" />会话管理
-        </button>
-        {status === 'busy' && <button className="app-control" type="button" onClick={() => takeoverRef.current?.()}>接管</button>}
+      <div className="terminal-screen" data-read-only={status !== 'controller' || undefined}>
+        <div className="terminal-host" ref={host} />
       </div>
-      <div className="terminal-screen"><div className="terminal-host" ref={host} /></div>
       <footer className="app-statusbar terminal-status">
         <span role="status"><i aria-hidden="true" />{connectionLabels[status]}</span>
         {size && <span aria-label={`${size.cols} 列，${size.rows} 行`}>{size.cols} × {size.rows}</span>}

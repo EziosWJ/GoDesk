@@ -311,6 +311,8 @@
 }
 .terminal-screen { flex: 1; min-height: 0; padding: 12px 8px 8px 14px; }
 .terminal-host { width: 100%; height: 100%; }
+.terminal-screen[data-read-only] { overflow: auto; }
+.terminal-screen[data-read-only] .xterm { width: max-content; height: auto; }
 .terminal-host .xterm { height: 100%; }
 /* xterm only paints whole text rows. Match the background in the space below them. */
 .terminal-host .xterm .xterm-viewport { background-color: var(--react-web-desktop-surface); }
@@ -331,7 +333,8 @@
 .terminal-sessions {
   flex: 1;
   container: terminal-sessions / inline-size;
-  padding: 16px;
+  padding: 16px 16px 24px;
+  scroll-padding-block-end: 32px;
 }
 .terminal-sessions > p { margin: 0 0 12px; }
 .terminal-session-list {
@@ -373,13 +376,9 @@
   flex: none;
   width: 6px;
   height: 6px;
-  border: 1px solid currentColor;
   border-radius: 50%;
+  background: currentColor;
 }
-.terminal-session-status[data-status="background"] { color: var(--react-web-desktop-success); }
-.terminal-session-status[data-status="remote"] { color: var(--react-web-desktop-info); }
-.terminal-session-status[data-status="visible"] { color: var(--react-web-desktop-accent); }
-.terminal-session-status:not([data-status="minimized"])::before { background: currentColor; }
 .terminal-session-times {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -389,13 +388,55 @@
   line-height: var(--text-react-web-desktop-caption--line-height);
   font-variant-numeric: tabular-nums;
 }
-.terminal-session-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-.terminal-session-actions .app-control { white-space: nowrap; }
-.terminal-session-actions .terminal-session-open {
-  min-inline-size: 72px;
-  background: var(--react-web-desktop-selected);
-  color: var(--react-web-desktop-accent);
-  font-weight: 600;
+.terminal-session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.terminal-action {
+  position: relative;
+  inline-size: var(--react-web-desktop-control-compact);
+  padding-inline: 0;
+  border: 1px solid var(--react-web-desktop-divider);
+}
+.terminal-action-tooltip {
+  position: absolute;
+  z-index: 1;
+  inset-block-start: calc(100% + 6px);
+  left: 50%;
+  translate: -50% 0;
+  visibility: hidden;
+  pointer-events: none;
+  padding: 3px 8px;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-control);
+  background: var(--react-web-desktop-raised);
+  box-shadow: var(--react-web-desktop-shadow-overlay);
+  color: var(--react-web-desktop-fg);
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+  white-space: nowrap;
+}
+.terminal-action-tooltip::before {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: calc(50% - 3.5px);
+  width: 7px;
+  height: 7px;
+  rotate: 45deg;
+  border: solid var(--react-web-desktop-divider);
+  border-width: 1px 0 0 1px;
+  background: var(--react-web-desktop-raised);
+}
+.terminal-action:focus-visible > .terminal-action-tooltip { visibility: visible; }
+@media (hover: hover) {
+  .terminal-action:hover > .terminal-action-tooltip { visibility: visible; }
+  .terminal-sessions:has(.terminal-action:hover) .terminal-action:not(:hover) > .terminal-action-tooltip {
+    visibility: hidden;
+  }
 }
 .terminal-session-actions .danger-control:not(:disabled) { color: var(--react-web-desktop-danger); }
 .terminal-sessions-empty {
@@ -416,6 +457,7 @@
 @container terminal-sessions (max-width: 420px) {
   .terminal-session { grid-template-columns: minmax(0, 1fr); }
   .terminal-session-times { grid-row: auto; }
+  .terminal-session-actions { justify-content: flex-start; }
 }
 .terminal-name-field { display: grid; gap: 6px; }
 .app-statusbar {
@@ -1287,4 +1329,18 @@
   background: var(--react-web-desktop-surface);
   border: 1px solid var(--react-web-desktop-divider);
   border-radius: 4px;
+}
+
+.desktop-alert {
+  position: absolute;
+  inset: auto 16px calc(var(--react-web-desktop-taskbar-total) + 12px) auto;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px 8px 14px;
+  color: var(--react-web-desktop-danger);
+  background: var(--react-web-desktop-panel);
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: 8px;
 }

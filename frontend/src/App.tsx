@@ -12,7 +12,7 @@ import { FileManager } from './FileManager'
 import { TextEditorApp, type EditorWindowHandle } from './TextEditorApp'
 import { Taskbar } from './Taskbar'
 import { TerminalSessions } from './TerminalSessions'
-import { terminalApi, terminalWindowId, type TerminalSession } from './terminal'
+import { terminalApi, terminalClientId, terminalWindowId, type TerminalSession } from './terminal'
 import { minimumWindowHeight, minimumWindowWidth, readWindowSize, saveWindowSize, windowSizeGroup } from './windowSize.ts'
 import './App.css'
 
@@ -170,7 +170,6 @@ export default function App({ onLogout, onSession }: {
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const pendingWindowFocus = useRef<string | null>(null)
-  const launchingTerminal = useRef(false)
   const [terminalLaunchError, setTerminalLaunchError] = useState('')
   const editor = useRef<EditorWindowHandle>(null)
   const [editorRequest, setEditorRequest] = useState<{ path: string }>()
@@ -201,7 +200,7 @@ export default function App({ onLogout, onSession }: {
       if (win?.stage !== 'normal') return
       resize = {
         pointer: event.pointerId, element, id, bounds: win.bounds,
-        group: windowSizeGroup(windowApp(id), id),
+        group: windowSizeGroup(windowApp(id)),
       }
     }
 
@@ -280,7 +279,7 @@ export default function App({ onLogout, onSession }: {
     } else {
       setClosingWindows(current => current.some(win => win.id === id) ? current.filter(win => win.id !== id) : current)
       const app = apps[appId]
-      const size = readWindowSize(windowSizeGroup(appId, id)) ?? app
+      const size = readWindowSize(windowSizeGroup(appId)) ?? app
       const width = Math.max(minimumWindowWidth, Math.min(size.width, viewport.width - 24))
       const height = Math.max(minimumWindowHeight, Math.min(size.height, viewport.height - 24))
       const offset = (Object.keys(openWindows).length % 5) * 25
@@ -295,27 +294,27 @@ export default function App({ onLogout, onSession }: {
     setStartOpen(false)
   }
 
-  function openSession(session: TerminalSession, takeover = false) {
-    openWindow('terminal', terminalWindowId(session.id), session.name, { session, takeover })
-  }
-
-  function openSessionManager() {
-    openWindow('terminal', 'terminal', '会话管理')
+  function openSession(session: TerminalSession, takeControl = false) {
+    const id = terminalWindowId(session.id)
+    const existing = wm.getState().windows[id]
+    if (existing) {
+      if (takeControl) {
+        wm.update(id, { meta: {
+          ...existing.meta, controlRequest: Number(existing.meta.controlRequest) + 1,
+        } })
+      }
+      openWindow('terminal', id)
+      return
+    }
+    openWindow('terminal', id, session.name, { session, clientId: terminalClientId(), controlRequest: Number(takeControl) })
   }
 
   async function launchTerminal() {
-    if (launchingTerminal.current) return
-    launchingTerminal.current = true
     setTerminalLaunchError('')
     try {
-      const sessions = await terminalApi.list()
-      if (sessions.length) openSessionManager()
-      else openSession(await terminalApi.create())
+      openSession(await terminalApi.create())
     } catch {
-      setTerminalLaunchError('无法打开终端，请重试')
-      openSessionManager()
-    } finally {
-      launchingTerminal.current = false
+      setTerminalLaunchError('无法新建终端，请重试')
     }
   }
 
@@ -341,23 +340,18 @@ export default function App({ onLogout, onSession }: {
       <TextEditorApp ref={closing ? null : editor}
         openRequest={editorRequest} onClose={closeEditor} />
     )
-    if (id === 'terminal') {
-      if (win.id === 'terminal') return (
-        <TerminalSessions active={!closing && win.stage !== 'minimized'} windows={windows}
-          launchError={terminalLaunchError} onOpen={(session, takeover) => {
-            setTerminalLaunchError('')
-            openSession(session, takeover)
-          }}
-          onRename={session => wm.update(terminalWindowId(session.id), { title: session.name })} />
-      )
-      return (
-        <Suspense fallback={<p className="app-body" role="status">正在打开终端…</p>}>
-          <TerminalPage session={win.meta.session as TerminalSession} initialTakeover={win.meta.takeover === true}
-            active={!closing && focusedId === win.id && win.stage !== 'minimized'} closing={closing}
-            onManage={openSessionManager} />
-        </Suspense>
-      )
-    }
+    if (id === 'sessions') return (
+      <TerminalSessions active={!closing && win.stage !== 'minimized'} windows={windows}
+        onOpen={openSession}
+        onRename={session => wm.update(terminalWindowId(session.id), { title: session.name })} />
+    )
+    if (id === 'terminal') return (
+      <Suspense fallback={<p className="app-body" role="status">正在打开终端…</p>}>
+        <TerminalPage session={win.meta.session as TerminalSession} clientId={win.meta.clientId as string}
+          controlRequest={Number(win.meta.controlRequest)}
+          active={!closing && focusedId === win.id && win.stage !== 'minimized'} closing={closing} />
+      </Suspense>
+    )
     if (id === 'settings') return <apps.settings.Content onSession={onSession} />
     const { Content } = apps[id]
     return <Content />
@@ -437,6 +431,15 @@ export default function App({ onLogout, onSession }: {
           )
         })}
       </div>
+
+      {terminalLaunchError && (
+        <div className="desktop-alert">
+          <span role="alert">{terminalLaunchError}</span>
+          <button className="app-control" type="button" aria-label="关闭提示" onClick={() => setTerminalLaunchError('')}>
+            <X size={16} aria-hidden="true" />
+          </button>
+        </div>
+      )}
 
       {context && (
         <CommandMenu label="桌面操作" anchor={context} layer={context.source.parentElement!} boundary={context.source} zIndex={2}

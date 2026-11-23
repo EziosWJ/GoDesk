@@ -8,9 +8,10 @@ export type WindowSize = { width: number; height: number }
 const sizeKeyPrefix = 'react-web-desktop-window-size:'
 const legacyFileSizeKey = 'react-web-desktop-file-window-size'
 
-export function windowSizeGroup(appId: AppId, windowId: string): string {
-  if (appId !== 'terminal') return appId
-  return windowId === 'terminal' ? 'terminal' : 'terminal-session'
+export function windowSizeGroup(appId: AppId): string {
+  if (appId === 'sessions') return 'terminal'
+  if (appId === 'terminal') return 'terminal-session'
+  return appId
 }
 
 function parseSize(raw: string | null): WindowSize | undefined {

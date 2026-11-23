@@ -4,6 +4,7 @@ export type TerminalSession = {
   createdAt: string
   lastAttachedAt: string | null
   attached: boolean
+  controllerClientId: string | null
   scrollbackLines: number
 }
 
@@ -36,11 +37,10 @@ export const terminalApi = {
   saveSettings: (settings: TerminalSettings) => request<TerminalSettings>(settingsPath, 'PUT', settings),
 }
 
-export function connectTerminal(id: string, clientId: string, takeover: boolean) {
+export function connectTerminal(id: string, clientId: string) {
   const url = new URL(sessionPath(id) + '/connect', window.location.href)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   url.searchParams.set('client', clientId)
-  if (takeover) url.searchParams.set('takeover', '1')
   const socket = new WebSocket(url)
   socket.binaryType = 'arraybuffer'
   return socket
@@ -48,4 +48,8 @@ export function connectTerminal(id: string, clientId: string, takeover: boolean)
 
 export function terminalWindowId(id: string) {
   return `terminal-${id}`
+}
+
+export function terminalClientId() {
+  return Array.from(crypto.getRandomValues(new Uint8Array(16)), octet => octet.toString(16).padStart(2, '0')).join('')
 }

@@ -21,10 +21,11 @@ type display struct {
 }
 
 type snapshot struct {
-	Type   string `json:"type"`
-	Cols   int    `json:"cols"`
-	Rows   int    `json:"rows"`
-	Output string `json:"output"`
+	Type       string `json:"type"`
+	Cols       int    `json:"cols"`
+	Rows       int    `json:"rows"`
+	Output     string `json:"output"`
+	Controller bool   `json:"controller"`
 }
 
 type screen struct {

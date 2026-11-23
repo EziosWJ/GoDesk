@@ -184,16 +184,16 @@ func (m *Manager) connectHTTP(w http.ResponseWriter, r *http.Request) {
 			finishConnection(ctx, ws, conn)
 			return
 		case <-readerDone:
-			// The PTY may end or a takeover may revoke input while a read
-			// is in flight. Preserve the corresponding close status.
+			// The session can end while a read is in flight.
+			// Preserve its close status.
 			select {
 			case <-conn.done:
 				finishConnection(ctx, ws, conn)
 			default:
 			}
 			return
-		case data := <-conn.output:
-			if writeFrame(ctx, ws, websocket.MessageBinary, data) != nil {
+		case frame := <-conn.output:
+			if writeTerminalFrame(ctx, ws, frame) != nil {
 				return
 			}
 		case <-ping.C:
@@ -211,12 +211,23 @@ func finishConnection(ctx context.Context, ws *websocket.Conn, conn *connection)
 	if conn.reason == closeEnded {
 		// Deliver the final command output before reporting that the Shell ended.
 		for len(conn.output) > 0 {
-			if writeFrame(ctx, ws, websocket.MessageBinary, <-conn.output) != nil {
+			if writeTerminalFrame(ctx, ws, <-conn.output) != nil {
 				return
 			}
 		}
 	}
 	_ = ws.Close(websocket.StatusCode(conn.reason), "")
+}
+
+func writeTerminalFrame(ctx context.Context, ws *websocket.Conn, frame terminalFrame) error {
+	if frame.event == nil {
+		return writeFrame(ctx, ws, websocket.MessageBinary, frame.output)
+	}
+	data, err := json.Marshal(frame.event)
+	if err != nil {
+		return err
+	}
+	return writeFrame(ctx, ws, websocket.MessageText, data)
 }
 
 func writeFrame(ctx context.Context, ws *websocket.Conn, kind websocket.MessageType, data []byte) error {
@@ -242,8 +253,14 @@ func (s *session) readConnection(ctx context.Context, ws *websocket.Conn, conn *
 			Cols int    `json:"cols"`
 			Rows int    `json:"rows"`
 		}
-		if json.Unmarshal(data, &message) == nil && message.Type == "resize" {
+		if json.Unmarshal(data, &message) != nil {
+			continue
+		}
+		switch message.Type {
+		case "resize":
 			s.resize(conn, message.Cols, message.Rows)
+		case "takeover":
+			s.takeControl(conn)
 		}
 	}
 }

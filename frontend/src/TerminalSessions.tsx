@@ -1,17 +1,31 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { Plus, RefreshCw, SquareTerminal } from 'lucide-react'
+import { AppWindow, CircleStop, KeyRound, Pencil, Plus, RefreshCw, SquareTerminal, type LucideIcon } from 'lucide-react'
 import type { WindowState } from '@surdeddd/wmkit'
 import { terminalApi, terminalWindowId, type TerminalSession } from './terminal'
 
 const formatTime = new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'short' })
-const statusLabels = { minimized: '已最小化', visible: '窗口已打开', remote: '在其他位置打开', background: '后台运行' }
 type SessionAction = { type: 'rename' | 'end'; session: TerminalSession }
 
-export function TerminalSessions({ active, windows, launchError, onOpen, onRename }: {
+function SessionActionButton({ label, icon: Icon, disabled, danger, onClick }: {
+  label: string
+  icon: LucideIcon
+  disabled?: boolean
+  danger?: boolean
+  onClick: () => void
+}) {
+  return (
+    <button className={`app-control terminal-action${danger ? ' danger-control' : ''}`} type="button"
+      aria-label={label} disabled={disabled} onClick={onClick}>
+      <Icon size={16} aria-hidden="true" />
+      <span className="terminal-action-tooltip" aria-hidden="true">{label}</span>
+    </button>
+  )
+}
+
+export function TerminalSessions({ active, windows, onOpen, onRename }: {
   active: boolean
   windows: Readonly<Record<string, WindowState>>
-  launchError: string
-  onOpen: (session: TerminalSession, takeover?: boolean) => void
+  onOpen: (session: TerminalSession, takeControl?: boolean) => void
   onRename: (session: TerminalSession) => void
 }) {
   const [sessions, setSessions] = useState<TerminalSession[]>()
@@ -117,8 +131,8 @@ export function TerminalSessions({ active, windows, launchError, onOpen, onRenam
         </button>
       </div>
       <div className="terminal-sessions system-scroll">
-        {(loadError || !action && (actionError || launchError)) &&
-          <p className="authentication-error" role="alert">{loadError || actionError || launchError}</p>}
+        {(loadError || !action && actionError) &&
+          <p className="authentication-error" role="alert">{loadError || actionError}</p>}
         {!sessions && !loadError && <p className="system-caption" role="status">正在读取终端会话…</p>}
         {sessions?.length === 0 && (
           <div className="terminal-sessions-empty">
@@ -129,16 +143,19 @@ export function TerminalSessions({ active, windows, launchError, onOpen, onRenam
         {!!sessions?.length && <ul className="terminal-session-list" role="list">
           {sessions.map(session => {
             const local = windows[terminalWindowId(session.id)]
-            const needsTakeover = !local && session.attached
-            const status = local?.stage === 'minimized' ? 'minimized' : local ? 'visible'
-              : session.attached ? 'remote' : 'background'
+            const controlsHere = session.controllerClientId !== null && session.controllerClientId === local?.meta.clientId
+            const controlLabel = session.controllerClientId ? '接管' : '取得控制权'
+            const status = controlsHere ? '本桌面控制'
+              : session.controllerClientId ? '其他位置控制'
+              : session.attached ? '只读观看' : '后台运行'
+            const windowStatus = local?.stage === 'minimized' ? ' · 已最小化' : ''
             return (
               <li key={session.id} className="terminal-session">
                 <div className="terminal-session-info">
                   <span className="terminal-session-icon" aria-hidden="true"><SquareTerminal size={19} /></span>
                   <div>
                     <strong title={session.name}>{session.name}</strong>
-                    <span className="terminal-session-status" data-status={status}>{statusLabels[status]}</span>
+                    <span className="terminal-session-status">{status}{windowStatus}</span>
                   </div>
                 </div>
                 <div className="terminal-session-times">
@@ -148,11 +165,15 @@ export function TerminalSessions({ active, windows, launchError, onOpen, onRenam
                     : <span>尚未接入</span>}
                 </div>
                 <div className="terminal-session-actions">
-                  <button className="app-control terminal-session-open" type="button" onClick={() => onOpen(session, needsTakeover)}>
-                    {local ? '显示窗口' : needsTakeover ? '接管' : '接回'}
-                  </button>
-                  <button className="app-control" type="button" disabled={pending} onClick={() => startAction('rename', session)}>改名</button>
-                  <button className="app-control danger-control" type="button" disabled={pending} onClick={() => startAction('end', session)}>结束会话</button>
+                  <SessionActionButton label={local ? '显示窗口' : '打开'} icon={AppWindow}
+                    onClick={() => onOpen(session)} />
+                  {session.attached && !controlsHere && (
+                    <SessionActionButton label={controlLabel} icon={KeyRound} onClick={() => onOpen(session, true)} />
+                  )}
+                  <SessionActionButton label="改名" icon={Pencil} disabled={pending}
+                    onClick={() => startAction('rename', session)} />
+                  <SessionActionButton label="结束会话" icon={CircleStop} danger disabled={pending}
+                    onClick={() => startAction('end', session)} />
                 </div>
               </li>
             )

@@ -2,9 +2,7 @@ package terminal
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestSessionSurvivesDetachAndRestrictsInputAfterTakeover(t *testing.T) {
+func TestSessionSurvivesDetachAndSharesOutputAcrossTakeover(t *testing.T) {
 	t.Setenv("SHELL", "/bin/sh")
 	db, err := sql.Open("sqlite", ":memory:")
 	if err != nil {
@@ -63,34 +61,81 @@ func TestSessionSurvivesDetachAndRestrictsInputAfterTakeover(t *testing.T) {
 	}
 
 	first, initial, reason := session.attach("first", false)
-	if reason != 0 || !strings.Contains(initial.Output, "detached-marker") {
-		t.Fatalf("resume rejected or missing output: %d, %q", reason, initial.Output)
+	if reason != 0 || !initial.Controller || !strings.Contains(initial.Output, "detached-marker") {
+		t.Fatalf("resume did not restore control and output: %d, %+v", reason, initial)
 	}
-	if _, _, reason := session.attach("second", false); reason != closeBusy {
-		t.Fatalf("competing connection = %d, want %d", reason, closeBusy)
+	second, initial, reason := session.attach("second", false)
+	if reason != 0 || initial.Controller {
+		t.Fatalf("second window should attach as a viewer: %d, %+v", reason, initial)
 	}
-	second, _, reason := session.attach("second", true)
-	if reason != 0 {
-		t.Fatalf("takeover rejected: %d", reason)
+
+	replacement, initial, reason := session.attach("first", false)
+	if reason != 0 || !initial.Controller {
+		t.Fatalf("same-window reconnect lost control: %d, %+v", reason, initial)
 	}
-	<-first.done
-	if first.reason != closeBusy {
-		t.Fatalf("first connection closed with %d", first.reason)
+	select {
+	case <-first.done:
+		if first.reason != closeReplace {
+			t.Fatalf("old connection closed with %d", first.reason)
+		}
+	default:
+		t.Fatal("old connection was not replaced")
 	}
-	if err := session.input(t.Context(), first, []byte("exit\r")); !errors.Is(err, io.ErrClosedPipe) {
-		t.Fatalf("revoked connection input: %v", err)
+	session.detach(first)
+	first = replacement
+	session.resize(second, 45, 12)
+	session.mu.Lock()
+	cols, rows := session.display.Width(), session.display.Height()
+	session.mu.Unlock()
+	if cols != initial.Cols || rows != initial.Rows {
+		t.Fatalf("viewer resized the session to %dx%d", cols, rows)
 	}
-	if err := session.input(t.Context(), second, []byte("echo final-marker; exit\r")); err != nil {
+	session.resize(first, 90, 31)
+	wantResize := resizeEvent{Type: "resize", Cols: 90, Rows: 31}
+	readEvent(t, first, wantResize)
+	readEvent(t, second, wantResize)
+	if err := session.input(t.Context(), first, []byte("echo shared-marker\r")); err != nil {
 		t.Fatal(err)
 	}
+	readUntil(t, first, "shared-marker")
+	readUntil(t, second, "shared-marker")
+
+	session.takeControl(second)
+	readEvent(t, first, controlEvent{Type: "control", Controller: false})
+	readEvent(t, second, controlEvent{Type: "control", Controller: true})
+	active := manager.list()[0]
+	if !active.Attached || active.ControllerClientID == nil || *active.ControllerClientID != "second" {
+		t.Fatalf("list did not report new controller: %+v", active)
+	}
+	if err := session.input(t.Context(), first, []byte("exit\r")); err != nil {
+		t.Fatalf("viewer input should be ignored without closing the connection: %v", err)
+	}
+
+	session.detach(second)
+	active = manager.list()[0]
+	if !active.Attached || active.ControllerClientID != nil {
+		t.Fatalf("disconnect promoted a viewer: %+v", active)
+	}
+	second, initial, reason = session.attach("second", false)
+	if reason != 0 || initial.Controller {
+		t.Fatalf("reconnecting window should be read only with viewers present: %d, %+v", reason, initial)
+	}
+	session.takeControl(first)
+	readEvent(t, first, controlEvent{Type: "control", Controller: true})
+	if err := session.input(t.Context(), first, []byte("echo final-marker; exit\r")); err != nil {
+		t.Fatal(err)
+	}
+	readUntil(t, first, "final-marker")
 	readUntil(t, second, "final-marker")
-	select {
-	case <-second.done:
-		if second.reason != closeEnded || len(manager.list()) != 0 {
-			t.Fatal("exited Shell was not removed from active sessions")
+	for _, conn := range []*connection{first, second} {
+		select {
+		case <-conn.done:
+			if conn.reason != closeEnded || len(manager.list()) != 0 {
+				t.Fatal("exited Shell was not removed from active sessions")
+			}
+		case <-time.After(3 * time.Second):
+			t.Fatal("Shell exit did not end the session for all connections")
 		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("Shell exit did not end the session")
 	}
 }
 
@@ -154,12 +199,31 @@ func readUntil(t *testing.T, conn *connection, expected string) {
 	for {
 		select {
 		case chunk := <-conn.output:
-			output.Write(chunk)
+			output.Write(chunk.output)
 			if strings.Contains(output.String(), expected) {
 				return
 			}
 		case <-deadline.C:
 			t.Fatalf("did not receive %q: %q", expected, output.String())
+		}
+	}
+}
+
+func readEvent(t *testing.T, conn *connection, expected any) {
+	t.Helper()
+	deadline := time.NewTimer(3 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case frame := <-conn.output:
+			if frame.event != nil {
+				if frame.event != expected {
+					t.Fatalf("received event %#v, want %#v", frame.event, expected)
+				}
+				return
+			}
+		case <-deadline.C:
+			t.Fatalf("did not receive event %#v", expected)
 		}
 	}
 }

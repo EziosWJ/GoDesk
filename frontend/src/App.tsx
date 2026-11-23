@@ -13,6 +13,7 @@ import { TextEditorApp, type EditorWindowHandle } from './TextEditorApp'
 import { Taskbar } from './Taskbar'
 import { TerminalSessions } from './TerminalSessions'
 import { terminalApi, terminalWindowId, type TerminalSession } from './terminal'
+import { minimumWindowHeight, minimumWindowWidth, readWindowSize, saveWindowSize, windowSizeGroup } from './windowSize.ts'
 import './App.css'
 
 const workAreaOptions = {
@@ -23,9 +24,6 @@ const workAreaOptions = {
   keyboard: { snapShortcuts: false, historyShortcuts: false, tabShortcuts: false },
 }
 
-const minWindowWidth = 320
-const minWindowHeight = 240
-const fileWindowSizeKey = 'react-web-desktop-file-window-size'
 const TerminalPage = lazy(() => import('./TerminalPage'))
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 const appIds = Object.keys(apps) as AppId[]
@@ -38,18 +36,6 @@ function windowApp(id: string): AppId {
 function windowMotionDuration(style: CSSStyleDeclaration, token: 'overlay' | 'feedback') {
   const duration = style.getPropertyValue(`--react-web-desktop-duration-${token}`).trim()
   return Number.parseFloat(duration) * (duration.endsWith('ms') ? 1 : 1000)
-}
-
-function readFileWindowSize() {
-  try {
-    const size = JSON.parse(localStorage.getItem(fileWindowSizeKey) ?? 'null')
-    if (size && Number.isFinite(size.width) && Number.isFinite(size.height)
-        && size.width >= minWindowWidth && size.height >= minWindowHeight) {
-      return { width: Number(size.width), height: Number(size.height) }
-    }
-  } catch {
-    // Fall back to the app's default size.
-  }
 }
 
 function LauncherIcon({ id }: { id: AppId }) {
@@ -202,31 +188,35 @@ export default function App({ onLogout, onSession }: {
   }), [wm])
 
   useEffect(() => {
-    let resize: { pointer: number; element: HTMLElement; bounds: WindowState['bounds'] } | undefined
+    let resize: {
+      pointer: number; element: HTMLElement; id: string; group: string; bounds: WindowState['bounds']
+    } | undefined
 
     function startResize(event: PointerEvent) {
       if (event.button !== 0 || !(event.target instanceof Element)) return
-      const element = event.target.closest('[data-wm-resize]')?.closest<HTMLElement>('[data-app-window="files"]')
-      const win = wm.getState().windows.files
-      if (element && win?.stage === 'normal') resize = { pointer: event.pointerId, element, bounds: win.bounds }
+      const element = event.target.closest('[data-wm-resize]')?.closest<HTMLElement>('[data-app-window]')
+      const id = element?.dataset.wmWindow
+      if (!element || !id) return
+      const win = wm.getState().windows[id]
+      if (win?.stage !== 'normal') return
+      resize = {
+        pointer: event.pointerId, element, id, bounds: win.bounds,
+        group: windowSizeGroup(windowApp(id), id),
+      }
     }
 
     function finishResize(event: PointerEvent) {
       if (resize?.pointer !== event.pointerId) return
-      const { element, bounds } = resize
+      const { element, id, group, bounds } = resize
       resize = undefined
       if (event.type !== 'pointerup' || !element.hasAttribute('data-wm-resizing')) return
       // WMKit applies the final pointer position in its pointerup handler.
       window.setTimeout(() => {
-        const win = wm.getState().windows.files
+        const win = wm.getState().windows[id]
         if (!element.isConnected || win?.stage !== 'normal') return
         const { width, height } = win.bounds
         if (width === bounds.width && height === bounds.height) return
-        try {
-          localStorage.setItem(fileWindowSizeKey, JSON.stringify({ width, height }))
-        } catch {
-          // Resizing still works without storage.
-        }
+        saveWindowSize(group, { width, height })
       }, 0)
     }
 
@@ -290,15 +280,15 @@ export default function App({ onLogout, onSession }: {
     } else {
       setClosingWindows(current => current.some(win => win.id === id) ? current.filter(win => win.id !== id) : current)
       const app = apps[appId]
-      const size = (appId === 'files' && readFileWindowSize()) || app
-      const width = Math.max(minWindowWidth, Math.min(size.width, viewport.width - 24))
-      const height = Math.max(minWindowHeight, Math.min(size.height, viewport.height - 24))
+      const size = readWindowSize(windowSizeGroup(appId, id)) ?? app
+      const width = Math.max(minimumWindowWidth, Math.min(size.width, viewport.width - 24))
+      const height = Math.max(minimumWindowHeight, Math.min(size.height, viewport.height - 24))
       const offset = (Object.keys(openWindows).length % 5) * 25
       wm.open({
         id, title, width, height, meta,
         x: Math.min(Math.max(0, viewport.width - width), Math.max(12, (viewport.width - width) / 2 - 42 + offset)),
         y: Math.min(Math.max(0, viewport.height - height), Math.max(12, (viewport.height - height) / 2 - 38 + offset)),
-        minWidth: minWindowWidth, minHeight: minWindowHeight, snappable: false,
+        minWidth: minimumWindowWidth, minHeight: minimumWindowHeight, snappable: false,
       })
     }
     if (startOpen) pendingWindowFocus.current = id

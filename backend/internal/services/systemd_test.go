@@ -43,6 +43,33 @@ func TestSystemdCapabilities(t *testing.T) {
 	}
 }
 
+func TestSystemdDetailIntegration(t *testing.T) {
+	if info, err := os.Stat("/run/systemd/system"); err != nil || !info.IsDir() {
+		t.Skip("systemd is not running")
+	}
+	backend, err := Open("systemd")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	list, err := backend.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) == 0 {
+		t.Skip("no service units")
+	}
+	unit := list[0].Name
+	detail, err := backend.Detail(ctx, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detail.Name != unit || detail.State == "" {
+		t.Errorf("unexpected detail for %s: %+v", unit, detail)
+	}
+}
+
 func TestSystemdListIntegration(t *testing.T) {
 	if info, err := os.Stat("/run/systemd/system"); err != nil || !info.IsDir() {
 		t.Skip("systemd is not running")

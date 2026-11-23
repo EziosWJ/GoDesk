@@ -2,75 +2,60 @@ import {
   useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
   type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent,
 } from 'react'
-import {
-  ArrowLeft, CircleCheck, CircleHelp, CircleMinus, CirclePlay, CircleX, Play, Power, PowerOff,
-  RefreshCw, RotateCw, Search, Square, type LucideIcon,
-} from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, Check, CircleHelp, RefreshCw, Search } from 'lucide-react'
 import { useSplitLayout } from './useSplitLayout'
+import { ServiceList } from './ServiceList'
+import { ServiceDetailPane } from './ServiceDetail'
+import { ServiceLogs } from './ServiceLogs'
 import {
-  servicesApi, ServiceError,
-  type ManagedService, type ServiceAction, type ServiceBootState, type ServicesSnapshot, type ServiceState,
+  ServiceError, servicesApi,
+  type ManagedService, type ServiceAction,
+  type ServicesSnapshot, type ServiceState,
 } from './services'
+import { confirmationLabels, confirmationTitles, confirmationWarnings, formatClock } from './serviceLabels'
+import './styles/services.css'
 
-const LOG_LINES = 200
 const SPLITTER_WIDTH = 6
-const MIN_LIST_WIDTH = 360
-const MIN_DETAIL_WIDTH = 257
+const MIN_LIST_WIDTH = 320
+const MIN_DETAIL_WIDTH = 420
 const SPLIT_MIN_WIDTH = MIN_LIST_WIDTH + MIN_DETAIL_WIDTH + SPLITTER_WIDTH
 const SPLIT_STEP = 24
+const DEFAULT_SHARE = 0.4
+const POLL_INTERVAL = 10_000
+const SEARCH_DEBOUNCE = 100
 
-const statuses: Record<ServiceState, { label: string; Icon: LucideIcon }> = {
-  running: { label: '运行中', Icon: CirclePlay },
-  completed: { label: '已完成', Icon: CircleCheck },
-  stopped: { label: '已停止', Icon: CircleMinus },
-  failed: { label: '失败', Icon: CircleX },
-  unknown: { label: '未知', Icon: CircleHelp },
+type ServiceFilter = 'all' | 'running' | 'inactive' | 'abnormal'
+type DetailTab = 'detail' | 'logs'
+type ConfirmAction = 'stop' | 'restart' | 'disable'
+
+const filterOrder: ServiceFilter[] = ['all', 'running', 'inactive', 'abnormal']
+const filterLabels: Record<ServiceFilter, string> = {
+  all: '全部',
+  running: '运行中',
+  inactive: '未运行',
+  abnormal: '异常',
 }
 
-const bootStateLabels: Record<ServiceBootState, string> = {
-  enabled: '已启用',
-  disabled: '已禁用',
-  static: '静态',
-  masked: '已屏蔽',
-  runtime: '仅本次运行',
-  not_applicable: '不适用',
+function matchesFilter(state: ServiceState, filter: ServiceFilter) {
+  switch (filter) {
+    case 'running': return state === 'running'
+    case 'inactive': return state === 'stopped' || state === 'completed'
+    case 'abnormal': return state === 'failed' || state === 'unknown'
+    default: return true
+  }
 }
 
-const actionLabels: Record<ServiceAction, string> = {
-  start: '启动',
-  stop: '停止',
-  restart: '重启',
-  enable: '启用开机自启',
-  disable: '禁用开机自启',
+function isAnomaly(service: ManagedService) {
+  return service.state === 'failed' || service.state === 'unknown'
 }
 
-const actionIcons: Record<ServiceAction, LucideIcon> = {
-  start: Play,
-  stop: Square,
-  restart: RotateCw,
-  enable: Power,
-  disable: PowerOff,
-}
-
-const actionProgress: Record<ServiceAction, string> = {
-  start: '正在启动服务…',
-  stop: '正在停止服务…',
-  restart: '正在重启服务…',
-  enable: '正在启用开机自启…',
-  disable: '正在禁用开机自启…',
-}
-
-function ServiceStatus({ state }: { state: ServiceState }) {
-  const { Icon, label } = statuses[state]
-  return <span className="service-status" data-status={state}><Icon size={16} aria-hidden="true" />{label}</span>
-}
-
-function backendLabel(backend?: string) {
+function backendName(backend?: string) {
   switch (backend) {
-    case 'systemd': return 'systemd 服务'
-    case 'openrc': return 'OpenRC 服务'
-    case 'busybox': return 'BusyBox 服务'
-    default: return '服务管理'
+    case 'systemd': return 'systemd'
+    case 'openrc': return 'OpenRC'
+    case 'busybox': return 'BusyBox'
+    case 'none': return '未检测到服务后端'
+    default: return backend || '—'
   }
 }
 
@@ -103,61 +88,96 @@ function actionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败'
 }
 
-function logsErrorMessage(error: unknown) {
-  if (error instanceof ServiceError) {
-    switch (error.code) {
-      case 'permission': return '权限不足：无法读取系统日志'
-      case 'logs_unavailable': return '当前系统没有可用的 journalctl'
-      case 'timeout': return '读取日志超时'
-      default: return error.message
+function isConfirmAction(action: ServiceAction): action is ConfirmAction {
+  return action === 'stop' || action === 'restart' || action === 'disable'
+}
+
+function SortMenu({ anomaliesFirst, onChange }: {
+  anomaliesFirst: boolean
+  onChange: (value: boolean) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const container = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    function dismiss(event: PointerEvent) {
+      if (event.target instanceof Node && container.current?.contains(event.target)) return
+      setOpen(false)
     }
-  }
-  return error instanceof Error ? error.message : '无法读取日志'
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === 'Escape') setOpen(false)
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [open])
+
+  return (
+    <div className="service-sort" ref={container}>
+      <button type="button" className="app-control services-icon-button"
+        aria-haspopup="menu" aria-expanded={open} aria-label="排序" title="排序"
+        onClick={() => setOpen(value => !value)}>
+        <ArrowUpDown size={15} aria-hidden="true" />
+      </button>
+      {open && (
+        <div className="service-sort-menu" role="menu" aria-label="排序">
+          <button type="button" role="menuitemcheckbox" aria-checked={anomaliesFirst}
+            onClick={() => { onChange(!anomaliesFirst); setOpen(false) }}>
+            <span className="service-menu-check" aria-hidden="true">
+              {anomaliesFirst && <Check size={14} />}
+            </span>
+            异常置顶
+          </button>
+          <p className="system-caption service-sort-hint">其余按名称升序</p>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export function Services({ active = true }: { active?: boolean }) {
   const [snapshot, setSnapshot] = useState<ServicesSnapshot>()
   const [listError, setListError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState<Date>()
   const [query, setQuery] = useState('')
-  const [filter, setFilter] = useState<ServiceState | 'all'>('all')
+  const [needle, setNeedle] = useState('')
+  const [filter, setFilter] = useState<ServiceFilter>('all')
+  const [anomaliesFirst, setAnomaliesFirst] = useState(false)
   const [selectedName, setSelectedName] = useState<string>()
   const [showDetail, setShowDetail] = useState(false)
-  const [tab, setTab] = useState<'detail' | 'logs'>('detail')
-  const [confirmation, setConfirmation] = useState<ServiceAction>()
+  const [tab, setTab] = useState<DetailTab>('detail')
   const [pending, setPending] = useState<{ unit: string; action: ServiceAction }>()
   const [actionError, setActionError] = useState<{ unit: string; message: string }>()
-  const [logs, setLogs] = useState<string[]>([])
-  const [logsLoading, setLogsLoading] = useState(false)
-  const [logsError, setLogsError] = useState('')
-  const [listShare, setListShare] = useState(0.5)
+  const [confirmation, setConfirmation] = useState<ConfirmAction>()
+  const [logsVersion, setLogsVersion] = useState(0)
+  const [listVersion, setListVersion] = useState(0)
+  const [listShare, setListShare] = useState(DEFAULT_SHARE)
   const [resizing, setResizing] = useState(false)
 
   const dialog = useRef<HTMLDialogElement>(null)
   const cancelButton = useRef<HTMLButtonElement>(null)
   const confirmButton = useRef<HTMLButtonElement>(null)
-  const trigger = useRef<HTMLButtonElement | null>(null)
   const heading = useRef<HTMLHeadingElement>(null)
   const back = useRef<HTMLButtonElement>(null)
-  const filterControl = useRef<HTMLSelectElement>(null)
+  const searchInput = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const panes = useRef<HTMLDivElement>(null)
-  const detail = useRef<HTMLElement>(null)
+  const detailPane = useRef<HTMLElement>(null)
   const dragState = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
-  const rowButtons = useRef(new Map<string, HTMLButtonElement>())
   const listScrollTop = useRef(0)
   const nextFocus = useRef<'detail' | 'list' | null>(null)
-  const logsUnit = useRef<string | undefined>(undefined)
-  const logsAbort = useRef<AbortController | null>(null)
-  const selectedNameRef = useRef<string | undefined>(undefined)
-  const activeTabRef = useRef<'detail' | 'logs'>('detail')
   const titleId = useId()
   const descriptionId = useId()
-  const detailId = useId()
-  const detailTabId = useId()
-  const detailPanelId = useId()
-  const logsTabId = useId()
-  const logsPanelId = useId()
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setNeedle(query), SEARCH_DEBOUNCE)
+    return () => window.clearTimeout(timer)
+  }, [query])
 
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -165,6 +185,8 @@ export function Services({ active = true }: { active?: boolean }) {
       if (signal?.aborted) return
       setSnapshot(next)
       setListError('')
+      setLastUpdated(new Date())
+      setListVersion(value => value + 1)
     } catch (error) {
       if (signal?.aborted) return
       if (unauthorized(error)) {
@@ -183,7 +205,7 @@ export function Services({ active = true }: { active?: boolean }) {
 
     function schedule() {
       window.clearTimeout(timer)
-      if (document.visibilityState === 'visible') timer = window.setTimeout(tick, 10_000)
+      if (document.visibilityState === 'visible') timer = window.setTimeout(tick, POLL_INTERVAL)
     }
 
     async function tick() {
@@ -193,45 +215,60 @@ export function Services({ active = true }: { active?: boolean }) {
     }
 
     function onVisibility() {
-      if (document.visibilityState === 'visible') {
-        window.clearTimeout(timer)
-        void tick()
-      } else {
-        window.clearTimeout(timer)
-      }
+      window.clearTimeout(timer)
+      if (document.visibilityState === 'visible') void tick()
+    }
+
+    function onFocus() {
+      if (document.visibilityState !== 'visible') return
+      window.clearTimeout(timer)
+      void tick()
     }
 
     void tick()
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
     return () => {
       stopped = true
       controller.abort()
       window.clearTimeout(timer)
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
     }
   }, [active, load])
 
-  const selected = snapshot?.services.find(service => service.name === selectedName)
-  const logsAvailable = snapshot?.capabilities.logs === true
-  const activeTab = logsAvailable ? tab : 'detail'
-  const visibleServices = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    return (snapshot?.services ?? [])
-      .filter(service => (filter === 'all' || service.state === filter)
-        && (!needle || service.name.toLowerCase().includes(needle) || service.description.toLowerCase().includes(needle)))
-      .sort((left, right) => left.name.localeCompare(right.name))
-  }, [snapshot, query, filter])
-  const excluded = selected !== undefined && !visibleServices.includes(selected)
-  const selectedActions = selected?.actions ?? []
-  const lifecycleActions = selectedActions.filter(action => action !== 'enable' && action !== 'disable')
-  const bootActions = selectedActions.filter(action => action === 'enable' || action === 'disable')
-  const selectedPending = pending?.unit === selected?.name ? pending : undefined
-  const selectedError = actionError && actionError.unit === selected?.name ? actionError.message : ''
+  const services = useMemo(() => snapshot?.services ?? [], [snapshot])
+  const searchMatched = useMemo(() => {
+    const value = needle.trim().toLowerCase()
+    if (!value) return services
+    return services.filter(service =>
+      service.name.toLowerCase().includes(value) ||
+      service.description.toLowerCase().includes(value))
+  }, [services, needle])
+  const counts = useMemo(() => ({
+    all: searchMatched.length,
+    running: searchMatched.filter(service => matchesFilter(service.state, 'running')).length,
+    inactive: searchMatched.filter(service => matchesFilter(service.state, 'inactive')).length,
+    abnormal: searchMatched.filter(service => matchesFilter(service.state, 'abnormal')).length,
+  }), [searchMatched])
+  const visible = useMemo(() => {
+    const filtered = searchMatched.filter(service => matchesFilter(service.state, filter))
+    return filtered.sort((left, right) => {
+      if (anomaliesFirst) {
+        const leftRank = isAnomaly(left) ? 0 : 1
+        const rightRank = isAnomaly(right) ? 0 : 1
+        if (leftRank !== rightRank) return leftRank - rightRank
+      }
+      return left.name.localeCompare(right.name)
+    })
+  }, [searchMatched, filter, anomaliesFirst])
 
-  useEffect(() => {
-    selectedNameRef.current = selectedName
-    activeTabRef.current = activeTab
-  }, [selectedName, activeTab])
+  const selected = services.find(service => service.name === selectedName)
+  const logsAvailable = snapshot?.capabilities.logs === true
+  const activeTab: DetailTab = logsAvailable ? tab : 'detail'
+  const excluded = selected !== undefined && !visible.includes(selected)
+  const selectedPending = pending?.unit === selected?.name ? pending : undefined
+  const selectedActionError = actionError && actionError.unit === selected?.name ? actionError.message : ''
 
   const { root, split } = useSplitLayout(SPLIT_MIN_WIDTH, wide => {
     const activeElement = document.activeElement
@@ -239,42 +276,13 @@ export function Services({ active = true }: { active?: boolean }) {
       if (activeElement === back.current) nextFocus.current = 'detail'
     } else if (list.current?.contains(activeElement)) {
       setShowDetail(false)
-    } else if (selected && (detail.current?.contains(activeElement) || dialog.current?.open)) {
+    } else if (selected && (detailPane.current?.contains(activeElement) || dialog.current?.open)) {
       setShowDetail(true)
     }
   })
 
   const listVisible = split || !showDetail
-
-  useEffect(() => () => {
-    logsAbort.current?.abort()
-  }, [])
-
-  async function loadLogs(unit: string, force = false) {
-    if (!force && logsUnit.current === unit && !logsError) return
-    logsAbort.current?.abort()
-    const controller = new AbortController()
-    logsAbort.current = controller
-    const changed = logsUnit.current !== unit
-    logsUnit.current = unit
-    setLogsLoading(true)
-    setLogsError('')
-    if (changed) setLogs([])
-    try {
-      const lines = await servicesApi.logs(unit, LOG_LINES, controller.signal)
-      if (!controller.signal.aborted) setLogs(lines)
-    } catch (error) {
-      if (controller.signal.aborted) return
-      if (unauthorized(error)) {
-        window.location.reload()
-        return
-      }
-      setLogs([])
-      setLogsError(logsErrorMessage(error))
-    } finally {
-      if (!controller.signal.aborted) setLogsLoading(false)
-    }
-  }
+  const detailVisible = split || showDetail
 
   useLayoutEffect(() => {
     if (listVisible && list.current) list.current.scrollTop = listScrollTop.current
@@ -283,9 +291,8 @@ export function Services({ active = true }: { active?: boolean }) {
   useLayoutEffect(() => {
     if (nextFocus.current === 'detail') heading.current?.focus()
     if (nextFocus.current === 'list') {
-      const row = selectedName ? rowButtons.current.get(selectedName) : undefined
-      const target = row ?? filterControl.current
-      target?.focus()
+      const row = list.current?.querySelector<HTMLButtonElement>('.service-row[aria-current="true"]')
+      ;(row ?? searchInput.current)?.focus()
     }
     nextFocus.current = null
   }, [selectedName, showDetail, split])
@@ -300,6 +307,7 @@ export function Services({ active = true }: { active?: boolean }) {
   async function refreshNow() {
     setRefreshing(true)
     await load()
+    setLogsVersion(value => value + 1)
     setRefreshing(false)
   }
 
@@ -309,10 +317,7 @@ export function Services({ active = true }: { active?: boolean }) {
     try {
       await servicesApi.action(service.name, action)
       await load()
-      logsUnit.current = undefined
-      if (activeTabRef.current === 'logs' && selectedNameRef.current === service.name) {
-        void loadLogs(service.name, true)
-      }
+      setLogsVersion(value => value + 1)
     } catch (error) {
       if (unauthorized(error)) {
         window.location.reload()
@@ -324,14 +329,14 @@ export function Services({ active = true }: { active?: boolean }) {
     }
   }
 
-  function requestAction(service: ManagedService, action: ServiceAction, button: HTMLButtonElement) {
-    if (action === 'stop' || action === 'restart') {
-      trigger.current = button
+  function requestAction(action: ServiceAction) {
+    if (!selected) return
+    if (isConfirmAction(action)) {
       setConfirmation(action)
       return
     }
     heading.current?.focus()
-    void runAction(service, action)
+    void runAction(selected, action)
   }
 
   function closeConfirmation(confirmed: boolean) {
@@ -341,9 +346,33 @@ export function Services({ active = true }: { active?: boolean }) {
     if (confirmed && selected && action) {
       heading.current?.focus()
       void runAction(selected, action)
-    } else {
-      trigger.current?.focus()
     }
+  }
+
+  function selectService(name: string) {
+    setActionError(undefined)
+    setSelectedName(name)
+  }
+
+  function openService(name: string) {
+    setActionError(undefined)
+    if (!split) {
+      listScrollTop.current = list.current?.scrollTop ?? 0
+      nextFocus.current = 'detail'
+    }
+    setSelectedName(name)
+    setShowDetail(true)
+  }
+
+  function backToList() {
+    nextFocus.current = 'list'
+    setShowDetail(false)
+  }
+
+  function clearFilters() {
+    setQuery('')
+    setNeedle('')
+    setFilter('all')
   }
 
   function resizeTo(width: number) {
@@ -396,7 +425,7 @@ export function Services({ active = true }: { active?: boolean }) {
       case 'End': next = maximum; break
       case 'Enter':
         event.preventDefault()
-        setListShare(0.5)
+        setListShare(DEFAULT_SHARE)
         return
       default: return
     }
@@ -404,89 +433,71 @@ export function Services({ active = true }: { active?: boolean }) {
     resizeTo(next)
   }
 
+  const filtersActive = needle.trim() !== '' || filter !== 'all'
+  const confirmClass = confirmation === 'stop' || confirmation === 'restart'
+    ? 'app-control danger-control'
+    : 'app-control primary-control'
+
   return (
-    <div className="services-page system-page" ref={root} data-split={split}
+    <div className="services-page" ref={root} data-split={split}
       data-resizing={resizing ? 'true' : undefined}>
-      <header className="services-toolbar">
-        <div>
-          <h2 className="system-subtitle">{backendLabel(snapshot?.backend)}</h2>
-          <p className="system-caption">
-            {snapshot ? `${snapshot.services.length} 个服务` : listError ? '服务列表不可用' : '载入中'}
-          </p>
-        </div>
-        {snapshot?.backend !== 'none' && (
-          <div className="services-toolbar-controls">
-            <label className="services-search">
-              <Search size={15} aria-hidden="true" />
-              <input type="search" value={query} onChange={event => setQuery(event.target.value)}
-                placeholder="搜索服务名或描述" aria-label="搜索服务" />
-            </label>
-            <label className="services-filter">状态
-              <select ref={filterControl} value={filter} onChange={event => setFilter(event.target.value as typeof filter)}>
-                <option value="all">全部</option>
-                {Object.entries(statuses).map(([state, { label }]) => <option key={state} value={state}>{label}</option>)}
-              </select>
-            </label>
-            <button type="button" className="app-control services-refresh" onClick={() => { void refreshNow() }}
-              disabled={refreshing} aria-label="刷新服务列表" title="刷新">
-              <RefreshCw size={15} aria-hidden="true" />
-            </button>
-          </div>
-        )}
-      </header>
       <div className="services-body">
         {snapshot && !snapshot.capabilities.stateReliable && (
-          <p className="system-caption service-warning" role="status">该后端无法可靠判断服务状态。</p>
+          <p className="system-caption services-warning" role="status">该后端无法可靠判断服务状态。</p>
         )}
         {snapshot?.backend === 'none' ? (
-          <div className="services-empty-state system-scroll">
+          <div className="services-empty-state">
             <CircleHelp size={32} aria-hidden="true" />
             <p className="system-subtitle">未检测到受支持的初始化系统</p>
-            <p className="system-caption">需要 systemd、OpenRC 或 BusyBox init。可以用 <code>-service-backend</code> 指定后端。</p>
+            <p className="system-caption">
+              需要 systemd、OpenRC 或 BusyBox init。可以用 <code>-service-backend</code> 指定后端。
+            </p>
           </div>
         ) : (
           <div ref={panes} className="services-panes"
-            style={split ? { gridTemplateColumns: `minmax(${MIN_LIST_WIDTH}px, ${listShare}fr) ${SPLITTER_WIDTH}px minmax(${MIN_DETAIL_WIDTH}px, ${1 - listShare}fr)` } : undefined}>
-            <div ref={list} className="services-list system-scroll" role="region" aria-label="服务列表" hidden={!listVisible}
-              onScroll={event => { if (listVisible) listScrollTop.current = event.currentTarget.scrollTop }}>
-              {listError && <p className="service-alert service-list-error" role="alert">{listError}</p>}
-              {!snapshot && !listError && <p className="services-empty system-caption" role="status">正在读取服务…</p>}
-              {snapshot && visibleServices.length === 0 && (
-                <p className="services-empty system-caption">
-                  {query.trim() || filter !== 'all' ? '没有符合当前筛选的服务' : '没有可管理的服务'}
-                </p>
-              )}
-              {visibleServices.length > 0 && (
-                <table className="data-table services-table" aria-label="服务列表">
-                  <thead><tr><th scope="col">服务</th><th scope="col">状态</th></tr></thead>
-                  <tbody>
-                    {visibleServices.map(service => (
-                      <tr key={service.name} data-selected={selectedName === service.name}>
-                        <td>
-                          <button className="app-control service-name"
-                            ref={node => {
-                              if (node) rowButtons.current.set(service.name, node)
-                              else rowButtons.current.delete(service.name)
-                            }}
-                            aria-current={selectedName === service.name ? 'true' : undefined}
-                            aria-controls={detailId}
-                            onClick={() => {
-                              setActionError(undefined)
-                              if (!split) {
-                                listScrollTop.current = list.current?.scrollTop ?? 0
-                                nextFocus.current = 'detail'
-                              }
-                              setSelectedName(service.name)
-                              setShowDetail(true)
-                              if (activeTab === 'logs') void loadLogs(service.name)
-                            }}>{service.name}</button>
-                        </td>
-                        <td><ServiceStatus state={service.state} /></td>
-                      </tr>
+            style={split ? {
+              gridTemplateColumns: `minmax(${MIN_LIST_WIDTH}px, ${listShare}fr) ${SPLITTER_WIDTH}px minmax(${MIN_DETAIL_WIDTH}px, ${1 - listShare}fr)`,
+            } : undefined}>
+            <div className="services-list-pane" hidden={!listVisible}>
+              <div className="services-toolbar">
+                <div className="services-toolbar-row">
+                  <label className="services-search">
+                    <Search size={14} aria-hidden="true" />
+                    <input ref={searchInput} type="search" value={query}
+                      onChange={event => setQuery(event.target.value)}
+                      placeholder="搜索服务名或描述" aria-label="搜索服务" />
+                  </label>
+                  <SortMenu anomaliesFirst={anomaliesFirst} onChange={setAnomaliesFirst} />
+                  <button type="button" className="app-control services-icon-button"
+                    onClick={() => { void refreshNow() }} disabled={refreshing}
+                    aria-label="刷新服务列表" title="刷新">
+                    <RefreshCw size={15} aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="services-toolbar-row">
+                  <div className="service-chips" role="group" aria-label="状态筛选">
+                    {filterOrder.map(value => (
+                      <button key={value} type="button" className="service-chip"
+                        aria-pressed={filter === value} onClick={() => setFilter(value)}>
+                        {filterLabels[value]}
+                        <span className="service-chip-count">{counts[value]}</span>
+                      </button>
                     ))}
-                  </tbody>
-                </table>
-              )}
+                  </div>
+                </div>
+              </div>
+              <ServiceList
+                services={visible}
+                selectedName={selectedName}
+                needle={needle}
+                listRef={list}
+                onSelect={selectService}
+                onOpen={openService}
+                onScroll={top => { listScrollTop.current = top }}
+                loading={!snapshot && !listError}
+                error={listError}
+                emptyMessage={filtersActive ? '没有符合当前筛选的服务' : '没有可管理的服务'}
+                onClearFilters={filtersActive ? clearFilters : undefined} />
             </div>
             {split && (
               <div className="services-splitter" role="separator" aria-orientation="vertical"
@@ -496,103 +507,60 @@ export function Services({ active = true }: { active?: boolean }) {
                 tabIndex={0} title="拖动调整宽度；双击或按 Enter 恢复默认"
                 onPointerDown={beginResize} onPointerMove={moveResize}
                 onPointerUp={endResize} onPointerCancel={endResize}
-                onDoubleClick={() => setListShare(0.5)} onKeyDown={resizeKeyDown} />
+                onDoubleClick={() => setListShare(DEFAULT_SHARE)} onKeyDown={resizeKeyDown} />
             )}
-            <section ref={detail} id={detailId} className="service-detail system-scroll" aria-label="服务详情" hidden={!split && !showDetail}>
-              {!split && <button ref={back} className="app-control system-back" onClick={() => {
-                nextFocus.current = 'list'
-                setShowDetail(false)
-              }}><ArrowLeft size={16} aria-hidden="true" />返回列表</button>}
+            <section ref={detailPane} className="service-detail" aria-label="服务详情"
+              hidden={!split && !showDetail}>
+              {!split && (
+                <div className="service-detail-backrow">
+                  <button ref={back} type="button" className="app-control service-back" onClick={backToList}>
+                    <ArrowLeft size={16} aria-hidden="true" />返回列表
+                  </button>
+                </div>
+              )}
               {selected ? (
-                <>
-                  <h3 ref={heading} tabIndex={-1} className="system-subtitle service-detail-name">{selected.name}</h3>
-                  {logsAvailable && (
-                    <div className="service-tabs" role="tablist" aria-label="服务详情">
-                      <button type="button" role="tab" id={detailTabId} className="service-tab"
-                        aria-selected={activeTab === 'detail'} aria-controls={detailPanelId}
-                        tabIndex={activeTab === 'detail' ? 0 : -1} onClick={() => setTab('detail')}>详情</button>
-                      <button type="button" role="tab" id={logsTabId} className="service-tab"
-                        aria-selected={activeTab === 'logs'} aria-controls={logsPanelId}
-                        tabIndex={activeTab === 'logs' ? 0 : -1}
-                        onClick={() => { setTab('logs'); if (selected) void loadLogs(selected.name) }}>日志</button>
-                    </div>
-                  )}
-                  <div role={logsAvailable ? 'tabpanel' : undefined} id={logsAvailable ? detailPanelId : undefined}
-                    aria-labelledby={logsAvailable ? detailTabId : undefined} hidden={activeTab !== 'detail'}>
-                      <dl className="service-fields">
-                        <div><dt>当前状态</dt><dd><span role="status"><ServiceStatus state={selected.state} /></span></dd></div>
-                        {selected.stateDetail && <div><dt>原始状态</dt><dd className="service-mono">{selected.stateDetail}</dd></div>}
-                        <div><dt>开机自启</dt><dd>{bootStateLabels[selected.bootState]}</dd></div>
-                        <div><dt>描述</dt><dd>{selected.description || '—'}</dd></div>
-                      </dl>
-                      {selectedError && <p className="service-alert" role="alert">{selectedError}</p>}
-                      {selectedPending && <p className="system-caption service-pending" role="status">{actionProgress[selectedPending.action]}</p>}
-                      {lifecycleActions.length === 0 && bootActions.length === 0 && !selectedPending && (
-                        <p className="system-caption">当前状态没有可执行的操作。</p>
-                      )}
-                      <div className="service-actions">
-                        {lifecycleActions.length > 0 && (
-                          <div className="service-action-group" aria-label="生命周期操作">
-                            {lifecycleActions.map(action => {
-                              const Icon = actionIcons[action]
-                              return (
-                                <button key={action} type="button" className="app-control service-action"
-                                  disabled={pending !== undefined}
-                                  onClick={event => requestAction(selected, action, event.currentTarget)}>
-                                  <Icon size={15} aria-hidden="true" />{actionLabels[action]}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                        {bootActions.length > 0 && (
-                          <div className="service-action-group" aria-label="开机自启操作">
-                            {bootActions.map(action => {
-                              const Icon = actionIcons[action]
-                              return (
-                                <button key={action} type="button" className="app-control service-action"
-                                  disabled={pending !== undefined}
-                                  onClick={event => requestAction(selected, action, event.currentTarget)}>
-                                  <Icon size={15} aria-hidden="true" />{actionLabels[action]}
-                                </button>
-                              )
-                            })}
-                          </div>
-                        )}
-                      </div>
-                      {excluded && <p className="system-caption service-excluded" role="status">此服务已移出当前筛选结果。</p>}
-                    </div>
-                  {logsAvailable && (
-                    <div role="tabpanel" id={logsPanelId} aria-labelledby={logsTabId} className="service-logs-panel" hidden={activeTab !== 'logs'}>
-                      <div className="service-logs-toolbar">
-                        <span className="system-caption">最近 {LOG_LINES} 行</span>
-                        <button type="button" className="app-control" disabled={logsLoading}
-                          onClick={() => { if (selected) void loadLogs(selected.name, true) }}>
-                          <RefreshCw size={15} aria-hidden="true" />刷新
-                        </button>
-                      </div>
-                      {logsError && <p className="service-alert" role="alert">{logsError}</p>}
-                      {logsLoading && logs.length === 0 && <p className="system-caption" role="status">正在读取日志…</p>}
-                      {!logsLoading && !logsError && logs.length === 0 && <p className="system-caption">暂无日志。</p>}
-                      {logs.length > 0 && <pre className="service-logs" aria-label={`${selected.name} 的日志`}>{logs.join('\n')}</pre>}
-                    </div>
-                  )}
-                </>
+                detailVisible ? (
+                  <ServiceDetailPane
+                    key={selected.name}
+                    service={selected}
+                    refreshToken={listVersion}
+                    pendingAction={selectedPending?.action}
+                    actionError={selectedActionError}
+                    excluded={excluded}
+                    logsAvailable={logsAvailable}
+                    tab={activeTab}
+                    onTabChange={setTab}
+                    onAction={requestAction}
+                    logsPanel={logsAvailable
+                      ? <ServiceLogs key={selected.name} unit={selected.name}
+                          active={activeTab === 'logs'} version={logsVersion} />
+                      : undefined}
+                    headingRef={heading} />
+                ) : null
               ) : (
-                <p className="system-caption">选择服务以查看详情</p>
+                <div className="service-detail-body">
+                  <p className="system-caption">选择服务以查看详情</p>
+                </div>
               )}
             </section>
           </div>
         )}
       </div>
-      <dialog ref={dialog} className="service-dialog" aria-labelledby={titleId} aria-describedby={descriptionId}
+      <footer className="app-statusbar services-statusbar">
+        <span>{backendName(snapshot?.backend)}</span>
+        <span aria-live="polite">
+          {lastUpdated ? `更新于 ${formatClock(lastUpdated)}` : refreshing ? '正在刷新…' : '等待首次刷新'}
+        </span>
+      </footer>
+      <dialog ref={dialog} className="service-dialog" aria-labelledby={titleId}
+        aria-describedby={descriptionId}
         onKeyDown={event => {
           if (event.key !== 'Tab') return
           const [first, last] = [cancelButton.current, confirmButton.current]
           if (event.shiftKey ? document.activeElement === first : document.activeElement === last) {
             event.preventDefault()
-            const next = event.shiftKey ? last : first
-            next?.focus()
+            const nextTarget = event.shiftKey ? last : first
+            nextTarget?.focus()
           }
         }}
         onCancel={event => {
@@ -600,17 +568,19 @@ export function Services({ active = true }: { active?: boolean }) {
           closeConfirmation(false)
         }}>
         <div className="service-dialog-body">
-          <h2 id={titleId}>{confirmation === 'restart' ? '重启服务？' : '停止服务？'}</h2>
+          <h2 id={titleId}>{confirmation ? confirmationTitles[confirmation] : ''}</h2>
           <div id={descriptionId}>
             <p className="service-target">{selected?.name}</p>
             {selected?.description && <p>{selected.description}</p>}
-            <p>{confirmation === 'restart' ? '重启会短暂中断依赖它的功能。' : '停止后依赖它的功能可能中断。'}</p>
+            <p>{confirmation ? confirmationWarnings[confirmation] : ''}</p>
           </div>
         </div>
         <div className="service-dialog-actions">
-          <button ref={cancelButton} className="app-control" onClick={() => closeConfirmation(false)}>取消</button>
-          <button ref={confirmButton} className="app-control danger-control" onClick={() => closeConfirmation(true)}>
-            {confirmation === 'restart' ? '重启服务' : '停止服务'}
+          <button ref={cancelButton} type="button" className="app-control"
+            onClick={() => closeConfirmation(false)}>取消</button>
+          <button ref={confirmButton} type="button" className={confirmClass}
+            onClick={() => closeConfirmation(true)}>
+            {confirmation ? confirmationLabels[confirmation] : '确认'}
           </button>
         </div>
       </dialog>

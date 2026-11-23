@@ -149,3 +149,98 @@ func TestSplitLines(t *testing.T) {
 		}
 	}
 }
+
+const testShow = `LoadState=loaded
+ActiveState=active
+SubState=running
+UnitFileState=enabled
+MainPID=1234
+MemoryCurrent=13844480
+CPUUsageNSec=2391500000
+ActiveEnterTimestamp=Fri 2026-11-21 10:00:00 CST
+FragmentPath=/usr/lib/systemd/system/ssh.service
+`
+
+func TestParseShow(t *testing.T) {
+	props := parseShow(testShow)
+	if got := props["LoadState"]; got != "loaded" {
+		t.Errorf("LoadState = %q, want loaded", got)
+	}
+	if got := props["MainPID"]; got != "1234" {
+		t.Errorf("MainPID = %q, want 1234", got)
+	}
+	if got := props["FragmentPath"]; got != "/usr/lib/systemd/system/ssh.service" {
+		t.Errorf("FragmentPath = %q", got)
+	}
+}
+
+func TestBuildDetail(t *testing.T) {
+	detail, ok := buildDetail("ssh.service", parseShow(testShow))
+	if !ok {
+		t.Fatal("buildDetail reported the unit as missing")
+	}
+	if detail.Name != "ssh.service" || detail.State != StateRunning || detail.StateDetail != "active (running)" {
+		t.Errorf("unexpected state fields: %+v", detail)
+	}
+	if detail.BootState != BootEnabled {
+		t.Errorf("BootState = %s, want enabled", detail.BootState)
+	}
+	if detail.MainPID == nil || *detail.MainPID != 1234 {
+		t.Errorf("MainPID = %v", detail.MainPID)
+	}
+	if detail.MemoryBytes == nil || *detail.MemoryBytes != 13844480 {
+		t.Errorf("MemoryBytes = %v", detail.MemoryBytes)
+	}
+	if detail.CPUUsageNs == nil || *detail.CPUUsageNs != 2391500000 {
+		t.Errorf("CPUUsageNs = %v", detail.CPUUsageNs)
+	}
+	if detail.ActiveEnterTimestamp != "Fri 2026-11-21 10:00:00 CST" {
+		t.Errorf("ActiveEnterTimestamp = %q", detail.ActiveEnterTimestamp)
+	}
+	if detail.FragmentPath != "/usr/lib/systemd/system/ssh.service" {
+		t.Errorf("FragmentPath = %q", detail.FragmentPath)
+	}
+}
+
+func TestBuildDetailCompleted(t *testing.T) {
+	detail, ok := buildDetail("apport.service", parseShow("LoadState=loaded\nActiveState=active\nSubState=exited\nUnitFileState=static"))
+	if !ok {
+		t.Fatal("buildDetail reported the unit as missing")
+	}
+	if detail.State != StateCompleted || detail.StateDetail != "active (exited)" || detail.BootState != BootStatic {
+		t.Errorf("unexpected detail: %+v", detail)
+	}
+}
+
+func TestBuildDetailUnsetValues(t *testing.T) {
+	detail, ok := buildDetail("idle.service", parseShow(`LoadState=loaded
+ActiveState=inactive
+SubState=dead
+UnitFileState=disabled
+MainPID=0
+MemoryCurrent=[not set]
+CPUUsageNSec=18446744073709551615
+ActiveEnterTimestamp=
+FragmentPath=`))
+	if !ok {
+		t.Fatal("buildDetail reported the unit as missing")
+	}
+	if detail.State != StateStopped || detail.BootState != BootDisabled {
+		t.Errorf("unexpected state fields: %+v", detail)
+	}
+	if detail.MainPID != nil || detail.MemoryBytes != nil || detail.CPUUsageNs != nil {
+		t.Errorf("unset numeric fields should be nil: %+v", detail)
+	}
+	if detail.ActiveEnterTimestamp != "" || detail.FragmentPath != "" {
+		t.Errorf("unset string fields should be empty: %+v", detail)
+	}
+}
+
+func TestBuildDetailNotFound(t *testing.T) {
+	if _, ok := buildDetail("missing.service", parseShow("LoadState=not-found\nActiveState=inactive")); ok {
+		t.Error("not-found unit was reported as present")
+	}
+	if _, ok := buildDetail("missing.service", map[string]string{}); ok {
+		t.Error("empty properties were reported as present")
+	}
+}

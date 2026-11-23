@@ -62,11 +62,25 @@ type Service struct {
 	Actions     []Action  `json:"actions"`
 }
 
+// ServiceDetail is the extended per-unit view shown in the service detail pane.
+type ServiceDetail struct {
+	Name                 string    `json:"name"`
+	State                State     `json:"state"`
+	StateDetail          string    `json:"stateDetail"`
+	BootState            BootState `json:"bootState"`
+	MainPID              *int      `json:"mainPid"`
+	MemoryBytes          *int64    `json:"memoryBytes"`
+	CPUUsageNs           *int64    `json:"cpuUsageNs"`
+	ActiveEnterTimestamp string    `json:"activeEnterTimestamp"`
+	FragmentPath         string    `json:"fragmentPath"`
+}
+
 // Backend is the minimal service manager interface used by the HTTP layer.
 type Backend interface {
 	Name() string
 	Capabilities() Capabilities
 	List(ctx context.Context) ([]Service, error)
+	Detail(ctx context.Context, unit string) (ServiceDetail, error)
 	Start(ctx context.Context, unit string) error
 	Stop(ctx context.Context, unit string) error
 	Restart(ctx context.Context, unit string) error

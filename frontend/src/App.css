@@ -818,7 +818,7 @@
   color: var(--react-web-desktop-accent);
   font-weight: 600;
 }
-.app-control svg, .service-status svg { flex: none; }
+.app-control svg { flex: none; }
 
 .file-manager { display: flex; flex-direction: column; height: 100%; }
 .file-toolbar {
@@ -1091,90 +1091,6 @@
   box-shadow: var(--file-inspector-shadow, var(--react-web-desktop-shadow-overlay));
 }
 
-.services-page { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.services-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  min-height: var(--react-web-desktop-toolbar);
-  padding: 8px 12px;
-  background: var(--react-web-desktop-subtle);
-  border-bottom: 1px solid var(--react-web-desktop-divider);
-}
-.services-filter { display: flex; align-items: center; gap: 8px; }
-.services-filter select {
-  min-height: var(--react-web-desktop-control);
-  padding-inline: 8px;
-  border: 1px solid var(--react-web-desktop-border);
-  border-radius: var(--react-web-desktop-radius-control);
-  background: var(--react-web-desktop-surface);
-  color: var(--react-web-desktop-fg);
-}
-.services-panes { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); min-height: 0; }
-.services-page[data-split="true"] .services-panes {
-  grid-template-columns: minmax(360px, 1fr) 6px minmax(257px, 1fr);
-}
-.services-splitter {
-  position: relative;
-  cursor: col-resize;
-  background: transparent;
-  touch-action: none;
-}
-.services-splitter::before {
-  content: '';
-  position: absolute;
-  inset-block: 0;
-  inset-inline-start: 50%;
-  width: 1px;
-  background: var(--react-web-desktop-divider);
-  transform: translateX(-50%);
-}
-.services-splitter:is(:hover, :focus-visible)::before,
-.services-page[data-resizing="true"] .services-splitter::before { background: var(--react-web-desktop-accent); }
-.services-splitter:focus-visible { outline: 2px solid var(--react-web-desktop-focus); outline-offset: -2px; }
-.services-page[data-resizing="true"] { cursor: col-resize; user-select: none; }
-.services-list { scrollbar-width: thin; }
-.services-table :is(th, td) { height: var(--react-web-desktop-row); padding: 0 12px; }
-.services-table td:not(:first-child) {
-  font-size: var(--text-react-web-desktop-body);
-  line-height: var(--text-react-web-desktop-body--line-height);
-}
-.services-table :is(th, td):last-child { width: 1%; }
-.services-table tr[data-selected="true"] td { background: var(--react-web-desktop-selected); }
-.services-table .service-name {
-  justify-content: flex-start;
-  min-height: calc(var(--react-web-desktop-row) - 1px);
-  max-width: 100%;
-  margin-inline: -4px;
-  padding: 4px;
-  text-align: start;
-  overflow-wrap: anywhere;
-  font-family: var(--react-web-desktop-font-mono);
-  color: var(--react-web-desktop-accent);
-}
-.service-name[aria-current] { font-weight: 600; text-decoration: underline; }
-.service-status { display: inline-flex; align-items: center; gap: 6px; color: var(--react-web-desktop-muted); }
-.service-status[data-status="running"] { color: var(--react-web-desktop-success); }
-.service-status[data-status="failed"] { color: var(--react-web-desktop-danger); }
-.services-empty { color: var(--react-web-desktop-muted); }
-.service-detail { padding: 12px; }
-.services-page[data-split="true"] .service-detail { padding: 16px; }
-.service-detail-name { overflow-wrap: anywhere; font-family: var(--react-web-desktop-font-mono); }
-.service-fields { margin-block: 12px; }
-.service-fields > div { padding-block: 8px; border-top: 1px solid var(--react-web-desktop-divider); }
-.service-fields dt {
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
-}
-.service-fields dd { margin-top: 4px; }
-.service-detail .service-stop {
-  min-height: var(--react-web-desktop-control);
-  border: 1px solid var(--react-web-desktop-border);
-}
-.service-excluded { margin-top: 8px; }
 .service-dialog {
   margin: auto;
   width: min(440px, calc(100% - 24px));
@@ -1197,99 +1113,6 @@
 .service-dialog-actions .danger-control:not(:disabled):is(:hover, :active) { background: var(--react-web-desktop-danger); border-color: var(--react-web-desktop-on-danger); }
 .service-dialog-actions .danger-control:focus-visible { outline-offset: 2px; }
 
-.service-status[data-status="completed"] { color: var(--react-web-desktop-accent); }
-.services-toolbar-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.services-search {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--react-web-desktop-control);
-  padding-inline: 8px;
-  color: var(--react-web-desktop-muted);
-  background: var(--react-web-desktop-surface);
-  border: 1px solid var(--react-web-desktop-border);
-  border-radius: var(--react-web-desktop-radius-control);
-}
-.services-search input {
-  min-width: 150px;
-  font: inherit;
-  color: var(--react-web-desktop-fg);
-  background: transparent;
-  border: 0;
-  outline: 0;
-}
-.services-refresh {
-  min-height: var(--react-web-desktop-control);
-  border: 1px solid var(--react-web-desktop-border);
-}
-.services-body { display: flex; flex-direction: column; min-height: 0; }
-.services-body > .services-panes { flex: 1; min-height: 0; }
-.service-warning {
-  padding: 6px 12px;
-  margin: 0;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
-}
-.services-empty-state {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 24px 16px;
-  text-align: center;
-}
-.services-empty-state svg { color: var(--react-web-desktop-muted); }
-.service-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-.service-action-group { display: flex; flex-wrap: wrap; gap: 8px; }
-.service-detail .service-action {
-  min-height: var(--react-web-desktop-control);
-  border: 1px solid var(--react-web-desktop-border);
-}
-.service-alert { margin-block: 8px; color: var(--react-web-desktop-danger); }
-.service-list-error { padding: 8px 12px; }
-.service-pending { margin-block: 8px; }
-.service-tabs {
-  display: flex;
-  gap: 4px;
-  margin-block: 8px 12px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
-}
-.service-tab {
-  min-height: var(--react-web-desktop-control);
-  padding-inline: 10px;
-  color: var(--react-web-desktop-muted);
-  background: transparent;
-  border: 0;
-  border-bottom: 2px solid transparent;
-}
-.service-tab[aria-selected="true"] {
-  font-weight: 600;
-  color: var(--react-web-desktop-fg);
-  border-bottom-color: var(--react-web-desktop-accent);
-}
-.service-mono { overflow-wrap: anywhere; font-family: var(--react-web-desktop-font-mono); }
-.service-logs-panel { display: flex; flex-direction: column; gap: 8px; }
-.service-logs-panel[hidden] { display: none; }
-.service-logs-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.service-logs-toolbar .app-control {
-  min-height: var(--react-web-desktop-control);
-  border: 1px solid var(--react-web-desktop-border);
-}
-.service-logs {
-  max-height: 360px;
-  padding: 8px;
-  margin: 0;
-  overflow: auto;
-  font-family: var(--react-web-desktop-font-mono);
-  font-size: var(--text-react-web-desktop-compact);
-  line-height: var(--text-react-web-desktop-compact--line-height);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--react-web-desktop-subtle);
-  border: 1px solid var(--react-web-desktop-divider);
-  border-radius: var(--react-web-desktop-radius-control);
-}
 
 @variant @react-web-desktop-split/app {
   .file-toolbar, .file-panes { --file-location-control: none; }
@@ -1320,9 +1143,7 @@
 
 @media (any-pointer: coarse) {
   .app-control, .service-dialog-actions .app-control { min-width: var(--react-web-desktop-control-touch); min-height: var(--react-web-desktop-control-touch); }
-  .services-table :is(th, td) { height: var(--react-web-desktop-control-touch); }
-  .services-table .app-control, .settings-page .settings-category,
-  .service-tab, .service-detail .service-action, .services-filter select, .services-search, .theme-option {
+  .settings-page .settings-category, .theme-option {
     min-width: var(--react-web-desktop-control-touch);
     min-height: var(--react-web-desktop-control-touch);
   }

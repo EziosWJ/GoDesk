@@ -29,6 +29,18 @@ export type ServicesSnapshot = {
   services: ManagedService[]
 }
 
+export type ServiceDetail = {
+  name: string
+  state: ServiceState
+  stateDetail: string
+  bootState: ServiceBootState
+  mainPid: number | null
+  memoryBytes: number | null
+  cpuUsageNs: number | null
+  activeEnterTimestamp: string
+  fragmentPath: string
+}
+
 export class ServiceError extends Error {
   readonly code: string
   readonly status: number
@@ -57,6 +69,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export const servicesApi = {
   list(signal?: AbortSignal) {
     return request<ServicesSnapshot>('', { signal })
+  },
+  detail(unit: string, signal?: AbortSignal) {
+    return request<ServiceDetail>(`/${encodeURIComponent(unit)}`, { signal })
   },
   action(unit: string, action: ServiceAction) {
     return request<void>(`/${encodeURIComponent(unit)}/${action}`, { method: 'POST' })

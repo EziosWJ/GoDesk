@@ -15,11 +15,14 @@ type fakeBackend struct {
 	caps      Capabilities
 	services  []Service
 	listErr   error
+	detail    ServiceDetail
+	detailErr error
 	actionErr error
 	logs      []string
 	logsErr   error
 	calls     []string
 	lineCount int
+	listCalls int
 }
 
 func (f *fakeBackend) Name() string {
@@ -31,7 +34,15 @@ func (f *fakeBackend) Name() string {
 
 func (f *fakeBackend) Capabilities() Capabilities { return f.caps }
 
-func (f *fakeBackend) List(context.Context) ([]Service, error) { return f.services, f.listErr }
+func (f *fakeBackend) List(context.Context) ([]Service, error) {
+	f.listCalls++
+	return f.services, f.listErr
+}
+
+func (f *fakeBackend) Detail(_ context.Context, unit string) (ServiceDetail, error) {
+	f.calls = append(f.calls, "detail "+unit)
+	return f.detail, f.detailErr
+}
 
 func (f *fakeBackend) record(action Action, unit string) error {
 	f.calls = append(f.calls, string(action)+" "+unit)
@@ -281,6 +292,77 @@ func TestLogsEmpty(t *testing.T) {
 	}
 	if strings.TrimSpace(string(response.Lines)) != "[]" {
 		t.Errorf("lines = %s, want []", response.Lines)
+	}
+}
+
+func TestDetail(t *testing.T) {
+	pid := 1234
+	memory := int64(13844480)
+	cpu := int64(2391500000)
+	backend := &fakeBackend{detail: ServiceDetail{
+		Name: "ssh.service", State: StateRunning, StateDetail: "active (running)", BootState: BootEnabled,
+		MainPID: &pid, MemoryBytes: &memory, CPUUsageNs: &cpu,
+		ActiveEnterTimestamp: "Fri 2026-11-21 10:00:00 CST",
+		FragmentPath:         "/usr/lib/systemd/system/ssh.service",
+	}}
+	recorder := request(testMux(backend), http.MethodGet, "/api/v1/services/ssh.service")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	var response ServiceDetail
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Name != "ssh.service" || response.State != StateRunning || response.BootState != BootEnabled {
+		t.Fatalf("unexpected detail: %+v", response)
+	}
+	if response.MainPID == nil || *response.MainPID != pid || response.MemoryBytes == nil || *response.MemoryBytes != memory {
+		t.Errorf("unexpected numeric fields: %+v", response)
+	}
+	if backend.listCalls != 0 {
+		t.Errorf("detail called List %d times, want 0", backend.listCalls)
+	}
+	if len(backend.calls) != 1 || backend.calls[0] != "detail ssh.service" {
+		t.Errorf("calls = %v", backend.calls)
+	}
+}
+
+func TestDetailRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		err    error
+		status int
+		code   string
+	}{
+		{"invalid unit", "/api/v1/services/ssh.socket", nil, http.StatusBadRequest, "invalid_unit"},
+		{"not found", "/api/v1/services/cron.service", &Error{Code: "not_found", Message: "missing"}, http.StatusNotFound, "not_found"},
+		{"permission", "/api/v1/services/ssh.service", &Error{Code: "permission", Message: "denied"}, http.StatusForbidden, "permission"},
+		{"operation failed", "/api/v1/services/ssh.service", &Error{Code: "operation_failed", Message: "boom"}, http.StatusUnprocessableEntity, "operation_failed"},
+		{"timeout", "/api/v1/services/ssh.service", context.DeadlineExceeded, http.StatusGatewayTimeout, "timeout"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeBackend{detailErr: tc.err}
+			recorder := request(testMux(backend), http.MethodGet, tc.path)
+			if recorder.Code != tc.status {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, tc.status, recorder.Body.String())
+			}
+			var body errorBody
+			if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Code != tc.code {
+				t.Errorf("code = %q, want %q", body.Code, tc.code)
+			}
+		})
+	}
+}
+
+func TestDetailNoneBackend(t *testing.T) {
+	recorder := request(testMux(None()), http.MethodGet, "/api/v1/services/ssh.service")
+	if recorder.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusNotFound, recorder.Body.String())
 	}
 }
 

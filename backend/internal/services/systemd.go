@@ -69,6 +69,20 @@ func (b *systemdBackend) action(ctx context.Context, action Action, unit string)
 	return err
 }
 
+func (b *systemdBackend) Detail(ctx context.Context, unit string) (ServiceDetail, error) {
+	output, err := b.run(ctx, b.systemctl, "show", "--no-pager",
+		"-p", "LoadState,ActiveState,SubState,UnitFileState,MainPID,MemoryCurrent,CPUUsageNSec,ActiveEnterTimestamp,FragmentPath",
+		"--", unit)
+	if err != nil {
+		return ServiceDetail{}, err
+	}
+	detail, ok := buildDetail(unit, parseShow(output))
+	if !ok {
+		return ServiceDetail{}, &Error{Code: "not_found", Message: "服务不存在"}
+	}
+	return detail, nil
+}
+
 func (b *systemdBackend) Logs(ctx context.Context, unit string, lines int) ([]string, error) {
 	if b.journalctl == "" {
 		return nil, &Error{Code: "logs_unavailable", Message: "journalctl 不可用"}

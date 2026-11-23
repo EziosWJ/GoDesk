@@ -13,6 +13,10 @@ func (noneBackend) Capabilities() Capabilities { return Capabilities{} }
 
 func (noneBackend) List(context.Context) ([]Service, error) { return []Service{}, nil }
 
+func (noneBackend) Detail(context.Context, string) (ServiceDetail, error) {
+	return ServiceDetail{}, &Error{Code: "not_found", Message: "服务不存在"}
+}
+
 func (noneBackend) Start(context.Context, string) error { return unavailable() }
 
 func (noneBackend) Stop(context.Context, string) error { return unavailable() }

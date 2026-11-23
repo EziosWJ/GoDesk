@@ -18,6 +18,7 @@ import (
 
 	"godesk/internal/auth"
 	"godesk/internal/httpserver"
+	"godesk/internal/monitor"
 	"godesk/internal/terminal"
 	"godesk/internal/webui"
 
@@ -69,12 +70,15 @@ func run(ctx context.Context, address, dataDir string) error {
 	}
 	defer terminals.Close()
 
+	monitoring := monitor.Start(ctx, monitor.DefaultInterval)
+	defer monitoring.Close()
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", address, err)
 	}
 	server := &http.Server{
-		Handler:           httpserver.New(db, credentials, terminals, webui.Handler()),
+		Handler:           httpserver.New(db, credentials, terminals, monitoring, webui.Handler()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)
@@ -88,6 +92,7 @@ func run(ctx context.Context, address, dataDir string) error {
 		return fmt.Errorf("serve HTTP: %w", err)
 	case <-ctx.Done():
 		terminals.Close()
+		monitoring.Close()
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {

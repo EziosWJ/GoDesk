@@ -9,13 +9,17 @@ import (
 
 	"godesk/internal/auth"
 	"godesk/internal/files"
+	"godesk/internal/monitor"
 	"godesk/internal/terminal"
 )
 
-func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, desktop http.Handler) http.Handler {
+func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monitoring *monitor.Collector, desktop http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	credentials.Register(mux)
 	terminals.Register(mux, credentials.RequireSession)
+	if monitoring != nil {
+		monitoring.Register(mux, credentials.RequireSession)
+	}
 	const filePrefix = "/api/v1/files"
 	fileRoutes := http.NewServeMux()
 	files.Register(fileRoutes)

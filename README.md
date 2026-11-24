@@ -4,6 +4,10 @@ goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当�
 
 ![goDesk 桌面与文件管理器](frontend/docs/screenshots/desktop-light.png)
 
+| 深色桌面的开始菜单 | 深色主题下的多窗口布局 |
+| --- | --- |
+| ![深色桌面的开始菜单](frontend/docs/screenshots/start-menu-dark.png) | ![并排打开的系统设置和系统监控窗口](frontend/docs/screenshots/system-monitor-dark.png) |
+
 ## 当前功能
 
 - 首次访问时创建操作者密码。登录会话持续 7 天，关闭浏览器或重启服务后可继续使用有效会话。
@@ -42,6 +46,10 @@ go -C backend run ./cmd/godesk -data-dir ../data
 pnpm --dir frontend lint
 go -C backend test ./...
 ```
+
+## 下载
+
+从 [Releases](https://github.com/EziosWJ/GoDesk/releases) 下载对应 Linux 架构的压缩包（`386`、`amd64`、`arm64`、`armv7`），解压后运行其中的 `godesk`。同一 Release 提供 `SHA256SUMS` 用于校验。
 
 ## 构建与运行
 
@@ -99,6 +107,8 @@ system 级服务的写操作可使用免密 sudo，也可沿用运行账号的 p
 底栏右侧显示被管理主机的整体健康状态（正常、警告、严重或未知）和异常数量。点击入口打开健康面板，可以查看异常原因、当前值、生效阈值、异常开始时间、CPU/内存/存储/网络维度摘要和主机信息，并跳转到系统监控查看详细指标。
 
 健康状态由后端消费系统监控的同一份指标快照计算，底栏每 5 秒轮询；GoDesk 连接中断与主机健康状态分开表达。阈值、持续判定和恢复规则见[主机健康状态中心 Spec](docs/specs/host-health-center.md)，接口契约见[系统监控与主机健康](docs/system-monitoring.md#主机健康状态接口)。
+
+![主机健康面板](frontend/docs/screenshots/health-panel-dark.png)
 
 ## 相关文档
 

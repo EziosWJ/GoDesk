@@ -12,6 +12,8 @@ goDesk 的 `frontend/` 基于 React Web Desktop 脚手架，使用 React、TypeS
 | --- | --- |
 | ![深色桌面的开始菜单](docs/screenshots/start-menu-dark.png) | ![并排打开的系统设置和系统监控窗口](docs/screenshots/system-monitor-dark.png) |
 
+![主机健康面板](docs/screenshots/health-panel-dark.png)
+
 ## 快速开始
 
 在 `frontend/` 目录使用 Node.js 24 和 pnpm 12 运行以下命令。

@@ -1,6 +1,6 @@
 # GoDesk Extension Host 首版契约
 
-本文定义首版计划交付的共同行为，当前尚待实现。实施顺序、迁移边界和通过条件见[实施 Spec](../.scratch/extension-host/spec.md)。
+本文定义首版计划交付的共同行为。共享宿主侧（Extension Host 的 `hostsys/services` 与 `host.services` 服务授权）已实现；Mihomo 示例插件和独立开发命令留待工单 04–05 完成。实施顺序、迁移边界和通过条件见[实施 Spec](../.scratch/extension-host/spec.md)。
 
 ## 运行模式与信任
 

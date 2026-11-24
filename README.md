@@ -70,6 +70,7 @@ make build
 | `-listen` | 设置 HTTP 监听地址，默认为 `0.0.0.0:5000`。 |
 | `-data-dir` | 设置持久化目录，默认为启动时工作目录下的 `./data`。 |
 | `-service-backend` | 设置服务管理后端，`auto`（默认）、`systemd` 或 `none`。 |
+| `-extension-grants` | 设置插件服务授权 JSON 文件，按插件 ID 授予已有 systemd 服务的查询和重启权限。 |
 
 ## 主机权限
 
@@ -102,6 +103,12 @@ sudo ./godesk --setup-sudo
 
 system 级服务的写操作可使用免密 sudo，也可沿用运行账号的 polkit 授权。列表和 journal 日志使用运行账号的读取权限，权限不足时界面会显示明确错误。
 
+## 扩展插件
+
+从开始菜单打开「扩展」应用，插件在该应用内安装和启用。插件包格式、生命周期与 Host API 见[扩展宿主契约](docs/extensions.md)。
+
+插件默认不能访问系统服务。需要让插件查询或重启已有 systemd 服务时，启动时通过 `-extension-grants` 指定授权 JSON 文件；文件按插件 ID 配置允许的服务单元、动作以及是否通过非交互 sudo 执行，格式见 [Extension-Host 服务授权与 `host.services`](https://github.com/EziosWJ/Extension-Host#服务授权与-hostservices)。授权按插件 ID 生效，未授权、单元缺失和 systemd 不可用时调用会报告对应原因。
+
 ## 主机健康状态中心
 
 底栏右侧显示被管理主机的整体健康状态（正常、警告、严重或未知）和异常数量。点击入口打开健康面板，可以查看异常原因、当前值、生效阈值、异常开始时间、CPU/内存/存储/网络维度摘要和主机信息，并跳转到系统监控查看详细指标。
@@ -112,7 +119,7 @@ system 级服务的写操作可使用免密 sudo，也可沿用运行账号的 p
 
 ## 相关文档
 
-- [GoDesk Extension Host 首版契约（待实现）](docs/extensions.md)
+- [GoDesk Extension Host 首版契约](docs/extensions.md)
 - [GoDesk Extension Host 实施 Spec](.scratch/extension-host/spec.md)
 - [认证行为与 HTTP 接口](docs/authentication.md)
 - [主机权限、sudo 命令与监听端口契约](docs/privileges.md)

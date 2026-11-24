@@ -40,8 +40,10 @@ func TestExtensionRoutesRequireSession(t *testing.T) {
 	monitoring := monitor.Start(t.Context(), time.Second)
 	defer monitoring.Close()
 	healthEngine := health.Start(t.Context(), monitoring, time.Second)
-	manager, err := extensions.Open(t.Context(), filepath.Join(t.TempDir(), "extensions"),
-		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	manager, err := extensions.Open(t.Context(), extensions.Options{
+		DataDir: filepath.Join(t.TempDir(), "extensions"),
+		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 	if err != nil {
 		t.Fatalf("open extension host: %v", err)
 	}

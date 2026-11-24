@@ -8,7 +8,7 @@ goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当�
 
 - 首次访问时创建操作者密码。登录会话持续 7 天，关闭浏览器或重启服务后可继续使用有效会话。
 - 文件管理器和文本编辑器可在管理员模式下操作 Linux 主机，终端沿用运行账号。终端支持多窗口和后台会话，关闭窗口后可重新接回。系统监控显示 CPU、内存、磁盘、网卡和端口占用；服务管理在 systemd 主机上提供列表、启停、开机自启和日志；主机设置仍使用示例逻辑，后续实现范围见 [首版规格](.scratch/backend-v1/spec.md)。
-- 发布构建将前端资源嵌入 Go 二进制，由同一个进程提供桌面、认证、文件、终端、系统监控、服务管理和健康检查接口。
+- 发布构建将前端资源嵌入 Go 二进制，由同一个进程提供桌面、认证、文件、终端、系统监控、服务管理和 `/healthz` 存活检查接口。
 
 ## 项目结构
 
@@ -100,7 +100,7 @@ system 级服务的写操作可使用免密 sudo，也可沿用运行账号的 p
 - [主机权限、sudo 命令与监听端口契约](docs/privileges.md)
 - [文件管理与文本编辑契约](docs/file-management.md)
 - [系统监控与主机健康 API 契约](docs/system-monitoring.md)
-- [Host Health Center Spec](docs/specs/host-health-center.md)
+- [主机健康状态中心 Spec（Host Health Center）](docs/specs/host-health-center.md)
 - [终端会话及接口契约](docs/terminal.md)
 - [服务管理行为与 HTTP 接口](docs/services.md)
 - [前端使用与开发说明](frontend/README.md)

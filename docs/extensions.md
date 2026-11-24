@@ -1,6 +1,6 @@
 # GoDesk Extension Host 首版契约
 
-本文定义首版计划交付的共同行为。共享宿主侧（Extension Host 的 `hostsys/services` 与 `host.services` 服务授权）已实现；Mihomo 示例插件和独立开发命令留待工单 04–05 完成。实施顺序、迁移边界和通过条件见[实施 Spec](../.scratch/extension-host/spec.md)。
+本文定义两种宿主模式共用的插件契约。PostgreSQL 备份是检验 Lua 命令执行和双模式兼容性的应用示例。Mihomo 示例插件和独立开发命令由各自的工单跟踪。实施顺序、迁移边界和通过条件见[实施 Spec](../.scratch/extension-host/spec.md)。
 
 ## 运行模式与信任
 
@@ -13,7 +13,7 @@ Extension Host 由独立仓库 [EziosWJ/Extension-Host](https://github.com/Ezios
 
 两个入口使用相同的 Manifest、插件生命周期、数据格式和 HTTP/WS 契约。GoDesk 与 `godesk-ext` 可分别指定数据目录。同一插件包可以在两个入口运行，各进程管理自己的运行状态。
 
-首版面向部署者主动信任并安装的第三方插件。Web 插件与宿主同源，其脚本可以访问父页面并使用当前浏览器会话调用宿主 API。Lua 与宿主共用进程，标准文件 I/O 使用宿主 Linux 运行账号权限，包括该账号可访问的其他目录。能力授权约束通过 Host API 发起的操作。 [GoDesk 会话契约](authentication.md) · [主机权限契约](privileges.md)
+首版面向部署者主动信任并安装的第三方插件。Web 插件与宿主同源，其脚本可以访问父页面并使用当前浏览器会话调用宿主 API。Lua 与宿主共用进程，文件 I/O 和子进程使用宿主 Linux 运行账号权限。能力授权约束通过 Host API 发起的操作。 [GoDesk 会话契约](authentication.md) · [主机权限契约](privileges.md)
 
 ## 插件包与 Manifest
 
@@ -75,7 +75,9 @@ Extension Host 在独立数据目录里管理 `host.db` 和每个插件的业务
 
 每个运行中的 Lua 插件有自己的 GopherLua `LState`。一个 goroutine 管理该状态。入口装载后注册请求处理器和所需的生命周期钩子。Host 调用通过上下文传递取消，停止或重载时关闭该实例拥有的连接和任务。 [GopherLua](https://github.com/yuin/gopher-lua)
 
-标准库保留常用基础函数、`string`、`table`、`math`、`coroutine`、`io` 文件读写及 `os` 的常用文件和时间操作。宿主提供插件数据目录，插件自行组织文件路径。`require` 从包内或 Host 预装模块加载。`os.exit`、`os.setenv`、`os.execute` 和 `io.popen` 关闭，`print` 进入插件日志。 [GopherLua 标准库源码](https://github.com/yuin/gopher-lua/tree/master)
+两种模式默认提供 GopherLua 的 `os` 和 `io` 标准库，包括 `os.execute`、`io.popen` 和 `os.setenv`。`os.setenv` 修改当前宿主进程的环境。`os.execute` 同步等待命令结束，同一实例的 Lua 请求串行处理。需要在任务运行期间继续响应状态查询时，插件可以通过短时命令提交后台任务。宿主提供插件数据目录，插件自行组织文件路径。`require` 从包内或 Host 预装模块加载。`print` 进入插件日志。 [GopherLua](https://github.com/yuin/gopher-lua)
+
+`os.exit([code])` 结束当前插件实例，关闭该实例的订阅并释放 Lua 和插件 SQLite。调用会中断当前 Lua 执行，宿主随后运行已注册的停止钩子。退出后状态为「已启用、已停止」。可手动启动，宿主重启时按启用设置恢复。退出码记录在插件日志中。
 
 | Host API 模块 | 首版职责 |
 | --- | --- |
@@ -83,9 +85,16 @@ Extension Host 在独立数据目录里管理 `host.db` 和每个插件的业务
 | `host.http` | 向已授予的目标发起 HTTP 请求。 |
 | `host.ws` | 订阅已授予的目标 WebSocket，将事件交给当前插件实例。 |
 | `host.storage` | 访问当前插件业务 SQLite。 |
+| `host.process` | 异步启动子进程，并把退出结果交回当前 Lua 实例。 |
 | `host.services` | 查询和重启部署者授权的已有 systemd 服务。 |
 
 插件身份由 Host 从运行实例取得。部署配置可把 Mihomo 的网络请求限定为指定控制地址，将服务操作限定为 `mihomo.service` 的查询与重启。服务调用默认使用运行账号，部署者可为指定动作显式选择非交互 sudo。GoDesk 原生服务管理继续遵守自身权限契约。 [GoDesk 服务契约](services.md#权限)
+
+### 异步进程
+
+`host.process.start(program, args, onExit[, env])` 使用独立的参数数组启动命令并立即返回子进程 PID。命令继承宿主运行账号和环境。可选的 `env` 表仅修改子进程环境，用字符串设置变量，用 `false` 移除继承的变量。启动失败时返回 `nil, error`。`onExit(result)` 在实例的 Lua 执行队列中运行，和 HTTP 处理器串行执行。即使浏览器页面已关闭，回调仍会在运行中的插件内执行。
+
+结果包含 `pid`、`exitCode` 和 `stderr`。标准输出默认丢弃，命令可自行把产物写到文件。`stderr` 保留开头 64 KiB，截断时设置 `stderrTruncated`。调用方可以使用 `error` 查看等待进程时的错误。停止实例会终止其子进程，完成回调随实例结束。插件负责在重新启动时处理上次中断的业务任务。
 
 ## Web、HTTP 与 WebSocket
 
@@ -112,3 +121,21 @@ GoDesk 和独立管理界面以同源 iframe 装载插件 Web 入口。业务前
 | `godesk-ext logs com.godesk.mihomo` | 从指定运行数据目录读取该插件的日志。 |
 
 Mock 替换 HTTP、WS 和服务等能力实现。包加载、权限检查、Lua、网关及 SQLite 继续使用真实引擎。Local 测试针对部署者已准备好的服务。框架级 HMR 留到后续版本。
+
+## PostgreSQL 备份示例
+
+首版面向部署者配置的一个数据库，提供「立即备份」和「备份历史」。Lua 使用 `host.process.start` 直接启动 PostgreSQL 的 `pg_dump`，提交后立即返回任务状态，完成回调写入插件自己的 SQLite。同一插件实例同时运行一条备份任务。GoDesk 用于正常运行，独立 `godesk-ext` 用于开发联调，两者各自保存任务历史和备份产物。
+
+数据库地址、端口、数据库名、用户和可选密码可从插件页面保存到本地 SQLite。保存后新任务使用页面配置，已有任务继续使用启动时的参数。保存的密码不会通过页面接口读回。已有的 `PGSERVICE` 配置在首次保存前继续生效。
+
+同一份 ZIP 可分别在两个入口验收。验收覆盖连接配置持久化、成功、失败、刷新后继续查看，以及用备份恢复到空测试库。运行和恢复步骤见 Extension Host 仓库的 `examples/postgres-backup/README.md`。
+
+### 从源码联调 GoDesk
+
+GoDesk 的 `backend/go.mod` 固定依赖已发布的 Extension Host。要联调尚未发布的宿主改动，可以新建一个临时 Go 工作区。以下命令从 GoDesk 根目录运行，假定两个仓库放在同一父目录。
+
+```sh
+workspace="$(mktemp -d)"
+GOWORK=off go -C "$workspace" work init "$PWD/backend" "$(realpath ../Extension-Host)"
+GOWORK="$workspace/go.work" make build
+```

@@ -92,13 +92,17 @@ function thresholdText(check: HealthCheck) {
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-function unavailableMetric(category: string, label: string, Icon: typeof Cpu): Metric {
-  return { category, label, Icon, status: null, value: '不可用' }
+function unavailableMetric(category: string, label: string, Icon: typeof Cpu, title?: string): Metric {
+  return { category, label, Icon, status: null, value: '不可用', title }
+}
+
+function unavailableTitle(checks: HealthCheck[], category: string) {
+  return checks.find(check => check.category === category && !check.applicable)?.message || undefined
 }
 
 function percentMetric(checks: HealthCheck[], category: string, label: string, Icon: typeof Cpu): Metric {
   const check = checks.find(item => item.category === category && item.applicable)
-  if (!check) return unavailableMetric(category, label, Icon)
+  if (!check) return unavailableMetric(category, label, Icon, unavailableTitle(checks, category))
   const status = normalizeStatus(check.status)
   return {
     category,
@@ -113,7 +117,7 @@ function percentMetric(checks: HealthCheck[], category: string, label: string, I
 function storageMetric(checks: HealthCheck[]): Metric {
   const Icon = HardDrive
   const applicable = checks.filter(check => check.category === 'storage' && check.applicable)
-  if (applicable.length === 0) return unavailableMetric('storage', '存储', Icon)
+  if (applicable.length === 0) return unavailableMetric('storage', '存储', Icon, unavailableTitle(checks, 'storage'))
   // 摘要取状态最严重的检查项；同状态时取使用率最高的一项。
   const worst = applicable.reduce((current, check) => {
     const rank = statusRank(normalizeStatus(check.status))
@@ -134,7 +138,7 @@ function storageMetric(checks: HealthCheck[]): Metric {
 function networkMetric(checks: HealthCheck[]): Metric {
   const Icon = Network
   const check = checks.find(item => item.category === 'network' && item.applicable)
-  if (!check) return unavailableMetric('network', '网络', Icon)
+  if (!check) return unavailableMetric('network', '网络', Icon, unavailableTitle(checks, 'network'))
   const status = normalizeStatus(check.status)
   const details = (check.details ?? {}) as NetworkDetails
   let value = '—'

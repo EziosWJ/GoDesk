@@ -9,17 +9,21 @@ import (
 
 	"godesk/internal/auth"
 	"godesk/internal/files"
+	"godesk/internal/health"
 	"godesk/internal/monitor"
 	"godesk/internal/services"
 	"godesk/internal/terminal"
 )
 
-func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monitoring *monitor.Collector, serviceBackend services.Backend, desktop http.Handler) http.Handler {
+func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monitoring *monitor.Collector, healthEngine *health.Engine, serviceBackend services.Backend, desktop http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	credentials.Register(mux)
 	terminals.Register(mux, credentials.RequireSession)
 	if monitoring != nil {
 		monitoring.Register(mux, credentials.RequireSession)
+	}
+	if healthEngine != nil {
+		healthEngine.Register(mux, credentials.RequireSession)
 	}
 	if serviceBackend != nil {
 		services.Register(mux, credentials.RequireSession, serviceBackend)

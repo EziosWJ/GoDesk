@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"godesk/internal/auth"
+	"godesk/internal/health"
 	"godesk/internal/monitor"
 	"godesk/internal/services"
 	"godesk/internal/terminal"
@@ -32,7 +33,8 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 	defer terminals.Close()
 	monitoring := monitor.Start(t.Context(), time.Second)
 	defer monitoring.Close()
-	mux := New(db, store, terminals, monitoring, services.None(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	healthEngine := health.Start(t.Context(), monitoring, time.Second)
+	mux := New(db, store, terminals, monitoring, healthEngine, services.None(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	for path, code := range map[string]int{
@@ -42,6 +44,7 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 		"/api/v1/settings/terminal": http.StatusUnauthorized,
 		"/api/v1/system/metrics":    http.StatusUnauthorized,
 		"/api/v1/system/ports":      http.StatusUnauthorized,
+		"/api/v1/system/status":     http.StatusUnauthorized,
 		"/api/v1/services":          http.StatusUnauthorized,
 	} {
 		w := httptest.NewRecorder()

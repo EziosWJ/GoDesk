@@ -499,7 +499,8 @@ export default function App({ onLogout, onSession }: {
           if (!startOpen) setQuery('')
           setStartOpen(value => !value)
         }}
-        onFocusApp={id => wm.focus(id)} onOpenPopup={() => setStartOpen(false)} />
+        onFocusApp={id => wm.focus(id)} onOpenPopup={() => setStartOpen(false)}
+        onOpenMonitor={() => openWindow('monitor')} />
 
       <dialog ref={logoutDialog} className="service-dialog" aria-labelledby="logout-dialog-title"
         aria-describedby="logout-dialog-message" onClose={() => {

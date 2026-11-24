@@ -1,6 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactNode, type Ref } from 'react'
-import { Battery, BatteryCharging, BatteryFull, BatteryLow, BatteryMedium, Ellipsis, Grid2X2, SlidersHorizontal, Volume2, VolumeX, Wifi, WifiOff } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type Ref } from 'react'
+import { Ellipsis, Grid2X2, Unplug } from 'lucide-react'
 import { apps, type AppId } from './apps'
+import { HealthPanel } from './HealthPanel'
+import { StatusIcon } from './HealthStatusIcon'
+import { effectiveStatus, healthStatusText } from './healthUi'
+import { useHostHealth } from './useHostHealth'
 import './styles/taskbar.css'
 
 const timeFormat = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
@@ -22,59 +26,7 @@ function Clock() {
   )
 }
 
-type BatterySource = EventTarget & { level: number; charging: boolean; chargingTime: number; dischargingTime: number }
-type BatteryStatus = { level: number; charging: boolean } | 'unavailable' | 'pending'
-
-function useBatteryStatus() {
-  const device = navigator as Navigator & { getBattery?: () => Promise<BatterySource> }
-  const [battery, setBattery] = useState<BatteryStatus>(device.getBattery ? 'pending' : 'unavailable')
-
-  useEffect(() => {
-    let disposed = false
-    let source: BatterySource | undefined
-
-    function update() {
-      if (!source) return
-      // This tuple can also be a browser default, including on devices without batteries.
-      const { level, charging, chargingTime, dischargingTime } = source
-      setBattery(level === 1 && charging && chargingTime === 0 && dischargingTime === Infinity
-        ? 'unavailable' : { level: Math.round(level * 100), charging })
-    }
-
-    device.getBattery?.().then(manager => {
-      if (disposed) return
-      source = manager
-      for (const event of batteryEvents) source.addEventListener(event, update)
-      update()
-    }).catch(() => { if (!disposed) setBattery('unavailable') })
-
-    return () => {
-      disposed = true
-      for (const event of batteryEvents) source?.removeEventListener(event, update)
-    }
-  }, [device])
-
-  return battery
-}
-
-const batteryEvents = ['levelchange', 'chargingchange', 'chargingtimechange', 'dischargingtimechange']
-const volumeKey = 'react-web-desktop-desktop-volume'
-
-type AudioPreference = { volume: number; muted: boolean }
-
-function readAudioPreference(): AudioPreference {
-  try {
-    const saved = JSON.parse(localStorage.getItem(volumeKey) ?? 'null')
-    if (saved && Number.isFinite(saved.volume) && saved.volume >= 0 && saved.volume <= 100 && typeof saved.muted === 'boolean') {
-      return { volume: saved.volume, muted: saved.muted }
-    }
-  } catch {
-    // Use the default when storage is unavailable.
-  }
-  return { volume: 75, muted: false }
-}
-
-const popupLabels = { windows: '更多应用', status: '系统状态', network: '网络', audio: '音量', battery: '电池' }
+const popupLabels = { windows: '更多应用', health: '主机健康' }
 type Popup = keyof typeof popupLabels
 const compactTray = window.matchMedia('(max-width: 520px)')
 const popupId = 'taskbar-popover'
@@ -87,9 +39,10 @@ type TaskbarProps = {
   onStart: () => void
   onFocusApp: (id: string) => void
   onOpenPopup: () => void
+  onOpenMonitor: () => void
 }
 
-export function Taskbar({ running, focusedId, startOpen, startButton, onStart, onFocusApp, onOpenPopup }: TaskbarProps) {
+export function Taskbar({ running, focusedId, startOpen, startButton, onStart, onFocusApp, onOpenPopup, onOpenMonitor }: TaskbarProps) {
   const footer = useRef<HTMLElement>(null)
   const appGroup = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLElement>(null)
@@ -98,15 +51,7 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
   const [popup, setPopup] = useState<Popup | null>(null)
   const [anchorX, setAnchorX] = useState(0)
   const pendingAppFocus = useRef<string | null>(null)
-  const [online, setOnline] = useState(navigator.onLine)
-  const [networkNotice, setNetworkNotice] = useState('')
-  const battery = useBatteryStatus()
-  const [audio, setAudio] = useState(readAudioPreference)
-  const [audioError, setAudioError] = useState('')
-  const audioContext = useRef<AudioContext | null>(null)
-  const audioOutput = useRef<GainNode | null>(null)
-  const previewing = useRef(false)
-  const quiet = audio.muted || audio.volume === 0
+  const { snapshot, connection } = useHostHealth()
 
   useLayoutEffect(() => {
     const group = appGroup.current!
@@ -130,35 +75,39 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
     return () => compactTray.removeEventListener('change', syncLayout)
   }, [])
 
-  useEffect(() => {
-    let timer: number | undefined
-    function update() {
-      setOnline(navigator.onLine)
-      setNetworkNotice(navigator.onLine ? '网络连接已恢复' : '网络连接已断开')
-      window.clearTimeout(timer)
-      timer = window.setTimeout(() => setNetworkNotice(''), 4000)
-    }
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
-    return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
-      window.clearTimeout(timer)
-    }
-  }, [])
-
-  useEffect(() => () => {
-    void audioContext.current?.close().catch(() => {})
-    audioContext.current = null
-    audioOutput.current = null
-  }, [])
-
   const hasOverflow = running.length > slots
   const directApps = hasOverflow ? running.slice(0, Math.max(0, slots - 1)) : running
   const activeApp = running.find(win => win.id === focusedId)
   const visibleApps = hasOverflow && directApps.length && activeApp && !directApps.includes(activeApp)
     ? [...directApps.slice(0, -1), activeApp] : directApps
   const hiddenApps = hasOverflow ? running.filter(win => !visibleApps.includes(win)) : []
+
+  const disconnected = connection === 'disconnected'
+  const healthStatus = effectiveStatus(snapshot, connection)
+  const stale = Boolean(snapshot?.stale) && !disconnected
+  const issueCount = snapshot?.summary.issueCount ?? 0
+  const showCount = !stale && (healthStatus === 'warning' || healthStatus === 'critical') && issueCount > 0
+  const healthName = disconnected
+    ? 'GoDesk 连接中断'
+    : `主机健康：${healthStatusText[healthStatus]}${showCount ? `，${issueCount} 项异常` : ''}`
+
+  // Announce only when the overall status or the issue count changes. The
+  // first result initializes the baseline without speaking.
+  const announced = useRef<string | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+  useEffect(() => {
+    if (disconnected) return
+    const key = `${healthStatus}:${showCount ? issueCount : 0}`
+    if (announced.current === null) {
+      announced.current = key
+      return
+    }
+    if (announced.current === key) return
+    announced.current = key
+    setAnnouncement(showCount
+      ? `主机健康：${healthStatusText[healthStatus]}，${issueCount} 项异常`
+      : `主机健康：${healthStatusText[healthStatus]}`)
+  }, [disconnected, healthStatus, showCount, issueCount])
 
   function triggerFor(kind: Popup) {
     return footer.current?.querySelector<HTMLButtonElement>(`[data-task-popup="${kind}"]`)
@@ -217,51 +166,7 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
     }
   }, [popup])
 
-  function updateAudio(next: AudioPreference) {
-    setAudio(next)
-    const output = audioOutput.current
-    if (output) output.gain.value = next.muted ? 0 : next.volume / 100
-    try {
-      localStorage.setItem(volumeKey, JSON.stringify(next))
-    } catch {
-      // Audio controls still work without storage.
-    }
-  }
-
-  async function testAudio() {
-    if (quiet || previewing.current) return
-    previewing.current = true
-    setAudioError('')
-    try {
-      const context = audioContext.current ??= new AudioContext()
-      if (!audioOutput.current) {
-        audioOutput.current = context.createGain()
-        audioOutput.current.connect(context.destination)
-        audioOutput.current.gain.value = audio.volume / 100
-      }
-      await context.resume()
-      const tone = context.createOscillator()
-      const envelope = context.createGain()
-      const now = context.currentTime
-      tone.frequency.value = 660
-      envelope.gain.setValueAtTime(0, now)
-      envelope.gain.linearRampToValueAtTime(0.16, now + 0.025)
-      envelope.gain.exponentialRampToValueAtTime(0.001, now + 0.3)
-      tone.connect(envelope).connect(audioOutput.current)
-      tone.onended = () => {
-        tone.disconnect()
-        envelope.disconnect()
-        previewing.current = false
-      }
-      tone.start(now)
-      tone.stop(now + 0.31)
-    } catch {
-      previewing.current = false
-      setAudioError('无法播放试听音')
-    }
-  }
-
-  function popupButton(kind: Popup, Icon: typeof Wifi, label = popupLabels[kind]) {
+  function popupButton(kind: Popup, Icon: typeof Grid2X2, label = popupLabels[kind]) {
     return (
       <button className="taskbar-button" type="button" data-task-popup={kind} aria-label={label}
         title={kind === 'windows' ? undefined : label}
@@ -276,48 +181,9 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
     )
   }
 
-  const NetworkIcon = online ? Wifi : WifiOff
-  const AudioIcon = quiet ? VolumeX : Volume2
-  let BatteryIcon = Battery
-  if (typeof battery === 'object') {
-    if (battery.charging) BatteryIcon = BatteryCharging
-    else if (battery.level <= 25) BatteryIcon = BatteryLow
-    else if (battery.level <= 75) BatteryIcon = BatteryMedium
-    else BatteryIcon = BatteryFull
-  }
-  const networkLabel = online ? '在线' : '离线'
-  const sections: Record<'network' | 'audio' | 'battery', ReactNode> = {
-    network: <>
-      <p className="taskbar-reading" data-offline={!online}>{networkLabel}</p>
-      <p className="taskbar-caption">当前浏览器报告的连接状态</p>
-    </>,
-    audio: <>
-      <div className="taskbar-volume">
-        <button type="button" className="taskbar-button" aria-label="静音" aria-pressed={audio.muted}
-          title={audio.muted ? '取消静音' : '静音'} onClick={() => updateAudio({ ...audio, muted: !audio.muted })}>
-          <AudioIcon size={18} aria-hidden="true" />
-        </button>
-        <input type="range" aria-label="桌面音量" aria-valuetext={`${audio.volume}%`} min={0} max={100} value={audio.volume}
-          onChange={event => updateAudio({ volume: Number(event.target.value), muted: false })} />
-        <span>{audio.volume}%</span>
-      </div>
-      <div className="taskbar-audio-actions">
-        <span className="taskbar-caption">仅作用于桌面内的声音</span>
-        <button type="button" className="taskbar-preview" disabled={quiet} onClick={() => void testAudio()}>试听</button>
-      </div>
-      {audioError && <p role="status" className="taskbar-caption">{audioError}</p>}
-    </>,
-    battery: typeof battery === 'object' ? <>
-      <p className="taskbar-reading">{battery.level}% <span className="taskbar-caption">{battery.charging ? '充电中' : '使用电池'}</span></p>
-      <meter className="taskbar-charge" aria-label="电池电量" min={0} max={100} value={battery.level} />
-    </> : <p className="taskbar-caption">{battery === 'pending' ? '正在读取电池状态…' : '浏览器未提供可用的电量数据。'}</p>,
-  }
-
   return (
     <>
-      <div className="taskbar-notice" role="status">
-        {networkNotice && <div><NetworkIcon size={18} aria-hidden="true" />{networkNotice}</div>}
-      </div>
+      <div className="taskbar-live" role="status" aria-live="polite">{announcement}</div>
       <footer ref={footer} className="taskbar" aria-label="任务栏"
         style={{ '--popover-anchor': `${anchorX}px` } as CSSProperties}>
         <div ref={appGroup} className="taskbar-apps" aria-label="应用切换" role="group">
@@ -342,17 +208,22 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
           {hasOverflow && popupButton('windows', Ellipsis)}
         </div>
         <div className="taskbar-tray">
-          <div className="taskbar-status" aria-label="系统状态" role="group">
-            {compact ? popupButton('status', SlidersHorizontal) : <>
-              {popupButton('network', NetworkIcon, `网络：${networkLabel}`)}
-              {popupButton('audio', AudioIcon, `音量：${quiet ? '静音' : `${audio.volume}%`}`)}
-              {popupButton('battery', BatteryIcon, `电池：${typeof battery === 'object' ? `${battery.level}%` : '查看状态'}`)}
-            </>}
-          </div>
+          <button type="button" className="taskbar-button taskbar-health" data-task-popup="health"
+            data-health={disconnected ? 'disconnected' : healthStatus}
+            aria-label={healthName} aria-expanded={popup === 'health'} aria-controls={popup === 'health' ? popupId : undefined}
+            title={compact ? healthName : undefined}
+            onClick={() => {
+              onOpenPopup()
+              setPopup(current => current === 'health' ? null : 'health')
+            }}>
+            {disconnected ? <Unplug size={18} aria-hidden="true" /> : <StatusIcon status={healthStatus} size={18} />}
+            {!compact && <span className="taskbar-health-text">{disconnected ? '连接中断' : healthStatusText[healthStatus]}</span>}
+            {showCount && <span className="taskbar-health-count" aria-hidden="true">{issueCount}</span>}
+          </button>
           <Clock />
         </div>
         {popup && (
-          <section ref={panel} id={popupId} className="taskbar-popover" tabIndex={-1} aria-labelledby={`${popupId}-title`}>
+          <section ref={panel} id={popupId} className="taskbar-popover" data-popup={popup} tabIndex={-1} aria-labelledby={`${popupId}-title`}>
             <div className="taskbar-popover-body">
               <h2 id={`${popupId}-title`}>{popupLabels[popup]}</h2>
               {popup === 'windows' ? (
@@ -366,13 +237,12 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
                     }}><Icon size={18} aria-hidden="true" />{title}</button></li>
                   })}
                 </ul>
-              ) : popup === 'status' ? (
-                <div className="taskbar-quick-status">
-                  <div><h3><NetworkIcon size={16} aria-hidden="true" />网络</h3>{sections.network}</div>
-                  <div><h3><AudioIcon size={16} aria-hidden="true" />音量</h3>{sections.audio}</div>
-                  <div><h3><BatteryIcon size={16} aria-hidden="true" />电池</h3>{sections.battery}</div>
-                </div>
-              ) : sections[popup]}
+              ) : (
+                <HealthPanel snapshot={snapshot} connection={connection} onOpenMonitor={() => {
+                  setPopup(null)
+                  onOpenMonitor()
+                }} />
+              )}
             </div>
           </section>
         )}

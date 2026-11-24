@@ -22,7 +22,7 @@
 
 ### 主机健康状态入口
 
-> 目标设计（尚未实现）。当前版本任务栏仍显示浏览器网络、音量和电池控件；主机健康中心落地后按下述行为替换。产品语义见 [Host Health Center Spec](../../../docs/specs/host-health-center.md)，字段与错误语义见 [系统监控与主机健康契约](../../../docs/system-monitoring.md#主机健康状态接口目标契约)。
+> 已实现（V1）。任务栏右侧显示主机健康入口，浏览器网络、音量和电池控件已移除。产品语义见 [Host Health Center Spec](../../../docs/specs/host-health-center.md)，字段与错误语义见 [系统监控与主机健康契约](../../../docs/system-monitoring.md#主机健康状态接口)。
 
 主机健康入口是 GoDesk 的桌面级状态摘要，不是浏览器设备系统托盘，也不是完整监控仪表盘。
 

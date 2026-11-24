@@ -1,0 +1,175 @@
+.health-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.health-overview {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.health-overview-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+  margin-top: 1px;
+}
+.health-overview[data-health='healthy'] .health-overview-icon { color: var(--react-web-desktop-success); }
+.health-overview[data-health='warning'] .health-overview-icon { color: var(--react-web-desktop-warning); }
+.health-overview[data-health='critical'] .health-overview-icon { color: var(--react-web-desktop-danger); }
+.health-overview[data-health='unknown'] .health-overview-icon,
+.health-overview[data-health='disconnected'] .health-overview-icon { color: var(--react-web-desktop-muted); }
+.health-overview-title {
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.3;
+}
+.health-overview-caption,
+.health-note {
+  color: var(--react-web-desktop-muted);
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+}
+.health-overview-caption { margin-top: 2px; }
+.health-note {
+  padding: 8px 10px;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-control);
+}
+
+.health-section { display: grid; gap: 8px; }
+.health-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--react-web-desktop-muted);
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+  font-weight: 500;
+}
+.health-section-count {
+  min-width: 18px;
+  padding-inline: 5px;
+  border-radius: 99px;
+  background: var(--react-web-desktop-divider);
+  color: var(--react-web-desktop-fg);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.health-issues {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.health-issue {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-inline-start-width: 3px;
+  border-radius: var(--react-web-desktop-radius-control);
+}
+.health-issue[data-health='warning'] { border-inline-start-color: var(--react-web-desktop-warning); }
+.health-issue[data-health='critical'] { border-inline-start-color: var(--react-web-desktop-danger); }
+.health-issue-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.health-issue-head strong { font-weight: 600; }
+.health-issue-state {
+  font-size: var(--text-react-web-desktop-caption);
+  font-weight: 600;
+}
+.health-issue[data-health='warning'] .health-issue-state { color: var(--react-web-desktop-warning); }
+.health-issue[data-health='critical'] .health-issue-state { color: var(--react-web-desktop-danger); }
+.health-issue-message {
+  font-size: var(--text-react-web-desktop-compact);
+  line-height: var(--text-react-web-desktop-compact--line-height);
+}
+.health-issue-reading,
+.health-issue-since {
+  color: var(--react-web-desktop-muted);
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+  font-variant-numeric: tabular-nums;
+}
+
+.health-plain-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.health-plain-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+}
+.health-plain-detail {
+  color: var(--react-web-desktop-muted);
+  text-align: end;
+}
+
+.health-dimensions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+}
+.health-dimension {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+}
+.health-dimension svg { flex: none; color: var(--react-web-desktop-muted); }
+.health-dimension[data-health='healthy'] svg { color: var(--react-web-desktop-success); }
+.health-dimension[data-health='warning'] svg { color: var(--react-web-desktop-warning); }
+.health-dimension[data-health='critical'] svg { color: var(--react-web-desktop-danger); }
+.health-dimension-label { color: var(--react-web-desktop-fg); }
+.health-dimension-state {
+  margin-inline-start: auto;
+  color: var(--react-web-desktop-muted);
+  white-space: nowrap;
+}
+
+.health-host {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+}
+.health-host > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--text-react-web-desktop-caption);
+  line-height: var(--text-react-web-desktop-caption--line-height);
+}
+.health-host dt { color: var(--react-web-desktop-muted); }
+.health-host dd {
+  margin: 0;
+  text-align: end;
+  overflow-wrap: anywhere;
+}
+
+.health-ok {
+  color: var(--react-web-desktop-success);
+  font-size: var(--text-react-web-desktop-compact);
+  line-height: var(--text-react-web-desktop-compact--line-height);
+}
+
+.health-open-monitor {
+  width: 100%;
+  border: 1px solid var(--react-web-desktop-divider);
+  color: var(--react-web-desktop-accent);
+  font-weight: 600;
+}

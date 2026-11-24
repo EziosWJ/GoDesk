@@ -18,6 +18,7 @@ import (
 
 	"godesk/internal/auth"
 	"godesk/internal/files"
+	"godesk/internal/health"
 	"godesk/internal/httpserver"
 	"godesk/internal/monitor"
 	"godesk/internal/privileges"
@@ -99,6 +100,7 @@ func run(ctx context.Context, address, dataDir, serviceBackend string) error {
 
 	monitoring := monitor.Start(ctx, monitor.DefaultInterval)
 	defer monitoring.Close()
+	healthEngine := health.Start(ctx, monitoring, monitor.DefaultInterval)
 
 	serviceManager, err := services.Open(serviceBackend)
 	if err != nil {
@@ -111,7 +113,7 @@ func run(ctx context.Context, address, dataDir, serviceBackend string) error {
 		return fmt.Errorf("listen on %s: %w", address, err)
 	}
 	server := &http.Server{
-		Handler:           httpserver.New(db, credentials, terminals, monitoring, serviceManager, webui.Handler()),
+		Handler:           httpserver.New(db, credentials, terminals, monitoring, healthEngine, serviceManager, webui.Handler()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)

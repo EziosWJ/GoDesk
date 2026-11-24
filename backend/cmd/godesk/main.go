@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"godesk/internal/auth"
+	"godesk/internal/extensions"
 	"godesk/internal/files"
 	"godesk/internal/health"
 	"godesk/internal/httpserver"
@@ -108,12 +109,29 @@ func run(ctx context.Context, address, dataDir, serviceBackend string) error {
 	}
 	slog.Info("service backend ready", "backend", serviceManager.Name())
 
+	// Extension failures must not take down the built-in applications.
+	extensionManager, err := extensions.Open(ctx, filepath.Join(dataDir, "extensions"), slog.Default())
+	if err != nil {
+		slog.Error("extension host unavailable; built-in applications continue without extensions", "error", err)
+	} else {
+		defer closeExtensions(extensionManager)
+		go restoreExtensions(ctx, extensionManager)
+	}
+	var extensionHandler http.Handler
+	if extensionManager != nil {
+		extensionHandler = extensionManager.Handler(credentials.RequireSession)
+	} else {
+		extensionHandler = credentials.RequireSession(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "extension host unavailable", http.StatusServiceUnavailable)
+		}))
+	}
+
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return fmt.Errorf("listen on %s: %w", address, err)
 	}
 	server := &http.Server{
-		Handler:           httpserver.New(db, credentials, terminals, monitoring, healthEngine, serviceManager, webui.Handler()),
+		Handler:           httpserver.New(db, credentials, terminals, monitoring, healthEngine, serviceManager, extensionHandler, webui.Handler()),
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 	serveErr := make(chan error, 1)
@@ -128,6 +146,11 @@ func run(ctx context.Context, address, dataDir, serviceBackend string) error {
 	case <-ctx.Done():
 		terminals.Close()
 		monitoring.Close()
+		if extensionManager != nil {
+			// Closing the host first lets plugin event sockets exit before the
+			// HTTP server stops accepting connections.
+			closeExtensions(extensionManager)
+		}
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(shutdownCtx); err != nil {
@@ -137,6 +160,22 @@ func run(ctx context.Context, address, dataDir, serviceBackend string) error {
 			return fmt.Errorf("serve HTTP: %w", err)
 		}
 		return nil
+	}
+}
+
+func restoreExtensions(ctx context.Context, manager *extensions.Manager) {
+	ctx, cancel := context.WithTimeout(ctx, extensions.RestoreTimeout)
+	defer cancel()
+	if err := manager.Restore(ctx); err != nil {
+		slog.Error("restore extension plugins", "error", err)
+	}
+}
+
+func closeExtensions(manager *extensions.Manager) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := manager.Close(ctx); err != nil {
+		slog.Error("close extension host", "error", err)
 	}
 }
 

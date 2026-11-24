@@ -1,4 +1,4 @@
-import { Activity, Cable, FilePenLine, FolderClosed, List, Settings2, Terminal } from 'lucide-react'
+import { Activity, Cable, FilePenLine, FolderClosed, List, Puzzle, Settings2, Terminal } from 'lucide-react'
 import { Settings } from './AppPages'
 import { Services } from './Services'
 import { SystemMonitor } from './SystemMonitor'
@@ -8,6 +8,7 @@ import terminalLauncher from './assets/apps/terminal.svg'
 import sessionsLauncher from './assets/apps/sessions.svg'
 import monitorLauncher from './assets/apps/monitor.svg'
 import servicesLauncher from './assets/apps/services.svg'
+import extensionsLauncher from './assets/apps/extensions.svg'
 import settingsLauncher from './assets/apps/settings.svg'
 
 export const apps = {
@@ -17,6 +18,7 @@ export const apps = {
   sessions: { name: '会话管理', icon: List, launcherIcon: sessionsLauncher, width: 660, height: 430 },
   monitor: { name: '系统监控', icon: Activity, launcherIcon: monitorLauncher, Content: SystemMonitor, width: 760, height: 520 },
   services: { name: '服务管理', icon: Cable, launcherIcon: servicesLauncher, Content: Services, width: 1000, height: 640 },
+  extensions: { name: '扩展', icon: Puzzle, launcherIcon: extensionsLauncher, width: 820, height: 580 },
   settings: { name: '系统设置', icon: Settings2, launcherIcon: settingsLauncher, Content: Settings, width: 720, height: 480 },
 }
 export type AppId = keyof typeof apps

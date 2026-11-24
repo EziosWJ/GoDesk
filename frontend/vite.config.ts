@@ -7,7 +7,9 @@ export default defineConfig({
   plugins: [react(), tailwindcss(), Icons({ compiler: 'jsx', jsx: 'react' })],
   server: {
     proxy: {
+      '/api/v1/extensions': { target: 'http://127.0.0.1:5000' },
       '/api': { target: 'http://127.0.0.1:5000', ws: true },
+      '/extensions': { target: 'http://127.0.0.1:5000', ws: true },
     },
   },
 })

@@ -12,6 +12,9 @@ import { FileManager } from './FileManager'
 import { TextEditorApp, type EditorOpenRequest, type EditorWindowHandle } from './TextEditorApp'
 import { Taskbar } from './Taskbar'
 import { TerminalSessions } from './TerminalSessions'
+import { Extensions } from './extensions/Extensions'
+import { ExtensionWindow } from './extensions/ExtensionWindow'
+import type { ExtensionPlugin } from './extensions/api'
 import { terminalApi, terminalClientId, terminalWindowId, type TerminalSession } from './terminal'
 import { minimumWindowHeight, minimumWindowWidth, readWindowSize, saveWindowSize, windowSizeGroup } from './windowSize.ts'
 import './App.css'
@@ -30,7 +33,9 @@ const appIds = Object.keys(apps) as AppId[]
 const previewGlass = new URLSearchParams(window.location.search).get('window-theme') === 'glass'
 
 function windowApp(id: string): AppId {
-  return id.startsWith('terminal-') ? 'terminal' : id as AppId
+  if (id.startsWith('terminal-')) return 'terminal'
+  if (id.startsWith('extension-')) return 'extensions'
+  return id as AppId
 }
 
 function windowMotionDuration(style: CSSStyleDeclaration, token: 'overlay' | 'feedback') {
@@ -294,6 +299,10 @@ export default function App({ onLogout, onSession }: {
     setStartOpen(false)
   }
 
+  function openExtension(plugin: ExtensionPlugin) {
+    openWindow('extensions', `extension-${plugin.id}`, plugin.name, { extensionId: plugin.id })
+  }
+
   function openSession(session: TerminalSession, takeControl = false) {
     const id = terminalWindowId(session.id)
     const existing = wm.getState().windows[id]
@@ -356,6 +365,14 @@ export default function App({ onLogout, onSession }: {
       <apps.services.Content active={!closing && win.stage !== 'minimized'} />
     )
     if (id === 'settings') return <apps.settings.Content onSession={onSession} />
+    if (id === 'extensions') {
+      const extensionId = win.meta.extensionId
+      if (typeof extensionId === 'string') {
+        // Unmounting the iframe on close ends only this window's subscription.
+        return closing ? null : <ExtensionWindow plugin={{ id: extensionId, name: win.title }} />
+      }
+      return <Extensions onOpen={openExtension} />
+    }
     const { Content } = apps[id]
     return <Content />
   }

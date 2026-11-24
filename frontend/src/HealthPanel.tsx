@@ -10,20 +10,27 @@ const timeFormat = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
 })
 
-const categories = [
-  { category: 'cpu', label: 'CPU', Icon: Cpu },
-  { category: 'memory', label: '内存', Icon: MemoryStick },
-  { category: 'storage', label: '存储', Icon: HardDrive },
-  { category: 'network', label: '网络', Icon: Network },
-]
+const checkStatusText: Record<DisplayStatus, string> = {
+  healthy: '正常',
+  warning: '警告',
+  critical: '异常',
+  unknown: '未知',
+}
 
-const reasonLabels: Record<string, string> = {
-  initializing: '尚未取得首份有效数据',
-  collect_failed: '本次采集失败',
-  stale: '数据已过期',
-  not_supported: '当前平台或文件系统不支持',
-  no_threshold: '没有可信阈值，仅供参考',
-  no_default_route: '未发现默认路由',
+type Metric = {
+  category: string
+  label: string
+  Icon: typeof Cpu
+  status: DisplayStatus | null
+  value: string
+  title?: string
+}
+
+type NetworkDetails = {
+  interface?: string
+  linkUp?: boolean
+  ipv4?: string[]
+  ipv6?: string[]
 }
 
 function statusRank(status: DisplayStatus) {
@@ -67,6 +74,10 @@ function unitSuffix(unit: string | null) {
   return unit ? ` ${unit}` : ''
 }
 
+function percentText(value: number | null) {
+  return value === null || !Number.isFinite(value) ? '—' : `${numberFormat.format(value)}%`
+}
+
 function readingText(check: HealthCheck) {
   if (check.value === null || !Number.isFinite(check.value)) return null
   return `当前 ${numberFormat.format(check.value)}${unitSuffix(check.unit)}`
@@ -81,19 +92,73 @@ function thresholdText(check: HealthCheck) {
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-function categorySummary(checks: HealthCheck[], category: string) {
-  const applicable = checks.filter(check => check.category === category && check.applicable)
-  if (applicable.length === 0) return { status: null, text: '不可用' }
-  let worst: DisplayStatus = 'healthy'
-  for (const check of applicable) {
-    const status = normalizeStatus(check.status)
-    if (statusRank(status) > statusRank(worst)) worst = status
+function unavailableMetric(category: string, label: string, Icon: typeof Cpu): Metric {
+  return { category, label, Icon, status: null, value: '不可用' }
+}
+
+function percentMetric(checks: HealthCheck[], category: string, label: string, Icon: typeof Cpu): Metric {
+  const check = checks.find(item => item.category === category && item.applicable)
+  if (!check) return unavailableMetric(category, label, Icon)
+  const status = normalizeStatus(check.status)
+  return {
+    category,
+    label,
+    Icon,
+    status,
+    value: percentText(check.value),
+    title: status === 'healthy' ? undefined : check.message || undefined,
   }
-  const count = applicable.filter(check => normalizeStatus(check.status) === worst).length
-  const text = worst === 'healthy' ? '正常'
-    : worst === 'warning' ? `${count} 项警告`
-      : worst === 'critical' ? `${count} 项严重` : `${count} 项未知`
-  return { status: worst, text }
+}
+
+function storageMetric(checks: HealthCheck[]): Metric {
+  const Icon = HardDrive
+  const applicable = checks.filter(check => check.category === 'storage' && check.applicable)
+  if (applicable.length === 0) return unavailableMetric('storage', '存储', Icon)
+  // 摘要取状态最严重的检查项；同状态时取使用率最高的一项。
+  const worst = applicable.reduce((current, check) => {
+    const rank = statusRank(normalizeStatus(check.status))
+    const currentRank = statusRank(normalizeStatus(current.status))
+    if (rank !== currentRank) return rank > currentRank ? check : current
+    return (check.value ?? -1) > (current.value ?? -1) ? check : current
+  })
+  return {
+    category: 'storage',
+    label: '存储',
+    Icon,
+    status: normalizeStatus(worst.status),
+    value: percentText(worst.value),
+    title: applicable.map(check => `${check.label} ${percentText(check.value)}`).join(' · '),
+  }
+}
+
+function networkMetric(checks: HealthCheck[]): Metric {
+  const Icon = Network
+  const check = checks.find(item => item.category === 'network' && item.applicable)
+  if (!check) return unavailableMetric('network', '网络', Icon)
+  const status = normalizeStatus(check.status)
+  const details = (check.details ?? {}) as NetworkDetails
+  let value = '—'
+  if (status === 'critical') value = '已断链'
+  else if (status === 'warning') value = '无可用地址'
+  else if (status === 'healthy') value = details.ipv4?.[0] ?? (details.ipv6?.length ? 'IPv6' : '已连接')
+  const addresses = [...(details.ipv4 ?? []), ...(details.ipv6 ?? [])].join(' · ')
+  return {
+    category: 'network',
+    label: '网络',
+    Icon,
+    status,
+    value,
+    title: [details.interface, addresses].filter(Boolean).join(' · ') || check.message || undefined,
+  }
+}
+
+function metricsFor(checks: HealthCheck[]): Metric[] {
+  return [
+    percentMetric(checks, 'cpu', 'CPU', Cpu),
+    percentMetric(checks, 'memory', '内存', MemoryStick),
+    storageMetric(checks),
+    networkMetric(checks),
+  ]
 }
 
 function IssueItem({ check }: { check: HealthCheck }) {
@@ -133,22 +198,8 @@ export function HealthPanel({ snapshot, connection, onOpenMonitor }: HealthPanel
   const issues = (snapshot?.checks ?? [])
     .filter(check => check.applicable && ['warning', 'critical'].includes(normalizeStatus(check.status)))
     .sort((left, right) => statusRank(normalizeStatus(right.status)) - statusRank(normalizeStatus(left.status)))
-  const unknowns = (snapshot?.checks ?? []).filter(check => check.applicable && normalizeStatus(check.status) === 'unknown')
-  const unavailable = (snapshot?.checks ?? []).filter(check => !check.applicable)
   const issueCount = snapshot?.summary.issueCount ?? 0
-
-  const hostRows: { label: string; value: string }[] = []
-  if (snapshot) {
-    if (snapshot.host.hostname) hostRows.push({ label: '主机名', value: snapshot.host.hostname })
-    if (snapshot.host.platform) {
-      const platform = snapshot.host.architecture
-        ? `${snapshot.host.platform} · ${snapshot.host.architecture}`
-        : snapshot.host.platform
-      hostRows.push({ label: '平台', value: platform })
-    }
-    const uptime = formatUptime(snapshot.host.uptimeSeconds)
-    if (uptime) hostRows.push({ label: '运行时间', value: uptime })
-  }
+  const metrics = snapshot ? metricsFor(snapshot.checks) : []
 
   let caption = '正在连接 GoDesk…'
   if (disconnected) caption = 'GoDesk 连接中断，无法取得主机状态'
@@ -157,7 +208,19 @@ export function HealthPanel({ snapshot, connection, onOpenMonitor }: HealthPanel
     const checked = `最近检查 ${formatTime(snapshot.generatedAt)}`
     if (status === 'warning' || status === 'critical') caption = `${issueCount} 项异常 · ${checked}`
     else if (status === 'unknown') caption = `无法确认主机状态 · ${checked}`
-    else caption = `所有检查正常 · ${checked}`
+    else caption = checked
+  }
+
+  const hostParts: string[] = []
+  if (snapshot) {
+    if (snapshot.host.hostname) hostParts.push(snapshot.host.hostname)
+    if (snapshot.host.platform) {
+      hostParts.push(snapshot.host.architecture
+        ? `${snapshot.host.platform} · ${snapshot.host.architecture}`
+        : snapshot.host.platform)
+    }
+    const uptime = formatUptime(snapshot.host.uptimeSeconds)
+    if (uptime) hostParts.push(`已运行 ${uptime}`)
   }
 
   return (
@@ -181,6 +244,26 @@ export function HealthPanel({ snapshot, connection, onOpenMonitor }: HealthPanel
 
       {snapshot && (
         <>
+          <div className="health-metrics">
+            {metrics.map(metric => {
+              const Icon = metric.Icon
+              const stateText = metric.status ? checkStatusText[metric.status] : '不可用'
+              return (
+                <div key={metric.category} className="health-metric"
+                  data-health={metric.status ?? 'unavailable'} title={metric.title}>
+                  <span className="health-metric-head">
+                    <Icon size={15} aria-hidden="true" />
+                    <span>{metric.label}</span>
+                  </span>
+                  <strong className="health-metric-value">
+                    {metric.value}
+                    <span className="health-sr">，{stateText}</span>
+                  </strong>
+                </div>
+              )
+            })}
+          </div>
+
           {issues.length > 0 && (
             <section className="health-section" aria-labelledby="health-issues-title">
               <h3 id="health-issues-title" className="health-section-title">
@@ -192,66 +275,8 @@ export function HealthPanel({ snapshot, connection, onOpenMonitor }: HealthPanel
             </section>
           )}
 
-          {unknowns.length > 0 && (
-            <section className="health-section" aria-labelledby="health-unknown-title">
-              <h3 id="health-unknown-title" className="health-section-title">状态未知</h3>
-              <ul className="health-plain-list">
-                {unknowns.map(check => (
-                  <li key={check.id}>
-                    <span>{check.label}</span>
-                    <span className="health-plain-detail">{check.message || reasonLabels[check.reason] || '状态未知'}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {issues.length === 0 && unknowns.length === 0 && status === 'healthy' && (
-            <p className="health-ok">所有适用检查均正常。</p>
-          )}
-
-          <section className="health-section" aria-labelledby="health-dimensions-title">
-            <h3 id="health-dimensions-title" className="health-section-title">检查维度</h3>
-            <div className="health-dimensions">
-              {categories.map(({ category, label, Icon }) => {
-                const summary = categorySummary(snapshot.checks, category)
-                return (
-                  <div className="health-dimension" key={category} data-health={summary.status ?? 'unknown'}>
-                    <Icon size={15} aria-hidden="true" />
-                    <span className="health-dimension-label">{label}</span>
-                    <span className="health-dimension-state">{summary.text}</span>
-                  </div>
-                )
-              })}
-            </div>
-          </section>
-
-          {unavailable.length > 0 && (
-            <section className="health-section" aria-labelledby="health-unavailable-title">
-              <h3 id="health-unavailable-title" className="health-section-title">不可用</h3>
-              <ul className="health-plain-list">
-                {unavailable.map(check => (
-                  <li key={check.id}>
-                    <span>{check.label}</span>
-                    <span className="health-plain-detail">{reasonLabels[check.reason] ?? '不适用于当前环境'}</span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          {hostRows.length > 0 && (
-            <section className="health-section" aria-labelledby="health-host-title">
-              <h3 id="health-host-title" className="health-section-title">主机信息</h3>
-              <dl className="health-host">
-                {hostRows.map(row => (
-                  <div key={row.label}>
-                    <dt>{row.label}</dt>
-                    <dd>{row.value}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
+          {hostParts.length > 0 && (
+            <p className="health-host-line">{hostParts.join(' · ')}</p>
           )}
         </>
       )}

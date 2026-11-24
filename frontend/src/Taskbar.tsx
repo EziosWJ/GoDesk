@@ -3,12 +3,34 @@ import { Ellipsis, Grid2X2, Unplug } from 'lucide-react'
 import { apps, type AppId } from './apps'
 import { HealthPanel } from './HealthPanel'
 import { StatusIcon } from './HealthStatusIcon'
-import { effectiveStatus, healthStatusText } from './healthUi'
+import { effectiveStatus, healthStatusText, normalizeStatus } from './healthUi'
 import { useHostHealth } from './useHostHealth'
 import './styles/taskbar.css'
 
 const timeFormat = new Intl.DateTimeFormat('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })
 const dateFormat = new Intl.DateTimeFormat('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+
+type NetworkDetails = {
+  rxBytesPerSecond?: number
+  txBytesPerSecond?: number
+}
+
+function percentText(value: number | null | undefined) {
+  return value === null || value === undefined || !Number.isFinite(value) ? '—' : `${Math.round(value)}%`
+}
+
+function rateText(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value) || value < 0) return '—'
+  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
+  let scaled = value
+  let unit = 0
+  while (scaled >= 1024 && unit < units.length - 1) {
+    scaled /= 1024
+    unit += 1
+  }
+  const rounded = unit === 0 || scaled >= 10 ? Math.round(scaled) : Math.round(scaled * 10) / 10
+  return `${rounded} ${units[unit]}`
+}
 
 function Clock() {
   const [now, setNow] = useState(() => new Date())
@@ -87,9 +109,21 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
   const stale = Boolean(snapshot?.stale) && !disconnected
   const issueCount = snapshot?.summary.issueCount ?? 0
   const showCount = !stale && (healthStatus === 'warning' || healthStatus === 'critical') && issueCount > 0
+  const live = Boolean(snapshot) && !stale && !disconnected
+  const cpuCheck = snapshot?.checks.find(check => check.category === 'cpu' && check.applicable)
+  const memoryCheck = snapshot?.checks.find(check => check.category === 'memory' && check.applicable)
+  const networkCheck = snapshot?.checks.find(check => check.category === 'network' && check.applicable)
+  const networkDetails = (networkCheck?.details ?? {}) as NetworkDetails
+  const cpuText = percentText(cpuCheck?.value)
+  const memoryText = percentText(memoryCheck?.value)
+  const rxText = rateText(networkDetails.rxBytesPerSecond)
+  const txText = rateText(networkDetails.txBytesPerSecond)
+  const metricsName = live
+    ? `，CPU ${cpuText}，内存 ${memoryText}${networkCheck ? `，下行 ${rxText}，上行 ${txText}` : ''}`
+    : ''
   const healthName = disconnected
     ? 'GoDesk 连接中断'
-    : `主机健康：${healthStatusText[healthStatus]}${showCount ? `，${issueCount} 项异常` : ''}`
+    : `主机健康：${healthStatusText[healthStatus]}${showCount ? `，${issueCount} 项异常` : ''}${metricsName}`
 
   // Announce only when the overall status or the issue count changes. The
   // first result initializes the baseline without speaking.
@@ -217,7 +251,30 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
               setPopup(current => current === 'health' ? null : 'health')
             }}>
             {disconnected ? <Unplug size={18} aria-hidden="true" /> : <StatusIcon status={healthStatus} size={18} />}
-            {!compact && <span className="taskbar-health-text">{disconnected ? '连接中断' : healthStatusText[healthStatus]}</span>}
+            {!compact && (
+              <span className="taskbar-health-text">
+                {disconnected ? '连接中断' : stale ? '数据未更新' : snapshot ? (
+                  <>
+                    <span className="taskbar-health-item" data-health={normalizeStatus(cpuCheck?.status)}>
+                      <span className="taskbar-health-label">CPU</span>
+                      <span className="taskbar-health-value">{cpuText}</span>
+                    </span>
+                    <span className="taskbar-health-item" data-health={normalizeStatus(memoryCheck?.status)}>
+                      <span className="taskbar-health-label">内存</span>
+                      <span className="taskbar-health-value">{memoryText}</span>
+                    </span>
+                    {networkCheck && (
+                      <span className="taskbar-health-item taskbar-health-net" data-health={normalizeStatus(networkCheck.status)}>
+                        <span className="taskbar-health-label" aria-hidden="true">↓</span>
+                        <span className="taskbar-health-value">{rxText}</span>
+                        <span className="taskbar-health-label" aria-hidden="true">↑</span>
+                        <span className="taskbar-health-value">{txText}</span>
+                      </span>
+                    )}
+                  </>
+                ) : '正在连接…'}
+              </span>
+            )}
             {showCount && <span className="taskbar-health-count" aria-hidden="true">{issueCount}</span>}
           </button>
           <Clock />

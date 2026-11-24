@@ -64,23 +64,43 @@
   min-width: var(--react-web-desktop-control-touch);
   padding-inline: 8px;
 }
+.taskbar-health { color: var(--react-web-desktop-fg); }
 .taskbar-health > svg { flex: none; }
-.taskbar-health[data-health='healthy'] { color: var(--react-web-desktop-success); }
-.taskbar-health[data-health='warning'] { color: var(--react-web-desktop-warning); }
-.taskbar-health[data-health='critical'] { color: var(--react-web-desktop-danger); }
-.taskbar-health[data-health='unknown'],
-.taskbar-health[data-health='disconnected'] { color: var(--react-web-desktop-muted); }
+.taskbar-health[data-health='healthy'] > svg { color: var(--react-web-desktop-success); }
+.taskbar-health[data-health='warning'] > svg { color: var(--react-web-desktop-warning); }
+.taskbar-health[data-health='critical'] > svg { color: var(--react-web-desktop-danger); }
+.taskbar-health[data-health='unknown'] > svg,
+.taskbar-health[data-health='disconnected'] > svg { color: var(--react-web-desktop-muted); }
+.taskbar-health[data-health='warning'] .taskbar-health-count { color: var(--react-web-desktop-warning); }
+.taskbar-health[data-health='critical'] .taskbar-health-count { color: var(--react-web-desktop-danger); }
 .taskbar-health[aria-expanded='true'] {
-  color: var(--react-web-desktop-accent);
   background: var(--react-web-desktop-selected);
   border-color: var(--react-web-desktop-accent);
 }
+.taskbar-health[aria-expanded='true'] > svg { color: var(--react-web-desktop-accent); }
 .taskbar-health-text {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: var(--text-react-web-desktop-compact);
   line-height: var(--text-react-web-desktop-compact--line-height);
   font-weight: 500;
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.taskbar-health-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+.taskbar-health-label {
+  color: var(--react-web-desktop-muted);
+  font-weight: 400;
+}
+.taskbar-health-value { font-weight: 600; }
+.taskbar-health-item[data-health='warning'] .taskbar-health-value { color: var(--react-web-desktop-warning); }
+.taskbar-health-item[data-health='critical'] .taskbar-health-value { color: var(--react-web-desktop-danger); }
+.taskbar-health-item[data-health='unknown'] .taskbar-health-value { color: var(--react-web-desktop-muted); }
 .taskbar-health-count {
   min-width: 18px;
   padding-inline: 4px;
@@ -208,6 +228,10 @@
 }
 .taskbar-window-list button:hover { background: var(--react-web-desktop-hover); }
 .taskbar-window-list button svg { flex: none; color: var(--react-web-desktop-muted); }
+
+@media (max-width: 1023px) {
+  .taskbar-health-net { display: none; }
+}
 
 @media (max-width: 799px) {
   .taskbar { --taskbar-inset: 8px; grid-template-columns: minmax(0, 1fr) auto; column-gap: 6px; }

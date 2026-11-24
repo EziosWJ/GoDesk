@@ -99,72 +99,68 @@
   font-variant-numeric: tabular-nums;
 }
 
-.health-plain-list {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.health-plain-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
-}
-.health-plain-detail {
-  color: var(--react-web-desktop-muted);
-  text-align: end;
-}
-
-.health-dimensions {
+.health-metrics {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 6px 12px;
+  gap: 8px;
 }
-.health-dimension {
+.health-metric {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-control);
+}
+.health-metric-head {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-width: 0;
+  color: var(--react-web-desktop-muted);
   font-size: var(--text-react-web-desktop-caption);
   line-height: var(--text-react-web-desktop-caption--line-height);
 }
-.health-dimension svg { flex: none; color: var(--react-web-desktop-muted); }
-.health-dimension[data-health='healthy'] svg { color: var(--react-web-desktop-success); }
-.health-dimension[data-health='warning'] svg { color: var(--react-web-desktop-warning); }
-.health-dimension[data-health='critical'] svg { color: var(--react-web-desktop-danger); }
-.health-dimension-label { color: var(--react-web-desktop-fg); }
-.health-dimension-state {
-  margin-inline-start: auto;
-  color: var(--react-web-desktop-muted);
+.health-metric-head svg { flex: none; }
+.health-metric-value {
+  overflow: hidden;
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.health-host {
-  display: grid;
-  gap: 4px;
-  margin: 0;
+.health-metric[data-health='healthy'] :is(.health-metric-head svg, .health-metric-value) {
+  color: var(--react-web-desktop-success);
 }
-.health-host > div {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
+.health-metric[data-health='warning'] :is(.health-metric-head svg, .health-metric-value) {
+  color: var(--react-web-desktop-warning);
+}
+.health-metric[data-health='critical'] :is(.health-metric-head svg, .health-metric-value) {
+  color: var(--react-web-desktop-danger);
+}
+.health-metric[data-health='unknown'] :is(.health-metric-head svg, .health-metric-value),
+.health-metric[data-health='unavailable'] :is(.health-metric-head svg, .health-metric-value) {
+  color: var(--react-web-desktop-muted);
+}
+
+.health-host-line {
+  color: var(--react-web-desktop-muted);
   font-size: var(--text-react-web-desktop-caption);
   line-height: var(--text-react-web-desktop-caption--line-height);
-}
-.health-host dt { color: var(--react-web-desktop-muted); }
-.health-host dd {
-  margin: 0;
-  text-align: end;
   overflow-wrap: anywhere;
 }
 
-.health-ok {
-  color: var(--react-web-desktop-success);
-  font-size: var(--text-react-web-desktop-compact);
-  line-height: var(--text-react-web-desktop-compact--line-height);
+.health-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .health-open-monitor {

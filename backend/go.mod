@@ -3,7 +3,7 @@ module godesk
 go 1.26.0
 
 require (
-	github.com/EziosWJ/Extension-Host v0.2.0
+	github.com/EziosWJ/Extension-Host v0.2.1-0.20261124133249-23eb669f6f30
 	github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/vt v0.0.0-20260927004216-9c77d672503d

@@ -22,6 +22,39 @@ import (
 
 const testPluginID = "com.example.echo"
 
+func TestEmbeddedPluginCanUseHostProcess(t *testing.T) {
+	manager, err := Open(t.Context(), Options{DataDir: t.TempDir()})
+	if err != nil {
+		t.Fatalf("open host: %v", err)
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := manager.Close(ctx); err != nil {
+			t.Errorf("close host: %v", err)
+		}
+	}()
+
+	pkg := zipPluginFiles(t, map[string]string{
+		"manifest.json": `{
+			"schemaVersion": 1,
+			"id": "com.example.process",
+			"name": "Process",
+			"version": "0.1.0",
+			"hostApi": {"min": 1, "max": 1},
+			"entry": {"lua": "lua/init.lua"}
+		}`,
+		"lua/init.lua": `assert(host.process and type(host.process.start) == "function", "host.process.start is unavailable")`,
+	})
+	plugin, err := manager.host.Install(t.Context(), bytes.NewReader(pkg))
+	if err != nil {
+		t.Fatalf("install plugin: %v", err)
+	}
+	if err := manager.host.Enable(t.Context(), plugin.ID); err != nil {
+		t.Fatalf("enable plugin that requires host.process: %v", err)
+	}
+}
+
 func TestEmbeddedPluginHTTPAndEvents(t *testing.T) {
 	manager, err := Open(t.Context(), Options{
 		DataDir: t.TempDir(),
@@ -422,6 +455,11 @@ host.app.route("POST", "/services-restart", function(request)
 end)
 `,
 	}
+	return zipPluginFiles(t, files)
+}
+
+func zipPluginFiles(t *testing.T, files map[string]string) []byte {
+	t.Helper()
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)
 	for name, content := range files {

@@ -1,5 +1,5 @@
-github.com/EziosWJ/Extension-Host v0.2.1-0.20261124133249-23eb669f6f30 h1:uVLwpQTIeWFpuu83bS0Qlm17QbTVFUu09C+4TcNC9i0=
-github.com/EziosWJ/Extension-Host v0.2.1-0.20261124133249-23eb669f6f30/go.mod h1:pY3CyxOPh3Fr3aJ3g50PWa83BThCFXnK7/MwaiheEcw=
+github.com/EziosWJ/Extension-Host v0.2.1-0.20261124154917-2931407e00d2 h1:QtYBLtyDwRTn6+/wzFn4Veioj+vkoBq+e+MkrEDXn6Q=
+github.com/EziosWJ/Extension-Host v0.2.1-0.20261124154917-2931407e00d2/go.mod h1:qWyECxkSqEoYuDRmzC1I38XQ+ZLw4Bf0z/ZDzjJeQyE=
 github.com/charmbracelet/colorprofile v0.4.2 h1:BdSNuMjRbotnxHSfxy+PCSa4xAmz7szw70ktAtWRYrY=
 github.com/charmbracelet/colorprofile v0.4.2/go.mod h1:0rTi81QpwDElInthtrQ6Ni7cG0sDtwAd4C4le060fT8=
 github.com/charmbracelet/ultraviolet v0.0.0-20260303162955-0b88c25f3fff h1:uY7A6hTokHPJBHfq7rj9Y/wm+IAjOghZTxKfVW6QLvw=
@@ -59,6 +59,8 @@ github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec/go.mod h1:qqbHyh8v60DhA7CoWK5oRCqLrMHRGoxYCSS9EjAz6Eo=
 github.com/rivo/uniseg v0.4.7 h1:WUdvkW8uEhrYfLC4ZzdpI2ztxP1I582+49Oc5Mq64VQ=
 github.com/rivo/uniseg v0.4.7/go.mod h1:FN3SvrM+Zdj16jyLfmOkMNblXMcoc8DfTHruCPUcx88=
+github.com/robfig/cron/v3 v3.0.1 h1:WdRxkvbJztn8LMz/QEvLN5sBU+xKpSqwwUO1Pjr4qDs=
+github.com/robfig/cron/v3 v3.0.1/go.mod h1:eQICP3HwyT7UooqI/z+Ov+PtYAWygg1TEWWzGIFLtro=
 github.com/shirou/gopsutil/v4 v4.26.10 h1:MJN6euesJx53MVEjscYeyRSRcrdIcy3sz5k9nosjldg=
 github.com/shirou/gopsutil/v4 v4.26.10/go.mod h1:XpkIrcUMQhwte/dGxu57KtnMMFsbKelI7PP23zweKBk=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=

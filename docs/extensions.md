@@ -86,6 +86,7 @@ Extension Host 在独立数据目录里管理 `host.db` 和每个插件的业务
 | `host.ws` | 订阅已授予的目标 WebSocket，将事件交给当前插件实例。 |
 | `host.storage` | 访问当前插件业务 SQLite。 |
 | `host.process` | 异步启动子进程，并把退出结果交回当前 Lua 实例。 |
+| `host.schedule` | 注册当前插件实例的定时任务，回调在实例的 Lua 执行队列中运行。 |
 | `host.services` | 查询和重启部署者授权的已有 systemd 服务。 |
 
 插件身份由 Host 从运行实例取得。部署配置可把 Mihomo 的网络请求限定为指定控制地址，将服务操作限定为 `mihomo.service` 的查询与重启。服务调用默认使用运行账号，部署者可为指定动作显式选择非交互 sudo。GoDesk 原生服务管理继续遵守自身权限契约。 [GoDesk 服务契约](services.md#权限)
@@ -95,6 +96,12 @@ Extension Host 在独立数据目录里管理 `host.db` 和每个插件的业务
 `host.process.start(program, args, onExit[, env])` 使用独立的参数数组启动命令并立即返回子进程 PID。命令继承宿主运行账号和环境。可选的 `env` 表仅修改子进程环境，用字符串设置变量，用 `false` 移除继承的变量。启动失败时返回 `nil, error`。`onExit(result)` 在实例的 Lua 执行队列中运行，和 HTTP 处理器串行执行。即使浏览器页面已关闭，回调仍会在运行中的插件内执行。
 
 结果包含 `pid`、`exitCode` 和 `stderr`。标准输出默认丢弃，命令可自行把产物写到文件。`stderr` 保留开头 64 KiB，截断时设置 `stderrTruncated`。调用方可以使用 `error` 查看等待进程时的错误。停止实例会终止其子进程，完成回调随实例结束。插件负责在重新启动时处理上次中断的业务任务。
+
+### 定时任务
+
+`host.schedule.register(name, expression, fn)` 注册或替换当前插件实例的定时任务，`host.schedule.unregister(name)` 移除任务。`expression` 支持标准 5 段 cron（分 时 日 月 周）或 `@every <duration>`（例如 `@every 30m`），按宿主进程的本地时区解释。回调在该实例的 Lua 执行队列中运行，与 HTTP 处理器和进程回调串行，必须尽快返回；耗时工作应交给 `host.process`。同一任务上一次回调未返回时跳过本次触发并记录警告。回调错误写入插件日志，不自动重试。
+
+注册只在实例运行期间有效。停止、禁用或卸载实例会清除注册；宿主重启后按启用设置恢复实例，插件需要在启动钩子中按自己持久化的设置重新注册。宿主停止期间错过的执行不补跑。名称或表达式无效时返回 `nil, error`；重复注册同名任务会替换旧任务。
 
 ## Web、HTTP 与 WebSocket
 
@@ -124,11 +131,11 @@ Mock 替换 HTTP、WS 和服务等能力实现。包加载、权限检查、Lua�
 
 ## PostgreSQL 备份示例
 
-首版面向部署者配置的一个数据库，提供「立即备份」和「备份历史」。Lua 使用 `host.process.start` 直接启动 PostgreSQL 的 `pg_dump`，提交后立即返回任务状态，完成回调写入插件自己的 SQLite。同一插件实例同时运行一条备份任务。GoDesk 用于正常运行，独立 `godesk-ext` 用于开发联调，两者各自保存任务历史和备份产物。
+首版面向部署者配置的一个数据库，提供「立即备份」、定时「备份计划」和「备份历史」。Lua 使用 `host.process.start` 直接启动 PostgreSQL 的 `pg_dump`，提交后立即返回任务状态，完成回调写入插件自己的 SQLite。同一插件实例同时运行一条备份任务。GoDesk 用于正常运行，独立 `godesk-ext` 用于开发联调，两者各自保存任务历史和备份产物。
 
-数据库地址、端口、数据库名、用户和可选密码可从插件页面保存到本地 SQLite。保存后新任务使用页面配置，已有任务继续使用启动时的参数。保存的密码不会通过页面接口读回。已有的 `PGSERVICE` 配置在首次保存前继续生效。
+数据库地址、端口、数据库名、用户和可选密码可从插件页面保存到本地 SQLite。保存后新任务使用页面配置，已有任务继续使用启动时的参数。保存的密码不会通过页面接口读回。已有的 `PGSERVICE` 配置在首次保存前继续生效。备份计划以 cron 或 `@every` 表达式保存在同一个业务库，实例启动时重新注册；只在实例运行期间触发，宿主停止期间错过的执行不补跑。定时备份与手动备份共用同一条「运行中」保护。
 
-同一份 ZIP 可分别在两个入口验收。验收覆盖连接配置持久化、成功、失败、刷新后继续查看，以及用备份恢复到空测试库。运行和恢复步骤见 Extension Host 仓库的 `examples/postgres-backup/README.md`。
+同一份 ZIP 可分别在两个入口验收。验收覆盖连接配置持久化、成功、失败、刷新后继续查看、保存或清空备份计划后按计划触发或停止触发，以及用备份恢复到空测试库。运行和恢复步骤见 Extension Host 仓库的 `examples/postgres-backup/README.md`。
 
 ### 从源码联调 GoDesk
 

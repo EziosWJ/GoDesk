@@ -112,6 +112,8 @@ system 级服务的写操作可使用免密 sudo，也可沿用运行账号的 p
 
 ## 相关文档
 
+- [GoDesk Extension Host 首版契约（待实现）](docs/extensions.md)
+- [GoDesk Extension Host 实施 Spec](.scratch/extension-host/spec.md)
 - [认证行为与 HTTP 接口](docs/authentication.md)
 - [主机权限、sudo 命令与监听端口契约](docs/privileges.md)
 - [文件管理与文本编辑契约](docs/file-management.md)

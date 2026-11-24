@@ -34,7 +34,7 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 	monitoring := monitor.Start(t.Context(), time.Second)
 	defer monitoring.Close()
 	healthEngine := health.Start(t.Context(), monitoring, time.Second)
-	mux := New(db, store, terminals, monitoring, healthEngine, services.None(), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux := New(db, store, terminals, monitoring, healthEngine, services.None(), nil, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	for path, code := range map[string]int{

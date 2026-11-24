@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"time"
 
 	"godesk/internal/auth"
@@ -15,7 +16,7 @@ import (
 	"godesk/internal/terminal"
 )
 
-func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monitoring *monitor.Collector, healthEngine *health.Engine, serviceBackend services.Backend, desktop http.Handler) http.Handler {
+func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monitoring *monitor.Collector, healthEngine *health.Engine, serviceBackend services.Backend, extensions http.Handler, desktop http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	credentials.Register(mux)
 	terminals.Register(mux, credentials.RequireSession)
@@ -52,5 +53,23 @@ func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monit
 	if desktop != nil {
 		mux.Handle("GET /", desktop)
 	}
-	return mux
+	if extensions == nil {
+		return mux
+	}
+	// The extension handler owns its full route set and applies the session
+	// middleware itself. Dispatching first keeps every extension route ahead of
+	// the desktop fallback without changing the methods accepted elsewhere.
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if extensionPath(r.URL.Path) {
+			extensions.ServeHTTP(w, r)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})
+}
+
+func extensionPath(path string) bool {
+	return path == "/api/v1/extensions" ||
+		strings.HasPrefix(path, "/api/v1/extensions/") ||
+		strings.HasPrefix(path, "/extensions/")
 }

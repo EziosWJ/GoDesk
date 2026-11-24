@@ -1,0 +1,33 @@
+.service-dialog.file-image-preview {
+  width: min(840px, calc(100% - 24px));
+  height: min(720px, calc(100% - 24px));
+}
+
+.file-image-preview-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px 6px 16px;
+  border-bottom: 1px solid var(--react-web-desktop-divider);
+}
+
+.file-image-preview-header button { flex: none; }
+
+.file-image-preview-content {
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  padding: 12px;
+  background: var(--react-web-desktop-subtle);
+  text-align: center;
+}
+
+.file-image-preview-content img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}

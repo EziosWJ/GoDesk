@@ -1,4 +1,4 @@
-import { textFileType, type Entry } from './fileSystem'
+import type { Entry } from './fileSystem'
 
 const prefix = '/api/v1/files'
 
@@ -54,8 +54,14 @@ function json(method: string, data: object): RequestInit {
   return { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }
 }
 
-function endpoint(path: string, parameters: Record<string, string>) {
-  return `${path}?${new URLSearchParams(parameters)}`
+function endpoint(path: string, parameters: Record<string, string> = {}, elevated = false) {
+  const query = new URLSearchParams(parameters)
+  if (elevated) query.set('elevated', 'true')
+  return query.size ? `${path}?${query}` : path
+}
+
+export function readFileIdentity(signal: AbortSignal) {
+  return request<{ root: boolean }>('/identity', { signal })
 }
 
 export const filename = (path: string) => path.slice(path.lastIndexOf('/') + 1) || '/'
@@ -74,12 +80,12 @@ export function regularFile(file?: HostFile) {
   return file?.kind === 'file' || file?.targetKind === 'file'
 }
 
-export function managedFile(file: HostFile) {
-  return ['file', 'directory', 'symlink'].includes(file.kind)
+export function imageFile(file: HostFile) {
+  return regularFile(file) && /\.(?:png|jpe?g|gif|webp|bmp|ico|svg)$/i.test(file.name)
 }
 
-export function editableHostFile(file: HostFile) {
-  return regularFile(file) && !!textFileType(file.name)
+export function managedFile(file: HostFile) {
+  return ['file', 'directory', 'symlink'].includes(file.kind)
 }
 
 function sizeLabel(bytes: number) {
@@ -92,36 +98,36 @@ function sizeLabel(bytes: number) {
   return `${unit ? bytes.toFixed(1) : bytes} ${units[unit]}`
 }
 
-export async function readDirectory(path = '', signal?: AbortSignal) {
+export async function readDirectory(path = '', signal?: AbortSignal, elevated = false) {
   const data = await request<{ path: string; home: string; entries: HostEntry[] }>(
-    endpoint('/directory', path ? { path } : {}), { signal },
+    endpoint('/directory', path ? { path } : {}, elevated), { signal },
   )
   const entries = data.entries.map((entry): HostFile => {
     const directory = entry.kind === 'directory' || entry.targetKind === 'directory'
     const kinds: Record<string, string> = { directory: '文件夹', symlink: '符号链接', fifo: 'FIFO', socket: '套接字', device: '设备', other: '特殊文件' }
-    const type = kinds[entry.kind] ?? textFileType(entry.name)?.type ?? '文件'
+    const type = kinds[entry.kind] ?? '文件'
     return { ...entry, id: entry.path, type, symbolicLink: entry.kind === 'symlink',
       directory: directory ? entry.path : undefined, size: entry.kind === 'file' ? sizeLabel(entry.size) : undefined }
   }).sort((a, b) => Number(!!b.directory) - Number(!!a.directory) || a.name.localeCompare(b.name, 'zh-CN', { numeric: true }))
   return { ...data, entries }
 }
 
-export function fileAction(operation: FileAction, path: string, options: { destination?: string; name?: string; conflict?: Conflict } = {}) {
-  return request<Result>('/action', json('POST', { operation, path, ...options }))
+export function fileAction(operation: FileAction, path: string, options: { destination?: string; name?: string; conflict?: Conflict } = {}, elevated = false) {
+  return request<Result>(endpoint('/action', {}, elevated), json('POST', { operation, path, ...options }))
 }
 
-export function writeOwnership(path: string, values: { owner?: string; group?: string }) {
-  return request<Result>('/ownership', json('PUT', { path, ...values }))
+export function writeOwnership(path: string, values: { owner?: string; group?: string }, elevated = false) {
+  return request<Result>(endpoint('/ownership', {}, elevated), json('PUT', { path, ...values }))
 }
 
-export function writePermissions(path: string, mode: string) {
-  return request<Result>('/permissions', json('PUT', { path, mode }))
+export function writePermissions(path: string, mode: string, elevated = false) {
+  return request<Result>(endpoint('/permissions', {}, elevated), json('PUT', { path, mode }))
 }
 
-export function uploadFile(directory: string, file: File, conflict: Conflict | undefined, progress: (percent: number) => void) {
+export function uploadFile(directory: string, file: File, conflict: Conflict | undefined, progress: (percent: number) => void, elevated = false) {
   return new Promise<Result>((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    xhr.open('POST', prefix + endpoint('/upload', { directory, name: file.name, ...(conflict ? { conflict } : {}) }))
+    xhr.open('POST', prefix + endpoint('/upload', { directory, name: file.name, ...(conflict ? { conflict } : {}) }, elevated))
     xhr.setRequestHeader('Content-Type', 'application/octet-stream')
     xhr.responseType = 'json'
     xhr.upload.onprogress = event => {
@@ -136,20 +142,32 @@ export function uploadFile(directory: string, file: File, conflict: Conflict | u
   })
 }
 
-export function downloadFile(path: string) {
+export async function downloadFile(path: string, elevated = false) {
+  const url = prefix + endpoint('/download', { path }, elevated)
+  if (elevated) {
+    const response = await fetch(url, { method: 'HEAD' })
+    if (!response.ok) {
+      if (response.status === 403) throw new FileError('permission', '无法以管理员身份下载，请检查免密 sudo 授权')
+      throw responseError(undefined, response.status)
+    }
+  }
   // The browser streams the attachment directly to disk.
   const link = document.createElement('a')
-  link.href = prefix + endpoint('/download', { path })
+  link.href = url
   link.download = filename(path)
   link.click()
 }
 
-export function readText(path: string, signal?: AbortSignal) {
-  return request<Document>(endpoint('/text', { path }), { signal })
+export function imagePreviewURL(path: string, elevated: boolean) {
+  return prefix + endpoint('/image', { path }, elevated)
 }
 
-export function writeText(path: string, text: string, version?: string, conflict?: Conflict) {
-  return request<Omit<Document, 'text'>>('/text', json('PUT', { path, text, version, conflict }))
+export function readText(path: string, signal?: AbortSignal, elevated = false) {
+  return request<Document>(endpoint('/text', { path }, elevated), { signal })
+}
+
+export function writeText(path: string, text: string, version?: string, conflict?: Conflict, elevated = false) {
+  return request<Omit<Document, 'text'>>(endpoint('/text', {}, elevated), json('PUT', { path, text, version, conflict }))
 }
 
 export function canTransfer(paths: string[], target: string, move: boolean) {

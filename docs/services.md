@@ -39,14 +39,9 @@ goDesk 启动时探测一次服务后端，不在请求期间重复探测。顺�
 
 ## 权限
 
-服务管理不包含提权逻辑，所有命令以运行 goDesk 的账号执行。列表和日志在账号可读时可用；动作需要相应权限。
+以 root 启动时，服务命令直接使用 root 权限。普通运行账号可免密以 root 执行时，启停、重启和开机自启变更通过 sudo 执行。免密 sudo 不可用时，沿用运行账号的非交互权限，例如通过 polkit 授予 `org.freedesktop.systemd1.manage-units` 和 `org.freedesktop.systemd1.manage-unit-files`。
 
-完整功能有两种部署方式：
-
-1. 以 root 运行 goDesk。注意文件管理器和终端也会获得 root 权限。
-2. 普通账号运行，并配置 polkit 允许 `org.freedesktop.systemd1.manage-units` 和 `org.freedesktop.systemd1.manage-unit-files`；读取日志需要加入 `systemd-journal` 组。
-
-权限不足时动作返回 403，界面显示明确错误。goDesk 不在启动时探测写权限。
+列表和 journal 日志以运行账号读取。普通账号可通过所在发行版的 journal 读取配置获得权限，例如加入 `systemd-journal` 组。权限不足时返回 403，界面显示明确错误。见[主机权限契约](privileges.md)。
 
 ## HTTP 接口
 

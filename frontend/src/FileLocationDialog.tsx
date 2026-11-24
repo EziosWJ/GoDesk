@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent } from 'react'
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent } from 'react'
 import { ArrowLeft, ArrowRight, ArrowUp, ChevronRight, FolderPlus, HardDrive, House, Search, X } from 'lucide-react'
 import { announceFileChange, childPath, errorMessage, FileError, fileAction, filename as pathName, pathCrumbs, readDirectory, type Conflict } from './hostFiles'
 import { FileIcon } from './fileIcons'
@@ -36,11 +36,10 @@ type FileLocationDialogProps = {
   title: string
   warning?: string
   initialDirectory?: string
+  elevated?: boolean
   onCancel: () => void
 } & ({
   mode: 'save'
-  formats: Readonly<Record<string, { type: string }>>
-  defaultExtension: string
   initialName?: string
   onSave: (path: string, conflict?: Conflict) => Promise<void>
 } | {
@@ -49,11 +48,6 @@ type FileLocationDialogProps = {
   canSelect: (directory: string) => boolean
   onSelect: (directory: string) => void
 })
-
-function fileExtension(name: string) {
-  const dot = name.lastIndexOf('.')
-  return dot > 0 ? name.slice(dot) : ''
-}
 
 function validName(name: string) {
   return name && name !== '.' && name !== '..' && !name.includes('/')
@@ -69,7 +63,7 @@ function placeDialog(element: HTMLDialogElement, { x, y }: Position) {
 }
 
 export function FileLocationDialog(props: FileLocationDialogProps) {
-  const { title, initialDirectory = '', onCancel } = props
+  const { title, initialDirectory = '', elevated = false, onCancel } = props
   const id = useId()
   const modal = useRef<HTMLDialogElement>(null)
   const drag = useRef<Drag>(undefined)
@@ -91,11 +85,6 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   const request = useRef<AbortController>(undefined)
   const [query, setQuery] = useState('')
   const [filename, setFilename] = useState(props.mode === 'save' ? props.initialName ?? '' : '')
-  const [format, setFormat] = useState(() => {
-    if (props.mode === 'folder') return ''
-    const extension = fileExtension(props.initialName ?? '').slice(1).toLowerCase()
-    return Object.hasOwn(props.formats, extension) ? extension : props.defaultExtension
-  })
   const [error, setError] = useState('')
   const [newFolder, setNewFolder] = useState<string>()
   const [folderError, setFolderError] = useState('')
@@ -105,8 +94,6 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   const breadcrumbs = pathCrumbs(directory)
   const currentName = directory ? pathName(directory) : '主目录'
   const entries = (data?.entries ?? []).filter(file => file.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
-  const typedExtension = fileExtension(filename.trim()).slice(1).toLowerCase()
-  const selectedFormat = props.mode === 'save' && Object.hasOwn(props.formats, typedExtension) ? typedExtension : format
   const canSelect = available && (props.mode === 'save' || props.canSelect(directory))
 
   useLayoutEffect(() => {
@@ -143,7 +130,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
     request.current = controller
     setLoading(true)
     try {
-      const next = await readDirectory(target, controller.signal)
+      const next = await readDirectory(target, controller.signal, elevated)
       if (controller.signal.aborted) return
       setData(next)
       setHistory(current => index !== undefined ? { ...current, index }
@@ -165,16 +152,18 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
     }
   }
 
+  const loadInitialLocation = useEffectEvent(() => loadLocation(initialDirectory, undefined, true))
+
   useEffect(() => {
     let active = true
     void Promise.resolve().then(() => {
-      if (active) return loadLocation(initialDirectory, undefined, true)
+      if (active) return loadInitialLocation()
     })
     return () => {
       active = false
       request.current?.abort()
     }
-  }, [initialDirectory])
+  }, [initialDirectory, elevated])
 
   function navigate(target: string, index?: number) {
     if (!busy) void loadLocation(target, index)
@@ -278,16 +267,11 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (props.mode !== 'save' || !available) return
-    const input = filename
-    const extension = fileExtension(input)
-    const name = extension ? input : `${input}.${selectedFormat}`
-    const key = extension ? extension.slice(1).toLowerCase() : selectedFormat
-    if (!validName(input)) setError('请输入有效的文件名，文件名中不能包含路径分隔符。')
-    else if (!Object.hasOwn(props.formats, key)) setError('请选择支持的文件类型，或修改文件扩展名。')
-    else {
-      void saveTo(childPath(directory, name))
+    if (validName(filename)) {
+      void saveTo(childPath(directory, filename))
       return
     }
+    setError('请输入有效的文件名，文件名中不能包含路径分隔符。')
     filenameInput.current?.focus()
   }
 
@@ -301,7 +285,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
     }
     setBusy(true)
     try {
-      const result = await fileAction('mkdir', directory, { name })
+      const result = await fileAction('mkdir', directory, { name }, elevated)
       announceFileChange()
       await loadLocation(result.path)
     } catch (error) {
@@ -331,7 +315,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
         })
       }} onPointerUp={event => endDrag(event.pointerId)}
         onPointerCancel={event => endDrag(event.pointerId, true)} onLostPointerCapture={event => endDrag(event.pointerId)}>
-        <h2 id={`${id}-title`}>{title}</h2>
+        <h2 id={`${id}-title`}>{title}{elevated ? ' · 管理员' : ''}</h2>
         <button className="app-control file-location-icon" type="button" aria-label="关闭" disabled={busy} onClick={onCancel}>
           <X size={16} aria-hidden="true" />
         </button>
@@ -439,20 +423,6 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
           <input id={`${id}-filename`} ref={filenameInput} value={filename}
             aria-invalid={!!error} aria-describedby={error ? `${id}-error` : undefined}
             onChange={event => { setFilename(event.target.value); setError(''); setConflictPath(undefined) }} />
-          <label htmlFor={`${id}-type`}>保存类型</label>
-          <select id={`${id}-type`} value={selectedFormat} onChange={event => {
-            const next = event.target.value
-            const input = filename
-            setFormat(next)
-            const extension = fileExtension(input)
-            if (extension) setFilename(`${input.slice(0, -extension.length)}.${next}`)
-            setError('')
-            setConflictPath(undefined)
-          }}>
-            {Object.entries(props.formats).map(([extension, { type }]) => (
-              <option key={extension} value={extension}>{type} (*.{extension})</option>
-            ))}
-          </select>
           {error && <p className="file-location-error" id={`${id}-error`} role="alert">{error}</p>}
         </div>
         <div className="service-dialog-actions">

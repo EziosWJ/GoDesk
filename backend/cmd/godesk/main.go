@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"godesk/internal/auth"
+	"godesk/internal/files"
 	"godesk/internal/httpserver"
 	"godesk/internal/monitor"
+	"godesk/internal/privileges"
 	"godesk/internal/services"
 	"godesk/internal/terminal"
 	"godesk/internal/webui"
@@ -37,13 +39,36 @@ func main() {
 }
 
 func command(ctx context.Context, args []string) error {
-	if len(args) > 0 && args[0] == "reset-password" {
-		return resetPassword(ctx, args[1:])
+	if len(args) > 0 {
+		switch args[0] {
+		case "reset-password":
+			return resetPassword(ctx, args[1:])
+		case "--setup-sudo", "--check-sudo", "--remove-sudo", "--file-operation":
+			if len(args) != 1 {
+				return fmt.Errorf("%s 不接受额外参数", args[0])
+			}
+			switch args[0] {
+			case "--setup-sudo":
+				return privileges.Setup(ctx)
+			case "--check-sudo":
+				return privileges.Check(ctx, os.Stdout)
+			case "--remove-sudo":
+				return privileges.Remove()
+			default:
+				return files.RunElevated(ctx, os.Stdin, os.Stdout)
+			}
+		}
 	}
-	listen := flag.String("listen", "0.0.0.0:8080", "HTTP listen address")
+	listen := flag.String("listen", "0.0.0.0:5000", "HTTP listen address")
 	dataDir := flag.String("data-dir", "./data", "directory for persistent goDesk data")
+	setupSudo := flag.Bool("setup-sudo", false, "install the GoDesk sudoers rule")
+	checkSudo := flag.Bool("check-sudo", false, "check passwordless sudo and the GoDesk rule")
+	removeSudo := flag.Bool("remove-sudo", false, "remove the GoDesk sudoers rule")
 	serviceBackend := flag.String("service-backend", "auto", "service backend: auto, systemd, or none")
 	_ = flag.CommandLine.Parse(args)
+	if *setupSudo || *checkSudo || *removeSudo {
+		return errors.New("sudo commands must be run on their own")
+	}
 	return run(ctx, *listen, *dataDir, *serviceBackend)
 }
 

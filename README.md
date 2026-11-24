@@ -7,7 +7,7 @@ goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当�
 ## 当前功能
 
 - 首次访问时创建操作者密码。登录会话持续 7 天，关闭浏览器或重启服务后可继续使用有效会话。
-- 文件管理器、文本编辑器和终端使用运行 goDesk 的账号权限操作 Linux 主机。终端支持多窗口和后台会话，关闭窗口后可重新接回。系统监控显示 CPU、内存、磁盘、网卡和端口占用；服务管理在 systemd 主机上提供列表、启停、开机自启和日志；主机设置仍使用示例逻辑，后续实现范围见 [首版规格](.scratch/backend-v1/spec.md)。
+- 文件管理器和文本编辑器可在管理员模式下操作 Linux 主机，终端沿用运行账号。终端支持多窗口和后台会话，关闭窗口后可重新接回。系统监控显示 CPU、内存、磁盘、网卡和端口占用；服务管理在 systemd 主机上提供列表、启停、开机自启和日志；主机设置仍使用示例逻辑，后续实现范围见 [首版规格](.scratch/backend-v1/spec.md)。
 - 发布构建将前端资源嵌入 Go 二进制，由同一个进程提供桌面、认证、文件、终端、系统监控、服务管理和健康检查接口。
 
 ## 项目结构
@@ -27,7 +27,7 @@ pnpm --dir frontend install --frozen-lockfile
 make dev
 ```
 
-打开 Vite 输出的地址，默认是 `http://localhost:5173`。Vite 将 `/api` 请求转发到 `127.0.0.1:8080`，Go 服务的健康检查可用 `curl -fsS http://localhost:8080/healthz` 验证，正常时返回 `{"status":"ok"}`。按 Ctrl+C 停止两个服务。联调使用项目根目录的 `data/godesk.db`。
+打开 Vite 输出的地址，默认是 `http://localhost:5173`。Vite 将 `/api` 请求转发到 `127.0.0.1:5000`，Go 服务的健康检查可用 `curl -fsS http://localhost:5000/healthz` 验证，正常时返回 `{"status":"ok"}`。按 Ctrl+C 停止两个服务。联调使用项目根目录的 `data/godesk.db`。
 
 也可以在两个终端中分别启动前端和后端。
 
@@ -47,10 +47,10 @@ go -C backend test ./...
 
 ```sh
 make build
-./godesk -listen 127.0.0.1:8080 -data-dir ./data
+./godesk -listen 127.0.0.1:5000 -data-dir ./data
 ```
 
-在浏览器访问 `http://localhost:8080`，按提示创建密码并进入桌面。发布目标机只需与其平台匹配的 `godesk` 二进制。程序会创建数据目录和 SQLite 文件。
+在浏览器访问 `http://localhost:5000`，按提示创建密码并进入桌面。发布目标机只需与其平台匹配的 `godesk` 二进制。程序会创建数据目录和 SQLite 文件。
 
 | 命令或选项 | 用途 |
 | --- | --- |
@@ -59,9 +59,20 @@ make build
 | `make help` | 列出构建和开发命令。 |
 | `OUTPUT` | 覆盖二进制路径，例如 `make build OUTPUT=/tmp/godesk`。 |
 | `FRONTEND_DIR` | 覆盖用于开发和构建的前端源码目录，默认为 `frontend`。 |
-| `-listen` | 设置 HTTP 监听地址，默认为 `0.0.0.0:8080`。 |
+| `-listen` | 设置 HTTP 监听地址，默认为 `0.0.0.0:5000`。 |
 | `-data-dir` | 设置持久化目录，默认为启动时工作目录下的 `./data`。 |
 | `-service-backend` | 设置服务管理后端，`auto`（默认）、`systemd` 或 `none`。 |
+
+## 主机权限
+
+通常用日常账号启动 goDesk。需要免密管理主机时，由该账号在主机终端运行以下命令。安装规则后，任意使用该 Linux 账号的进程都能免密运行 root 命令。
+
+```sh
+sudo ./godesk --setup-sudo
+./godesk --check-sudo
+```
+
+撤销 GoDesk 托管规则时执行 `sudo ./godesk --remove-sudo`。启用免密 sudo 或以 root 运行时，goDesk 是主机管理员入口，请在受信任的访问环境中完成首次初始化。各命令与权限范围详见[主机权限契约](docs/privileges.md)。
 
 ## 修改与重置密码
 
@@ -81,11 +92,12 @@ make build
 
 从桌面或开始菜单打开「服务管理」。首版支持 systemd 主机：列出 system 级服务，显示运行状态和开机自启状态，可以启动、停止、重启、启用/禁用开机自启，并查看最近的 journal 日志。探测顺序和 `-service-backend` 参数见[服务管理文档](docs/services.md)。
 
-服务操作以运行 goDesk 的账号权限执行。要管理 system 级服务，需要以 root 运行 goDesk，或给运行账号配置相应的 polkit 规则和 journal 读取权限；权限不足时界面会显示明确错误，列表和日志仍可使用。
+system 级服务的写操作可使用免密 sudo，也可沿用运行账号的 polkit 授权。列表和 journal 日志使用运行账号的读取权限，权限不足时界面会显示明确错误。
 
 ## 相关文档
 
 - [认证行为与 HTTP 接口](docs/authentication.md)
+- [主机权限、sudo 命令与监听端口契约](docs/privileges.md)
 - [文件管理与文本编辑契约](docs/file-management.md)
 - [系统监控行为与 HTTP 接口](docs/system-monitoring.md)
 - [终端会话及接口契约](docs/terminal.md)

@@ -1,29 +1,31 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { DragEvent, FormEvent, KeyboardEvent, MouseEvent } from 'react'
 import {
   ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronRight, ClipboardPaste, Copy, Download, Eye, EyeOff, HardDrive,
-  Folder, FolderOpen, FolderPlus, Grid2X2, House, Info, LayoutList, List, MapPin, MoreHorizontal, Pencil, RefreshCw, Scissors, Search, Shield, Trash2, Upload, UsersRound, X,
+  Folder, FolderOpen, FolderPlus, Grid2X2, House, Image as ImageIcon, Info, LayoutList, List, MapPin, MoreHorizontal, Pencil, RefreshCw, Scissors, Search, Shield, Trash2, Upload, UsersRound, X,
 } from 'lucide-react'
 
 import { CommandMenu, type MenuAnchor, type MenuCommand, type MenuGroup } from './CommandMenu'
 import { FileLocationDialog } from './FileLocationDialog'
+import { FileImagePreview } from './FileImagePreview'
 import { FileIcon } from './fileIcons'
 
 import {
-  announceFileChange, canTransfer, downloadFile, editableHostFile, errorMessage,
-  FileError, fileAction, filename, managedFile, parentPath, pathCrumbs, readDirectory,
+  announceFileChange, canTransfer, downloadFile, errorMessage,
+  FileError, fileAction, filename, imageFile, managedFile, parentPath, pathCrumbs, readDirectory, readFileIdentity,
   regularFile, subscribeToFileChanges, uploadFile, writeOwnership, writePermissions, type Conflict, type HostFile,
 } from './hostFiles'
 
 type Command = MenuCommand & { group: 'open' | 'edit' | 'organize' | 'transfer' | 'delete' }
 type Popup = MenuAnchor & { groups: MenuGroup[]; kind: 'context' | 'actions' | 'layout'; layer: HTMLElement; zIndex: number }
 type Transfer = { kind: 'move' | 'copy'; ids: string[]; target: string }
-type Job =
+type Job = { elevated: boolean } & (
   | { kind: 'copy' | 'move' | 'delete'; path: string; target?: string }
-  | { kind: 'upload'; file: File; target: string }
+  | { kind: 'upload'; file: File; target: string })
 type Outcome = { job: Job; status: 'success' | 'skipped' | 'conflict' | 'failed'; message: string; retry?: boolean }
 type Modal =
   | { kind: 'destination'; operation: Transfer['kind']; ids: string[] }
+  | { kind: 'image'; file: HostFile; elevated: boolean }
   | { kind: 'delete'; jobs: Job[] }
   | { kind: 'conflict' }
   | { kind: 'results' }
@@ -85,7 +87,7 @@ type PropertyEdit =
   | { kind: 'ownership'; owner: string; group: string; originalOwner: string; originalGroup: string }
   | { kind: 'permissions'; mode: string; originalMode: string }
 
-function FilePropertyActions({ file, open }: { file: HostFile; open: () => void }) {
+function FilePropertyActions({ file, open, elevated }: { file: HostFile; open: () => void; elevated: boolean }) {
   const [form, setForm] = useState<PropertyEdit>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -118,8 +120,8 @@ function FilePropertyActions({ file, open }: { file: HostFile; open: () => void 
     setBusy(true)
     setError('')
     try {
-      if (ownership) await writeOwnership(file.id, ownership)
-      else await writePermissions(file.id, mode)
+      if (ownership) await writeOwnership(file.id, ownership, elevated)
+      else await writePermissions(file.id, mode, elevated)
       announceFileChange()
       close()
     } catch (error) {
@@ -151,9 +153,10 @@ function FilePropertyActions({ file, open }: { file: HostFile; open: () => void 
     </div>
   </form>
 
-  const editable = editableHostFile(file)
-  const openable = file.directory || regularFile(file) || file.targetError
-  const OpenIcon = file.directory ? FolderOpen : editable ? Pencil : regularFile(file) ? Download : FolderOpen
+  const regular = regularFile(file)
+  const image = imageFile(file)
+  const openable = file.directory || regular || file.targetError
+  const OpenIcon = image ? ImageIcon : regular ? Pencil : FolderOpen
   return <div className="file-property-actions">
     {managedFile(file) && <div className="file-property-edits">
       <button className="app-control" ref={editOwnership} onClick={() => start({ kind: 'ownership',
@@ -167,14 +170,16 @@ function FilePropertyActions({ file, open }: { file: HostFile; open: () => void 
     </div>}
     {openable && <button className="app-control file-property-open" onClick={open}>
       <OpenIcon size={16} aria-hidden="true" />
-      {file.directory ? '打开文件夹' : editable ? '在文本编辑器中打开' : regularFile(file) ? '下载' : '打开链接'}
+      {file.directory ? '打开文件夹' : image ? '打开图片' : regular ? '在文本编辑器中打开' : '打开链接'}
     </button>}
   </div>
 }
 
-export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
+export function FileManager({ onOpenText }: { onOpenText: (path: string, elevated: boolean, readOnly: boolean) => void }) {
   const [history, setHistory] = useState({ locations: [] as string[], index: -1 })
   const [directory, setDirectory] = useState<Awaited<ReturnType<typeof readDirectory>>>()
+  const [runningAsRoot, setRunningAsRoot] = useState<boolean>()
+  const [elevated, setElevated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [directoryError, setDirectoryError] = useState('')
   const [address, setAddress] = useState<string>()
@@ -339,7 +344,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
     element.querySelector<HTMLElement>('select, button')?.focus()
   }, [modal])
 
-  async function loadDirectory(next: string, navigation?: (target: string) => void) {
+  async function loadDirectory(next: string, navigation?: (target: string) => void, asRoot = elevated) {
     if (!navigation && navigating.current) return
     directoryRequest.current?.abort()
     const controller = new AbortController()
@@ -347,7 +352,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
     navigating.current = !!navigation
     setLoading(true)
     try {
-      const data = await readDirectory(next, controller.signal)
+      const data = await readDirectory(next, controller.signal, asRoot)
       if (controller.signal.aborted) return
       navigation?.(data.path)
       currentPath.current = data.path
@@ -368,19 +373,42 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
     }
   }
 
+  const refreshDirectory = useEffectEvent(() => void loadDirectory(currentPath.current))
+
   useEffect(() => {
+    const identityRequest = new AbortController()
+    void readFileIdentity(identityRequest.signal).then(identity => {
+      if (!identityRequest.signal.aborted) setRunningAsRoot(identity.root)
+    }).catch(error => {
+      if (!identityRequest.signal.aborted) setFeedback(errorMessage(error))
+    })
     let active = true
     void Promise.resolve().then(() => {
       if (!active) return
       return loadDirectory('', target => setHistory({ locations: [target], index: 0 }))
     })
-    const unsubscribe = subscribeToFileChanges(() => void loadDirectory(currentPath.current))
+    const unsubscribe = subscribeToFileChanges(refreshDirectory)
     return () => {
       active = false
+      identityRequest.abort()
       directoryRequest.current?.abort()
       unsubscribe()
     }
   }, [])
+
+  function toggleElevation() {
+    const next = !elevated
+    setElevated(next)
+    setSelection([])
+    anchor.current = undefined
+    focusedEntry.current = undefined
+    views.current.clear()
+    setPopup(undefined)
+    setPanel(undefined)
+    setFeedback('')
+    setDirectory(previous => previous && { ...previous, entries: [] })
+    void loadDirectory(currentPath.current, undefined, next)
+  }
 
   function navigate(next: string, historyIndex?: number) {
     void loadDirectory(next, target => {
@@ -440,10 +468,15 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
     })
   }
 
-  function openEntry(file: HostFile) {
+  function download(path: string) {
+    void downloadFile(path, elevated).catch(error => setFeedback(errorMessage(error)))
+  }
+
+  function openEntry(file: HostFile, readOnly = false) {
+    const asRoot = elevated || runningAsRoot === true
     if (file.directory) navigate(file.id)
-    else if (editableHostFile(file)) onEdit(file.id)
-    else if (regularFile(file)) downloadFile(file.id)
+    else if (imageFile(file)) showModal({ kind: 'image', file, elevated: asRoot })
+    else if (regularFile(file)) onOpenText(file.id, asRoot, readOnly)
     else if (file.targetError) setFeedback(file.targetError)
   }
 
@@ -455,7 +488,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
       for (let number = 0; ; number++) {
         const name = number ? `新建文件夹 (${number})` : '新建文件夹'
         try {
-          const result = await fileAction('mkdir', path, { name })
+          const result = await fileAction('mkdir', path, { name }, elevated)
           if (currentPath.current === path) {
             setQuery('')
             setSelection([result.path])
@@ -486,7 +519,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
     operationLock.current = true
     setOperation('正在重命名…')
     try {
-      const result = await fileAction('rename', rename.id, { name })
+      const result = await fileAction('rename', rename.id, { name }, elevated)
       setRename(undefined)
       if (currentPath.current === path) {
         setSelection([result.path])
@@ -514,8 +547,8 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
       let outcome: Outcome
       try {
         const result = job.kind === 'upload'
-          ? await uploadFile(job.target, job.file, conflict, percent => setOperation(`${progress} · ${percent}%`))
-          : await fileAction(job.kind, job.path, { destination: job.target, conflict })
+          ? await uploadFile(job.target, job.file, conflict, percent => setOperation(`${progress} · ${percent}%`), job.elevated)
+          : await fileAction(job.kind, job.path, { destination: job.target, conflict }, job.elevated)
         outcome = result.skipped
           ? { job, status: 'skipped', message: '已跳过' }
           : { job, status: 'success', message: `已完成 · ${result.path}` }
@@ -551,7 +584,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
       return
     }
     if (modal) closeModal()
-    void runJobs(transfer.ids.map(id => ({ kind: transfer.kind, path: id, target: transfer.target })))
+    void runJobs(transfer.ids.map(id => ({ kind: transfer.kind, path: id, target: transfer.target, elevated })))
   }
 
   function commandsFor(ids: string[], contextEntry?: HostFile): Command[] {
@@ -560,14 +593,15 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
     const canEdit = !!path && !directoryError && !operation
     const actionable = ids.length > 0 && ids.every(id => entries.some(file => file.id === id && managedFile(file)))
     const result: Command[] = []
-    if (entry && (entry.directory || editableHostFile(entry) || entry.targetError)) result.push({
-      label: entry.directory ? '打开' : editableHostFile(entry) ? '在文本编辑器中打开' : '打开链接',
-      icon: entry.directory ? FolderOpen : editableHostFile(entry) ? Pencil : Download,
+    if (entry && (entry.directory || regularFile(entry) || entry.targetError)) result.push({
+      label: entry.directory ? '打开' : imageFile(entry) ? '打开图片' : regularFile(entry) ? '在文本编辑器中打开' : '打开链接',
+      icon: imageFile(entry) ? ImageIcon : regularFile(entry) ? Pencil : FolderOpen,
       group: 'open', shortcut: 'Enter', run: () => openEntry(entry),
     })
-    if (entry && regularFile(entry)) result.push({
-      label: '下载', icon: Download, group: 'open', run: () => downloadFile(entry.id),
-    })
+    if (entry && regularFile(entry)) result.push(
+      { label: '预览', icon: Eye, group: 'open', run: () => openEntry(entry, true) },
+      { label: '下载', icon: Download, group: 'open', run: () => download(entry.id) },
+    )
     if (canEdit && actionable) {
       if (entry) result.push({ label: '重命名', icon: Pencil, group: 'edit', shortcut: 'F2', run: () => setRename({ id: entry.id, name: entry.name }) })
       for (const kind of ['move', 'copy'] as const) {
@@ -587,7 +621,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
         })
       }
       result.push({ label: '永久删除', icon: Trash2, group: 'delete', danger: true, shortcut: 'Delete',
-        run: () => showModal({ kind: 'delete', jobs: ids.map(path => ({ kind: 'delete', path })) }) })
+        run: () => showModal({ kind: 'delete', jobs: ids.map(path => ({ kind: 'delete', path, elevated })) }) })
     }
     if (canEdit) result.push(
       { label: '新建文件夹', icon: FolderPlus, group: 'organize', shortcut: 'Ctrl+Shift+N', run: createFolder },
@@ -652,7 +686,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
   function uploadFiles(files: File[]) {
     if (!canUpload || operationLock.current || !files.length) return
     setPopup(undefined)
-    void runJobs(files.map(file => ({ kind: 'upload', file, target: path })))
+    void runJobs(files.map(file => ({ kind: 'upload', file, target: path, elevated })))
   }
 
   function handleFileDragEnter(event: DragEvent) {
@@ -995,6 +1029,13 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
           aria-pressed={showHidden} title={showHidden ? '不显示隐藏文件' : '显示隐藏文件'} onClick={toggleHidden}>
           {showHidden ? <Eye size={16} aria-hidden="true" /> : <EyeOff size={16} aria-hidden="true" />}
         </button>
+        {runningAsRoot === true ? <span className="file-root-status">
+          <Shield size={16} aria-hidden="true" />root
+        </span> : <button type="button" className={`app-control${elevated ? ' primary-control' : ''}`} aria-pressed={elevated}
+          disabled={runningAsRoot === undefined || loading || !!operation || !!modal || !!rename}
+          onClick={toggleElevation}>
+          <Shield size={16} aria-hidden="true" /><span>管理员模式</span>
+        </button>}
         <span className="file-action-spacer" />
         <button className="app-control file-layout-button" aria-label="布局" title={`布局：${layouts[layout].label}`}
           aria-haspopup="menu" aria-expanded={popup?.kind === 'layout'}
@@ -1070,7 +1111,7 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
               <div><dt>所属组</dt><dd>{selected.group}</dd></div>
               <div><dt>权限</dt><dd className="file-permission-values"><code>{selected.permissions}</code><code>{selected.mode}</code></dd></div>
             </dl>
-            <FilePropertyActions key={selected.id} file={selected} open={() => openEntry(selected)} />
+            <FilePropertyActions key={selected.id} file={selected} elevated={elevated} open={() => openEntry(selected)} />
           </> : <p className="muted">{selectedItems.length ? `已选中 ${selectedItems.length} 项` : '选择文件或文件夹以查看属性。'}</p>}
         </aside>
       </div>
@@ -1089,12 +1130,14 @@ export function FileManager({ onEdit }: { onEdit: (path: string) => void }) {
         boundary={popup.kind === 'layout' ? popup.source.closest<HTMLElement>('[data-app-window]') ?? popup.layer : popup.layer}
         zIndex={popup.zIndex}
         onClose={() => setPopup(undefined)} restoreFocus={() => restorePopupFocus(popup.source)} />}
-      {modal?.kind === 'destination' && <FileLocationDialog mode="folder" initialDirectory={path}
+      {modal?.kind === 'destination' && <FileLocationDialog mode="folder" initialDirectory={path} elevated={elevated}
         title={`${operationLabel[modal.operation]}到…`} actionLabel={operationLabel[modal.operation]}
         canSelect={directory => canTransfer(modal.ids, directory, modal.operation === 'move')}
         onSelect={target => requestTransfer({ kind: modal.operation, ids: modal.ids, target })}
         onCancel={() => closeModal()} />}
-      {modal && modal.kind !== 'destination' && <dialog className="service-dialog file-dialog" ref={dialog} aria-labelledby="file-dialog-title"
+      {modal?.kind === 'image' && <FileImagePreview key={modal.file.id} ref={dialog} file={modal.file}
+        elevated={modal.elevated} onClose={() => closeModal()} />}
+      {modal && modal.kind !== 'destination' && modal.kind !== 'image' && <dialog className="service-dialog file-dialog" ref={dialog} aria-labelledby="file-dialog-title"
         onCancel={event => { event.preventDefault(); event.stopPropagation(); closeModal() }}>
         <div className="service-dialog-body">
           <h2 id="file-dialog-title">{modal.kind === 'delete' ? `永久删除 ${modal.jobs.length} 项？`

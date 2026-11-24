@@ -19,6 +19,7 @@ var (
 	errType     = errors.New("不支持此文件类型")
 	errChanged  = errors.New("源文件已更改，请另存为")
 	errSize     = errors.New("文本超过 5 MiB")
+	errBinary   = errors.New("文件包含 NUL 字节，无法作为文本处理")
 	errEncoding = errors.New("文件不是有效的 UTF-8 文本")
 )
 

@@ -1,6 +1,7 @@
 package files
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -15,23 +16,6 @@ import (
 )
 
 const textLimit = 5 << 20
-
-func textPath(path string) (string, error) {
-	path, err := pathOf(path)
-	if err != nil {
-		return "", err
-	}
-	extension := filepath.Ext(path)
-	if extension == filepath.Base(path) {
-		return "", errType
-	}
-	switch strings.ToLower(extension) {
-	case ".txt", ".md", ".log", ".json":
-		return path, nil
-	default:
-		return "", errType
-	}
-}
 
 type document struct {
 	Path    string `json:"path"`
@@ -57,14 +41,22 @@ func readText(path string) (document, fs.FileInfo, error) {
 	if len(content) > textLimit {
 		return document{}, nil, errSize
 	}
-	if !utf8.Valid(content) || strings.ContainsRune(string(content), 0) {
+	// Unicode BOMs identify unsupported encodings even when they include NUL.
+	if bytes.HasPrefix(content, []byte("\xff\xfe")) || bytes.HasPrefix(content, []byte("\xfe\xff")) ||
+		bytes.HasPrefix(content, []byte("\x00\x00\xfe\xff")) {
+		return document{}, nil, errEncoding
+	}
+	if bytes.IndexByte(content, 0) >= 0 {
+		return document{}, nil, errBinary
+	}
+	if !utf8.Valid(content) {
 		return document{}, nil, errEncoding
 	}
 	return document{path, string(content), version(info, content)}, info, nil
 }
 
 func getText(w http.ResponseWriter, r *http.Request) {
-	path, err := textPath(r.URL.Query().Get("path"))
+	path, err := pathOf(r.URL.Query().Get("path"))
 	if err != nil {
 		failure(w, err)
 		return
@@ -79,7 +71,7 @@ func getText(w http.ResponseWriter, r *http.Request) {
 
 func ensureVersion(path, expected string) (fs.FileInfo, error) {
 	current, info, err := readText(path)
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errSize) || errors.Is(err, errEncoding) || errors.Is(err, errType) {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, errSize) || errors.Is(err, errBinary) || errors.Is(err, errEncoding) || errors.Is(err, errType) {
 		return nil, errChanged
 	}
 	if err == nil && current.Version != expected {
@@ -97,7 +89,7 @@ func (s *server) putText(w http.ResponseWriter, r *http.Request) {
 	if !readJSON(w, r, &form) {
 		return
 	}
-	path, err := textPath(form.Path)
+	path, err := pathOf(form.Path)
 	if err != nil {
 		failure(w, err)
 		return
@@ -107,7 +99,7 @@ func (s *server) putText(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if strings.ContainsRune(form.Text, 0) {
-		failure(w, errEncoding)
+		failure(w, errBinary)
 		return
 	}
 

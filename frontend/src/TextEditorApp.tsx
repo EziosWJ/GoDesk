@@ -3,7 +3,7 @@ import {
   type KeyboardEvent, type Ref,
 } from 'react'
 import { FilePenLine, FilePlus, Save, SaveAll, X } from 'lucide-react'
-import { textFileType, textFileTypes } from './fileSystem'
+import { textFileType } from './fileSystem'
 import {
   announceFileChange, errorMessage, FileError, filename, parentPath, readText, subscribeToFileChanges, writeText,
   type Conflict, type PathChange,
@@ -17,6 +17,8 @@ type Draft = {
   path?: string
   version?: string
   checking?: boolean
+  elevated?: boolean
+  readOnly?: boolean
   name: string
   text: string
   savedText: string
@@ -27,6 +29,7 @@ type Dialog =
   | { kind: 'save-as'; drafts: string[]; close?: string; name: string; directory?: string; warning?: string }
 
 export type EditorWindowHandle = { requestClose: () => void }
+export type EditorOpenRequest = { path: string; elevated: boolean; readOnly: boolean }
 
 function isDirty(draft: Draft) {
   return draft.text !== draft.savedText
@@ -50,7 +53,7 @@ function subscribeToTheme(listener: () => void) {
 
 export function TextEditorApp({ ref, openRequest, onClose }: {
   ref: Ref<EditorWindowHandle>
-  openRequest?: { path: string }
+  openRequest?: EditorOpenRequest
   onClose: () => void
 }) {
   const [drafts, setDrafts] = useState<Draft[]>([])
@@ -71,7 +74,7 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
 
   const active = drafts.find(draft => draft.id === activeId)
   const hasDirty = drafts.some(isDirty)
-  const unavailable = !!active?.path && !active.checking && (!active.version || !textFileType(active.name))
+  const unavailable = !!active?.path && !active.readOnly && !active.checking && !active.version
   const pendingDraft = drafts.find(draft => draft.id === dialog?.drafts[0])
   const pendingName = pendingDraft?.name
 
@@ -81,9 +84,11 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
     tab?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
 
-  const openDocument = useEffectEvent(async (target: NonNullable<typeof openRequest>) => {
-    const existing = drafts.find(draft => draft.path === target.path)
-    if (existing) {
+  const openDocument = useEffectEvent(async (target: EditorOpenRequest) => {
+    const existing = drafts.find(draft => draft.path === target.path &&
+      !!draft.elevated === target.elevated && !!draft.readOnly === target.readOnly)
+    setStatus('')
+    if (existing && !target.readOnly) {
       setActiveId(existing.id)
       setLoading(false)
       requestAnimationFrame(() => focusTab(existing.id))
@@ -91,18 +96,24 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
     }
     const controller = new AbortController()
     openController.current = controller
-    setStatus('')
     setLoading(true)
     try {
-      const data = await readText(target.path, controller.signal)
+      const data = await readText(target.path, controller.signal, target.elevated)
       if (controller.signal.aborted) return
-      const id = `${prefix}-${nextDocument.current++}`
-      setDrafts(current => [...current, { id, path: data.path, version: data.version,
-        name: filename(data.path), text: data.text, savedText: data.text }])
+      const id = existing?.id ?? `${prefix}-${nextDocument.current++}`
+      const draft: Draft = { id, path: data.path, version: data.version, elevated: target.elevated,
+        readOnly: target.readOnly, name: filename(data.path), text: data.text, savedText: data.text }
+      setDrafts(current => {
+        if (current.some(item => item.id === id)) return current.map(item => item.id === id ? draft : item)
+        return [...current, draft]
+      })
       setActiveId(id)
       requestAnimationFrame(() => focusTab(id))
     } catch (error) {
-      if (!controller.signal.aborted) setStatus(textErrorMessage(error, target.path))
+      if (!controller.signal.aborted) {
+        const reason = error instanceof FileError && error.code === 'permission' ? '没有权限读取文件：' : ''
+        setStatus(`${reason}${errorMessage(error)}（${target.path}）`)
+      }
     } finally {
       if (openController.current === controller) setLoading(false)
     }
@@ -133,7 +144,7 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
       for (const draft of drafts) {
         const path = movedPath(draft.path)
         if (!path) continue
-        void readText(path).then(data => data.text === draft.savedText ? data.version : undefined)
+        void readText(path, undefined, draft.elevated).then(data => data.text === draft.savedText ? data.version : undefined)
           .catch(() => undefined).then(version => setDrafts(current => current.map(item =>
             item.id === draft.id && item.path === path && item.checking ? { ...item, version, checking: false } : item,
           )))
@@ -202,12 +213,9 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
   useImperativeHandle(ref, () => ({ requestClose: () => requestClose('window') }))
 
   function requestSaveAs(draft: Draft, ids: string[], close?: string, warning?: string) {
-    const name = draft.path
-      ? textFileType(draft.name) ? draft.name : `${draft.name.replace(/\.[^.]+$/, '')}.txt`
-      : ''
     modal.current?.close()
     setDialog({
-      kind: 'save-as', drafts: ids, close, name, warning,
+      kind: 'save-as', drafts: ids, close, name: draft.path ? draft.name : '', warning,
       directory: draft.path ? parentPath(draft.path) : undefined,
     })
   }
@@ -219,15 +227,15 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
     try {
       for (const [index, id] of ids.entries()) {
         const draft = drafts.find(item => item.id === id)
-        if (!draft) continue
+        if (!draft || draft.readOnly) continue
         const created = index === 0 ? newPath : undefined
-        if (!created && (!draft.path || !draft.version || !textFileType(draft.name))) {
+        if (!created && (!draft.path || !draft.version)) {
           requestSaveAs(draft, ids.slice(index), close)
           return
         }
         if (draft.checking && !created) return
         try {
-          const data = await writeText(created ?? draft.path!, draft.text, created ? undefined : draft.version, conflict)
+          const data = await writeText(created ?? draft.path!, draft.text, created ? undefined : draft.version, conflict, draft.elevated)
           setDrafts(current => current.map(item => {
             if (item.id !== id) return item
             const path = created ? data.path : item.path ?? data.path
@@ -262,7 +270,7 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
         event.key.toLowerCase() !== 's' || event.nativeEvent.isComposing) return
     event.preventDefault()
     event.stopPropagation()
-    if (!dialog && active && !saving && !active.checking) {
+    if (!dialog && active && !active.readOnly && !saving && !active.checking) {
       if (event.shiftKey) requestSaveAs(active, [active.id])
       else saveDrafts([active.id])
     }
@@ -291,11 +299,11 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
     <section className="text-editor-app" ref={root} onKeyDownCapture={handleShortcut}>
       <header className="editor-toolbar" aria-label="编辑器操作">
         <button className="app-control" disabled={saving} onClick={newDraft}><FilePlus size={16} />新建文件</button>
-        <button className="app-control primary-control" disabled={!active || saving || active.checking} aria-keyshortcuts="Control+s Meta+s"
+        {!active?.readOnly && <button className="app-control primary-control" disabled={!active || saving || active.checking} aria-keyshortcuts="Control+s Meta+s"
           onClick={() => { if (active) saveDrafts([active.id]) }}>
           <Save size={16} />{!active?.path || unavailable ? '另存为…' : '保存'}
-        </button>
-        {active?.path && !unavailable && <button className="app-control" disabled={saving || active.checking} aria-keyshortcuts="Control+Shift+s Meta+Shift+s"
+        </button>}
+        {active?.path && !active.readOnly && !unavailable && <button className="app-control" disabled={saving || active.checking} aria-keyshortcuts="Control+Shift+s Meta+Shift+s"
           onClick={() => requestSaveAs(active, [active.id])}>
           <SaveAll size={16} />另存为…
         </button>}
@@ -310,6 +318,8 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
                 aria-controls={`${draft.id}-panel`} tabIndex={selected ? 0 : -1} title={draft.path ?? name}
                 onClick={() => setActiveId(draft.id)} onKeyDown={event => handleTabKey(event, index)}>
                 <span className="truncate">{name}</span>
+                {draft.elevated && <span>管理员</span>}
+                {draft.readOnly && <span>只读预览</span>}
                 {isDirty(draft) && <span className="editor-dirty" role="img" aria-label="未保存" />}
               </button>
               <button type="button" className="editor-tab-close" aria-label={`关闭 ${name}`} onClick={() => requestClose(draft.id)}>
@@ -324,8 +334,10 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
           <div key={draft.id} role="tabpanel" id={`${draft.id}-panel`} aria-labelledby={`${draft.id}-tab`}
             className="editor-panel" hidden={activeId !== draft.id}>
             <TextEditor documentId={draft.id} value={draft.text}
-              language={textFileType(draft.name)?.language ?? 'plaintext'} theme={theme} readOnly={saving}
-              onChange={text => setDrafts(current => current.map(item => item.id === draft.id ? { ...item, text } : item))} />
+              language={textFileType(draft.name)?.language ?? 'plaintext'} theme={theme} readOnly={saving || draft.readOnly}
+              onChange={text => {
+                if (!draft.readOnly) setDrafts(current => current.map(item => item.id === draft.id ? { ...item, text } : item))
+              }} />
           </div>
         )) : <div className="editor-empty">
           <FilePenLine size={30} strokeWidth={1.5} aria-hidden="true" />
@@ -353,9 +365,9 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
           <button className="app-control primary-control" disabled={saving} onClick={() => void saveDrafts(dialog.drafts, dialog.close)}>保存</button>
         </div>
       </dialog>}
-      {dialog?.kind === 'save-as' && <FileLocationDialog key={dialog.drafts[0]} mode="save"
-        title={pendingDraft?.path ? '另存为' : '保存新文件'} formats={textFileTypes} warning={dialog.warning}
-        defaultExtension="txt" initialDirectory={dialog.directory} initialName={dialog.name}
+      {dialog?.kind === 'save-as' && <FileLocationDialog key={dialog.drafts[0]} mode="save" elevated={pendingDraft?.elevated}
+        title={pendingDraft?.path ? '另存为' : '保存新文件'} warning={dialog.warning}
+        initialDirectory={dialog.directory} initialName={dialog.name}
         onCancel={closeDialog}
         onSave={(path, conflict) => saveDrafts(dialog.drafts, dialog.close, path, conflict)} />}
     </section>

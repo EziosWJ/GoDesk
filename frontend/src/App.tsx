@@ -9,7 +9,7 @@ import { apps, type AppId } from './apps.ts'
 import type { Session } from './auth'
 import { CommandMenu, type MenuAnchor } from './CommandMenu'
 import { FileManager } from './FileManager'
-import { TextEditorApp, type EditorWindowHandle } from './TextEditorApp'
+import { TextEditorApp, type EditorOpenRequest, type EditorWindowHandle } from './TextEditorApp'
 import { Taskbar } from './Taskbar'
 import { TerminalSessions } from './TerminalSessions'
 import { terminalApi, terminalClientId, terminalWindowId, type TerminalSession } from './terminal'
@@ -172,7 +172,7 @@ export default function App({ onLogout, onSession }: {
   const pendingWindowFocus = useRef<string | null>(null)
   const [terminalLaunchError, setTerminalLaunchError] = useState('')
   const editor = useRef<EditorWindowHandle>(null)
-  const [editorRequest, setEditorRequest] = useState<{ path: string }>()
+  const [editorRequest, setEditorRequest] = useState<EditorOpenRequest>()
 
   const removeClosingWindow = useCallback((openedSeq: number) => {
     setClosingWindows(current => current.filter(win => win.openedSeq !== openedSeq))
@@ -324,8 +324,8 @@ export default function App({ onLogout, onSession }: {
     setContext(anchor)
   }
 
-  function editFile(path: string) {
-    setEditorRequest({ path })
+  function openTextFile(path: string, elevated: boolean, readOnly: boolean) {
+    setEditorRequest({ path, elevated, readOnly })
     openApp('editor')
   }
 
@@ -335,7 +335,7 @@ export default function App({ onLogout, onSession }: {
   }
 
   function renderApp(id: AppId, win: WindowState, closing: boolean) {
-    if (id === 'files') return <FileManager onEdit={editFile} />
+    if (id === 'files') return <FileManager onOpenText={openTextFile} />
     if (id === 'editor') return (
       <TextEditorApp ref={closing ? null : editor}
         openRequest={editorRequest} onClose={closeEditor} />

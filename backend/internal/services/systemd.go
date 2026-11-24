@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"godesk/internal/privileges"
 )
 
 type systemdBackend struct {
@@ -65,7 +67,12 @@ func (b *systemdBackend) Disable(ctx context.Context, unit string) error {
 }
 
 func (b *systemdBackend) action(ctx context.Context, action Action, unit string) error {
-	_, err := b.run(ctx, b.systemctl, string(action), "--no-ask-password", "--", unit)
+	args := []string{string(action), "--no-ask-password", "--", unit}
+	if os.Geteuid() != 0 && privileges.Probe(ctx) == nil {
+		_, err := runCommand(ctx, privileges.Command(ctx, b.systemctl, args...), true)
+		return err
+	}
+	_, err := b.run(ctx, b.systemctl, args...)
 	return err
 }
 
@@ -108,7 +115,10 @@ func (b *systemdBackend) Logs(ctx context.Context, unit string, lines int) ([]st
 }
 
 func (b *systemdBackend) run(ctx context.Context, path string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, path, args...)
+	return runCommand(ctx, exec.CommandContext(ctx, path, args...), false)
+}
+
+func runCommand(ctx context.Context, cmd *exec.Cmd, elevated bool) (string, error) {
 	cmd.Env = append(os.Environ(), "LC_ALL=C")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -118,7 +128,14 @@ func (b *systemdBackend) run(ctx context.Context, path string, args ...string) (
 		return "", ctx.Err()
 	}
 	if err != nil {
-		return "", commandError(err, strings.TrimSpace(stderr.String()))
+		message := strings.TrimSpace(stderr.String())
+		if elevated && privileges.Denied(err, message) {
+			if message == "" {
+				message = err.Error()
+			}
+			return "", &Error{Code: "permission", Message: message}
+		}
+		return "", commandError(err, message)
 	}
 	return stdout.String(), nil
 }

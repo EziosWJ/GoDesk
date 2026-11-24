@@ -834,6 +834,7 @@
 }
 .file-navigation { gap: 8px; border-bottom: 0; }
 .file-actions { background: var(--react-web-desktop-subtle); }
+.file-root-status { display: inline-flex; align-items: center; gap: 0.375rem; white-space: nowrap; }
 .file-toolbar > .app-control { flex: none; }
 .file-toolbar .app-control { font-weight: 500; }
 .file-toolbar :is([aria-expanded="true"], .file-hidden-toggle[aria-pressed="true"]) {

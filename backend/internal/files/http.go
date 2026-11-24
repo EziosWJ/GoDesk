@@ -19,14 +19,27 @@ type server struct {
 
 func Register(mux *http.ServeMux) {
 	s := &server{}
+	operations := s.operations()
+	mux.HandleFunc("GET /identity", func(w http.ResponseWriter, r *http.Request) {
+		jsonResponse(w, struct {
+			Root bool `json:"root"`
+		}{os.Geteuid() == 0})
+	})
+	mux.Handle("/", s.withElevation(operations))
+}
+
+func (s *server) operations() *http.ServeMux {
+	mux := http.NewServeMux()
 	mux.HandleFunc("GET /directory", directory)
 	mux.HandleFunc("POST /action", s.action)
 	mux.HandleFunc("PUT /ownership", s.ownership)
 	mux.HandleFunc("PUT /permissions", s.permissions)
 	mux.HandleFunc("POST /upload", s.upload)
 	mux.HandleFunc("GET /download", download)
+	mux.HandleFunc("GET /image", getImage)
 	mux.HandleFunc("GET /text", getText)
 	mux.HandleFunc("PUT /text", s.putText)
+	return mux
 }
 
 func jsonResponse(w http.ResponseWriter, value any) {
@@ -49,8 +62,12 @@ func failure(w http.ResponseWriter, err error) {
 		status, code = http.StatusBadRequest, "invalid_mode"
 	case errors.Is(err, errPath):
 		status, code = http.StatusBadRequest, "invalid_request"
-	case errors.Is(err, errType), errors.Is(err, errEncoding):
+	case errors.Is(err, errType):
 		status, code = http.StatusUnsupportedMediaType, "unsupported_type"
+	case errors.Is(err, errBinary):
+		status, code = http.StatusUnsupportedMediaType, "binary_file"
+	case errors.Is(err, errEncoding):
+		status, code = http.StatusUnsupportedMediaType, "unsupported_encoding"
 	case errors.Is(err, errSize), errors.As(err, &maxBytes):
 		status, code = http.StatusRequestEntityTooLarge, "text_too_large"
 	case errors.Is(err, errChanged):

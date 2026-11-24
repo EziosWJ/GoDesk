@@ -183,3 +183,89 @@ func TestSaveDetectsExternalChangesAndPreservesLink(t *testing.T) {
 		t.Fatalf("old file was recreated: %v", err)
 	}
 }
+
+func TestTextReadAndSaveWithAnyFilename(t *testing.T) {
+	mux := testRoutes()
+	for _, name := range []string{"hosts", "server.conf", ".env", "notes.dat"} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), name)
+			const original = "127.0.0.1 localhost\n# 主机\n"
+			sendJSON(t, mux, "PUT", "/text", map[string]string{"path": path, "text": original}, 200)
+			w := request(t, mux, "GET", "/text?path="+url.QueryEscape(path), "", nil, 200)
+			var data document
+			if err := json.Unmarshal(w.Body.Bytes(), &data); err != nil {
+				t.Fatal(err)
+			}
+			if data.Path != path || data.Text != original || data.Version == "" {
+				t.Fatalf("unexpected document: %+v", data)
+			}
+			sendJSON(t, mux, "PUT", "/text", map[string]string{"path": path, "text": "updated", "version": data.Version}, 200)
+			mustRead(t, path, "updated")
+			sendJSON(t, mux, "PUT", "/text", map[string]string{"path": path, "text": "stale", "version": data.Version}, 409)
+			mustRead(t, path, "updated")
+		})
+	}
+}
+
+func TestTextOpenValidatesFullBoundedContent(t *testing.T) {
+	mux := testRoutes()
+	path := filepath.Join(t.TempDir(), "example.txt")
+	query := "/text?path=" + url.QueryEscape(path)
+	prefix := strings.Repeat("a", textLimit-3)
+	mustWrite(t, path, prefix+"字")
+	request(t, mux, "GET", query, "", nil, 200)
+
+	for _, test := range []struct {
+		name, content, code string
+		status              int
+	}{
+		{"NUL near limit", prefix + "\x00", "binary_file", 415},
+		{"invalid UTF-8 near limit", prefix + "\xff", "unsupported_encoding", 415},
+		{"UTF-16 BOM", "\xff\xfeA\x00", "unsupported_encoding", 415},
+		{"over limit", prefix + "字a", "text_too_large", 413},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			mustWrite(t, path, test.content)
+			w := request(t, mux, "GET", query, "", nil, test.status)
+			var data struct{ Code, Message string }
+			if err := json.Unmarshal(w.Body.Bytes(), &data); err != nil {
+				t.Fatal(err)
+			}
+			if data.Code != test.code || data.Message == "" {
+				t.Fatalf("unexpected error: %+v", data)
+			}
+		})
+	}
+}
+
+func TestImagePreview(t *testing.T) {
+	mux := testRoutes()
+	dir := t.TempDir()
+	png := "\x89PNG\r\n\x1a\n" + strings.Repeat("a", 600)
+	svg := "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"1\" height=\"1\"/>"
+	for _, test := range []struct{ name, content, contentType string }{
+		{"photo.PNG", png, "image/png"},
+		{"drawing.svg", svg, "image/svg+xml"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(dir, test.name)
+			mustWrite(t, path, test.content)
+			query := "/image?path=" + url.QueryEscape(path)
+			w := request(t, mux, "GET", query, "", nil, 200)
+			if w.Body.String() != test.content || w.Header().Get("Content-Type") != test.contentType ||
+				w.Header().Get("Content-Disposition") != "" || w.Header().Get("X-Content-Type-Options") != "nosniff" {
+				t.Fatal("unexpected inline image response")
+			}
+			if test.contentType == "image/svg+xml" && !strings.HasPrefix(w.Header().Get("Content-Security-Policy"), "sandbox;") {
+				t.Fatal("SVG response must be sandboxed when opened directly")
+			}
+			head := request(t, mux, "HEAD", query, "", nil, 200)
+			if head.Body.Len() != 0 || head.Header().Get("Content-Type") != test.contentType {
+				t.Fatal("unexpected image metadata response")
+			}
+		})
+	}
+	path := filepath.Join(dir, "not-an-image.png")
+	mustWrite(t, path, "<html>Not an image</html>")
+	request(t, mux, "GET", "/image?path="+url.QueryEscape(path), "", nil, 415)
+}

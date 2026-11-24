@@ -118,7 +118,7 @@
 
 .file-location-form { flex: none; border-top: 1px solid var(--react-web-desktop-divider); background: var(--react-web-desktop-subtle); }
 .file-location-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 6px 12px; padding: 10px 16px; }
-.file-location-fields :is(input, select), .file-location-new-folder input {
+.file-location-fields input, .file-location-new-folder input {
   width: 100%;
   min-width: 0;
   min-height: var(--react-web-desktop-control);
@@ -150,7 +150,7 @@
 
 @media (pointer: coarse) {
   .file-location-icon.app-control { width: var(--react-web-desktop-control-touch); }
-  .file-location-entry, .file-location-fields :is(input, select), .file-location-new-folder input, .file-location-search input {
+  .file-location-entry, .file-location-fields input, .file-location-new-folder input, .file-location-search input {
     min-height: var(--react-web-desktop-control-touch);
   }
 }

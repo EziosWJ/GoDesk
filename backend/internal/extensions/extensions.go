@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/EziosWJ/Extension-Host/host"
+	extservices "github.com/EziosWJ/Extension-Host/hostsys/services"
 )
 
 // RestoreTimeout bounds plugin restoration so a slow plugin cannot hold up the
@@ -18,18 +19,36 @@ const RestoreTimeout = 30 * time.Second
 // sockets through its proxy.
 var developmentOrigins = []string{"localhost:5173", "127.0.0.1:5173"}
 
+// Options configures the embedded extension host.
+type Options struct {
+	DataDir        string
+	Logger         *slog.Logger
+	ServiceBackend extservices.PluginBackend
+	ServiceGrants  map[string]host.ServiceGrant
+}
+
 // Manager owns the embedded extension host.
 type Manager struct {
 	host *host.Host
 }
 
 // Open opens the host data directory and its SQLite storage.
-func Open(ctx context.Context, dataDir string, logger *slog.Logger) (*Manager, error) {
-	extensionHost, err := host.Open(ctx, host.Options{DataDir: dataDir, Logger: logger})
+func Open(ctx context.Context, opts Options) (*Manager, error) {
+	extensionHost, err := host.Open(ctx, host.Options{
+		DataDir:        opts.DataDir,
+		Logger:         opts.Logger,
+		ServiceGrants:  opts.ServiceGrants,
+		ServiceBackend: opts.ServiceBackend,
+	})
 	if err != nil {
 		return nil, err
 	}
 	return &Manager{host: extensionHost}, nil
+}
+
+// LoadServiceGrants reads per-plugin service grants from a JSON file.
+func LoadServiceGrants(path string) (map[string]host.ServiceGrant, error) {
+	return host.LoadServiceGrantsFile(path)
 }
 
 // Restore starts the plugins that were enabled before the last shutdown.

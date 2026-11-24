@@ -10,6 +10,10 @@ import (
 	"time"
 )
 
+func allCapabilities() Capabilities {
+	return Capabilities{Start: true, Stop: true, Restart: true, Enable: true, Disable: true, Logs: true, StateReliable: true}
+}
+
 type fakeBackend struct {
 	name      string
 	caps      Capabilities

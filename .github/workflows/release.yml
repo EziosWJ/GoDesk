@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '要发布的 tag（必须已存在）'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.5.1
+          run_install: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Build frontend assets
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run build --outDir "$GITHUB_WORKSPACE/backend/internal/webui/dist" --emptyOutDir
+          node backend/internal/webui/pack.mjs "$GITHUB_WORKSPACE/backend/internal/webui/dist"
+
+      - name: Build and archive binaries
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/release"
+          mkdir -p "$out"
+
+          build() {
+            local goarch="$1"
+            local suffix="$2"
+            local goarm="${3:-}"
+            local stage="$RUNNER_TEMP/stage/$suffix"
+            mkdir -p "$stage"
+            if [ -n "$goarm" ]; then
+              GOOS=linux GOARCH="$goarch" GOARM="$goarm" CGO_ENABLED=0 \
+                go -C backend build -tags web -trimpath -ldflags="-s -w" -o "$stage/godesk" ./cmd/godesk
+            else
+              GOOS=linux GOARCH="$goarch" CGO_ENABLED=0 \
+                go -C backend build -tags web -trimpath -ldflags="-s -w" -o "$stage/godesk" ./cmd/godesk
+            fi
+            tar -C "$stage" -czf "$out/godesk_${TAG}_linux_${suffix}.tar.gz" godesk
+          }
+
+          build 386 386
+          build amd64 amd64
+          build arm64 arm64
+          build arm armv7 7
+
+          (cd "$out" && sha256sum godesk_*.tar.gz > SHA256SUMS)
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/release"
+          args=()
+          case "$TAG" in
+            *-*) args+=(--prerelease) ;;
+          esac
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$out"/godesk_*.tar.gz "$out/SHA256SUMS" --clobber
+          else
+            gh release create "$TAG" "$out"/godesk_*.tar.gz "$out/SHA256SUMS" \
+              --title "$TAG" --generate-notes --verify-tag "${args[@]}"
+          fi

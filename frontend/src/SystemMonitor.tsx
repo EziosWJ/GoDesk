@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { Activity, ArrowDown, ArrowUp, HardDrive, MemoryStick, Network, Search } from 'lucide-react'
-import { monitorApi, MonitorError, type DiskStat, type Metrics, type NetworkSeries, type NetworkStat, type Port } from './monitor'
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Activity, ArrowDown, ArrowUp, HardDrive, MemoryStick, Network } from 'lucide-react'
+import { monitorApi, MonitorError, type DiskStat, type Metrics, type NetworkSeries, type NetworkStat } from './monitor'
+import { PortsPanel } from './PortsPanel'
 
 const numberFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 })
 
@@ -185,135 +186,6 @@ function Overview({ metrics, error }: { metrics?: Metrics; error: string }) {
           <NetworkSection network={metrics.network ?? []} series={metrics.series.network ?? []} />
         </>
       )}
-    </div>
-  )
-}
-
-type SortKey = 'port' | 'process'
-
-function PortsPanel() {
-  const [ports, setPorts] = useState<Port[]>()
-  const [error, setError] = useState('')
-  const [query, setQuery] = useState('')
-  const [sortKey, setSortKey] = useState<SortKey>('port')
-  const [ascending, setAscending] = useState(true)
-  const reloading = useRef(false)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    let timer: number | undefined
-    let stopped = false
-
-    async function load() {
-      try {
-        const next = await monitorApi.ports(controller.signal)
-        if (controller.signal.aborted) return
-        setPorts(next)
-        setError('')
-      } catch (failure) {
-        if (controller.signal.aborted) return
-        if (failure instanceof MonitorError && failure.status === 401) {
-          stopped = true
-          if (!reloading.current) {
-            reloading.current = true
-            window.location.reload()
-          }
-          return
-        }
-        setError('无法读取端口信息，正在重试…')
-      } finally {
-        if (!stopped && !controller.signal.aborted) timer = window.setTimeout(load, 5000)
-      }
-    }
-
-    void load()
-    return () => {
-      controller.abort()
-      window.clearTimeout(timer)
-    }
-  }, [])
-
-  const rows = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    const visible = (ports ?? []).filter(port => !needle
-      || [port.port, port.protocol, port.address, port.process ?? '', port.pid ?? ''].join(' ').toLowerCase().includes(needle))
-    return [...visible].sort((left, right) => {
-      if (sortKey === 'process') {
-        const byProcess = (left.process ?? '').localeCompare(right.process ?? '', 'zh-CN')
-        if (byProcess !== 0) return ascending ? byProcess : -byProcess
-      }
-      if (left.port !== right.port) return ascending ? left.port - right.port : right.port - left.port
-      const byProtocol = left.protocol.localeCompare(right.protocol)
-      if (byProtocol !== 0) return ascending ? byProtocol : -byProtocol
-      const byAddress = left.address.localeCompare(right.address)
-      return ascending ? byAddress : -byAddress
-    })
-  }, [ports, query, sortKey, ascending])
-
-  function toggleSort(key: SortKey) {
-    if (sortKey === key) {
-      setAscending(value => !value)
-      return
-    }
-    setSortKey(key)
-    setAscending(true)
-  }
-
-  const sortIndicator = (key: SortKey) => sortKey === key
-    ? (ascending ? <ArrowUp size={12} aria-hidden="true" /> : <ArrowDown size={12} aria-hidden="true" />)
-    : null
-
-  return (
-    <div className="monitor-ports" role="tabpanel" id="monitor-ports-panel" aria-labelledby="monitor-ports-tab">
-      <div className="monitor-ports-toolbar">
-        <label className="monitor-filter">
-          <Search size={15} aria-hidden="true" />
-          <input type="search" value={query} onChange={event => setQuery(event.target.value)}
-            placeholder="筛选端口、协议、地址或进程" aria-label="筛选端口" />
-        </label>
-        <span className="system-caption" role="status">{ports ? `共 ${rows.length} 个端口` : '载入中'}</span>
-      </div>
-      {error && <p className="authentication-error monitor-ports-error" role="alert">{error}</p>}
-      <div className="monitor-ports-scroll">
-        {!ports && !error && <p className="monitor-ports-status system-caption" role="status">正在读取端口…</p>}
-        {ports && rows.length === 0 && <p className="monitor-ports-status system-caption">没有找到匹配的端口</p>}
-        {rows.length > 0 && (
-          <table className="data-table monitor-ports-table">
-            <thead>
-              <tr>
-                <th scope="col" aria-sort={sortKey === 'port' ? (ascending ? 'ascending' : 'descending') : 'none'}>
-                  <button className="monitor-sort" type="button" onClick={() => toggleSort('port')}>
-                    端口{sortIndicator('port')}
-                  </button>
-                </th>
-                <th scope="col">协议</th>
-                <th scope="col">监听地址</th>
-                <th scope="col" aria-sort={sortKey === 'process' ? (ascending ? 'ascending' : 'descending') : 'none'}>
-                  <button className="monitor-sort" type="button" onClick={() => toggleSort('process')}>
-                    进程{sortIndicator('process')}
-                  </button>
-                </th>
-                <th scope="col">PID</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(port => (
-                <tr key={`${port.protocol}-${port.address}-${port.port}-${port.pid ?? 'unknown'}`}>
-                  <td className="monitor-port-number">{port.port}</td>
-                  <td>{port.protocol.toUpperCase()}</td>
-                  <td className="monitor-port-address">{port.address}</td>
-                  <td className="monitor-port-process" title={port.process}>{port.process || '—'}</td>
-                  <td className="monitor-port-pid">{port.pid ?? '—'}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
-      <div className="monitor-ports-footer system-caption">
-        <span>每 5 秒刷新</span>
-        <span>「—」表示运行账号无权查看归属进程</span>
-      </div>
     </div>
   )
 }

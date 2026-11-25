@@ -81,11 +81,8 @@ func TestPortsIncludeOwnListeners(t *testing.T) {
 				continue
 			}
 			found = true
-			if port.PID != int32(os.Getpid()) {
-				t.Errorf("%s:%d pid = %d, want %d", want.protocol, want.port, port.PID, os.Getpid())
-			}
-			if port.Process == "" {
-				t.Errorf("%s:%d process name is empty", want.protocol, want.port)
+			if len(port.Owners) != 1 || port.Owners[0].PID != os.Getpid() || port.Owners[0].Process == "" {
+				t.Errorf("%s:%d owners = %+v, want process name and PID %d", want.protocol, want.port, port.Owners, os.Getpid())
 			}
 			break
 		}
@@ -101,7 +98,7 @@ func TestMetricsEndpoint(t *testing.T) {
 	waitForSnapshot(t, collector)
 
 	mux := http.NewServeMux()
-	collector.Register(mux, func(next http.Handler) http.Handler { return next })
+	collector.register(mux, func(next http.Handler) http.Handler { return next }, runPortOperation)
 
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/system/metrics", nil))

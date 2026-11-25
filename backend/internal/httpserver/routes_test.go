@@ -38,19 +38,26 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 		w.WriteHeader(http.StatusAccepted)
 	}))
 	for path, code := range map[string]int{
-		"/":                         http.StatusAccepted,
-		"/api/v1/files/directory":   http.StatusUnauthorized,
-		"/api/v1/terminal/sessions": http.StatusUnauthorized,
-		"/api/v1/settings/terminal": http.StatusUnauthorized,
-		"/api/v1/system/metrics":    http.StatusUnauthorized,
-		"/api/v1/system/ports":      http.StatusUnauthorized,
-		"/api/v1/system/status":     http.StatusUnauthorized,
-		"/api/v1/services":          http.StatusUnauthorized,
+		"/":                           http.StatusAccepted,
+		"/api/v1/files/directory":     http.StatusUnauthorized,
+		"/api/v1/terminal/sessions":   http.StatusUnauthorized,
+		"/api/v1/settings/terminal":   http.StatusUnauthorized,
+		"/api/v1/system/metrics":      http.StatusUnauthorized,
+		"/api/v1/system/ports":        http.StatusUnauthorized,
+		"/api/v1/system/ports/detail": http.StatusUnauthorized,
+		"/api/v1/system/ports/logs":   http.StatusUnauthorized,
+		"/api/v1/system/status":       http.StatusUnauthorized,
+		"/api/v1/services":            http.StatusUnauthorized,
 	} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != code {
 			t.Errorf("%s returned %d, want %d", path, w.Code, code)
 		}
+	}
+	w := httptest.NewRecorder()
+	mux.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/system/ports/stop", nil))
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("port stop returned %d, want %d", w.Code, http.StatusUnauthorized)
 	}
 }

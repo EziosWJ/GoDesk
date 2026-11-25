@@ -46,7 +46,7 @@ func command(ctx context.Context, args []string) error {
 		switch args[0] {
 		case "reset-password":
 			return resetPassword(ctx, args[1:])
-		case "--setup-sudo", "--check-sudo", "--remove-sudo", "--file-operation":
+		case "--setup-sudo", "--check-sudo", "--remove-sudo", "--file-operation", "--port-operation":
 			if len(args) != 1 {
 				return fmt.Errorf("%s 不接受额外参数", args[0])
 			}
@@ -57,8 +57,10 @@ func command(ctx context.Context, args []string) error {
 				return privileges.Check(ctx, os.Stdout)
 			case "--remove-sudo":
 				return privileges.Remove()
-			default:
+			case "--file-operation":
 				return files.RunElevated(ctx, os.Stdin, os.Stdout)
+			default:
+				return monitor.RunPortOperation(ctx, os.Stdin, os.Stdout)
 			}
 		}
 	}
@@ -68,15 +70,14 @@ func command(ctx context.Context, args []string) error {
 	checkSudo := flag.Bool("check-sudo", false, "check passwordless sudo and the GoDesk rule")
 	removeSudo := flag.Bool("remove-sudo", false, "remove the GoDesk sudoers rule")
 	serviceBackend := flag.String("service-backend", "auto", "service backend: auto, systemd, or none")
-	extensionGrants := flag.String("extension-grants", "", "service grants JSON file for extension plugins")
 	_ = flag.CommandLine.Parse(args)
 	if *setupSudo || *checkSudo || *removeSudo {
 		return errors.New("sudo commands must be run on their own")
 	}
-	return run(ctx, *listen, *dataDir, *serviceBackend, *extensionGrants)
+	return run(ctx, *listen, *dataDir, *serviceBackend)
 }
 
-func run(ctx context.Context, address, dataDir, serviceBackend, extensionGrants string) error {
+func run(ctx context.Context, address, dataDir, serviceBackend string) error {
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
@@ -115,10 +116,6 @@ func run(ctx context.Context, address, dataDir, serviceBackend, extensionGrants 
 	}
 	slog.Info("service backend ready", "backend", serviceManager.Name())
 
-	grants, err := extensions.LoadServiceGrants(extensionGrants)
-	if err != nil {
-		return fmt.Errorf("load extension service grants: %w", err)
-	}
 	pluginServices, err := services.OpenPlugin(serviceBackend)
 	if err != nil {
 		return fmt.Errorf("initialize extension service backend: %w", err)
@@ -129,7 +126,6 @@ func run(ctx context.Context, address, dataDir, serviceBackend, extensionGrants 
 		DataDir:        filepath.Join(dataDir, "extensions"),
 		Logger:         slog.Default(),
 		ServiceBackend: pluginServices,
-		ServiceGrants:  grants,
 	})
 	if err != nil {
 		slog.Error("extension host unavailable; built-in applications continue without extensions", "error", err)

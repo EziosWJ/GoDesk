@@ -702,6 +702,84 @@
   border-top: 1px solid var(--react-web-desktop-divider);
 }
 
+.monitor-ports-table tbody tr { cursor: pointer; }
+.monitor-ports-table tbody tr:hover { background: var(--react-web-desktop-hover); }
+.monitor-ports-table tbody tr[data-selected="true"] { background: var(--react-web-desktop-selected); }
+.monitor-port-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.monitor-port-open[aria-expanded="true"] svg { transform: rotate(90deg); }
+.monitor-port-open:focus-visible { outline: 2px solid var(--react-web-desktop-focus); outline-offset: 2px; }
+.monitor-port-process { max-width: 14em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.monitor-port-detail {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 48%;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--react-web-desktop-border);
+  background: var(--react-web-desktop-surface);
+}
+.monitor-port-detail-heading, .monitor-port-detail-toolbar, .monitor-port-log-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--react-web-desktop-divider);
+}
+.monitor-port-detail-heading strong { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.monitor-port-owner-select { max-width: 100%; background: var(--react-web-desktop-panel); }
+.monitor-port-close { margin-inline-start: auto; }
+.monitor-port-detail-toolbar { padding-block: 0; justify-content: space-between; }
+.monitor-port-detail-tabs { padding: 0; border: 0; }
+.monitor-port-detail-tabs button { min-height: var(--react-web-desktop-control-compact); }
+.monitor-port-detail-tabs button:disabled { color: var(--react-web-desktop-muted); cursor: default; }
+.monitor-port-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.monitor-port-detail-actions .danger-control:not(:disabled) {
+  color: var(--react-web-desktop-danger);
+}
+.monitor-port-detail-content { flex: 1 1 auto; min-height: 64px; overflow: auto; }
+.monitor-process-tree, .monitor-process-tree ul { list-style: none; margin: 0; padding: 0; }
+.monitor-process-tree { padding: 8px 12px; }
+.monitor-process-tree ul { border-inline-start: 1px solid var(--react-web-desktop-divider); margin-inline-start: 7px; padding-inline-start: 12px; }
+.monitor-process-tree li { position: relative; }
+.monitor-process-tree ul > li::before {
+  position: absolute;
+  inset-inline-start: -12px;
+  top: 13px;
+  width: 10px;
+  border-top: 1px solid var(--react-web-desktop-divider);
+  content: "";
+}
+.monitor-process-node {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-height: 26px;
+  padding: 3px 5px;
+  color: var(--react-web-desktop-muted);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.monitor-process-node strong { color: var(--react-web-desktop-fg); }
+.monitor-process-node[data-listener="true"] { background: var(--react-web-desktop-selected); }
+.monitor-process-listener { color: var(--react-web-desktop-accent); font-weight: 600; }
+.monitor-port-log-toolbar { justify-content: space-between; }
+.monitor-port-log { margin: 0; padding: 8px 12px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.monitor-port-dialog-impact ul { max-height: 9rem; margin-block: 4px 8px; padding-inline-start: 22px; overflow: auto; }
+
 @container monitor (width >= 600px) {
   .monitor-overview { padding: 16px; }
   .monitor-trends { grid-template-columns: repeat(2, minmax(0, 1fr)); }

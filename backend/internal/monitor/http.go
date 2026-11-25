@@ -3,8 +3,11 @@ package monitor
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
+	"io"
+	"mime"
 	"net/http"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -14,8 +17,15 @@ type errorBody struct {
 }
 
 func (c *Collector) Register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler) {
+	c.register(mux, requireSession, executePortOperation)
+}
+
+func (c *Collector) register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler, execute portExecutor) {
 	mux.Handle("GET /api/v1/system/metrics", requireSession(http.HandlerFunc(c.metricsHTTP)))
-	mux.Handle("GET /api/v1/system/ports", requireSession(http.HandlerFunc(c.portsHTTP)))
+	mux.Handle("GET /api/v1/system/ports", requireSession(portHandler(execute, "list", 5*time.Second)))
+	mux.Handle("GET /api/v1/system/ports/detail", requireSession(portHandler(execute, "detail", 10*time.Second)))
+	mux.Handle("GET /api/v1/system/ports/logs", requireSession(portHandler(execute, "logs", 10*time.Second)))
+	mux.Handle("POST /api/v1/system/ports/stop", requireSession(portHandler(execute, "stop", 120*time.Second)))
 }
 
 func (c *Collector) metricsHTTP(w http.ResponseWriter, _ *http.Request) {
@@ -27,17 +37,55 @@ func (c *Collector) metricsHTTP(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, snapshot)
 }
 
-func (c *Collector) portsHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	ports, err := ListPorts(ctx)
-	if err != nil {
-		slog.Error("read listening ports", "error", err)
-		writeError(w, http.StatusInternalServerError, "ports_unavailable", "无法读取端口信息")
-		return
+func portHandler(execute portExecutor, action string, timeout time.Duration) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		operation := portOperation{Action: action, ServerPID: os.Getpid()}
+		switch action {
+		case "detail", "logs":
+			query := r.URL.Query()
+			port, _ := strconv.ParseUint(query.Get("port"), 10, 16)
+			pid, _ := strconv.Atoi(query.Get("pid"))
+			start, err := strconv.ParseUint(query.Get("startTicks"), 10, 64)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid_target", "进程参数无效")
+				return
+			}
+			operation.Target = portTarget{
+				Endpoint: Endpoint{Protocol: query.Get("protocol"), Address: query.Get("address"), Port: uint32(port)},
+				PID:      pid, StartTicks: start, Unit: query.Get("unit"),
+			}
+		case "stop":
+			mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if err != nil || mediaType != "application/json" {
+				writeError(w, http.StatusUnsupportedMediaType, "invalid_content_type", "需要 application/json 请求")
+				return
+			}
+			decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2048))
+			if decoder.Decode(&operation.Target) != nil || decoder.Decode(new(any)) != io.EOF {
+				writeError(w, http.StatusBadRequest, "invalid_target", "进程参数无效")
+				return
+			}
+		}
+		if action != "list" && !operation.Target.valid() {
+			writeError(w, http.StatusBadRequest, "invalid_target", "端口或进程参数无效")
+			return
+		}
+		parent := r.Context()
+		if action == "stop" {
+			parent = context.WithoutCancel(parent)
+		}
+		ctx, cancel := context.WithTimeout(parent, timeout)
+		defer cancel()
+		result := execute(ctx, operation)
+		w.Header().Set("Cache-Control", "no-store")
+		if result.Status == http.StatusNoContent {
+			w.WriteHeader(result.Status)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(result.Status)
+		_, _ = w.Write(result.Body)
 	}
-	writeJSON(w, http.StatusOK, ports)
 }
 
 func writeJSON(w http.ResponseWriter, status int, data any) {

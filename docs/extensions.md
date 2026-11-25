@@ -139,10 +139,15 @@ Mock 替换 HTTP、WS 和服务等能力实现。包加载、权限检查、Lua�
 
 ### 从源码联调 GoDesk
 
-GoDesk 的 `backend/go.mod` 固定依赖已发布的 Extension Host。要联调尚未发布的宿主改动，可以新建一个临时 Go 工作区。以下命令从 GoDesk 根目录运行，假定两个仓库放在同一父目录。
+常规开发只需克隆 GoDesk。直接运行 `make dev`，Go 会使用 `backend/go.mod` 中固定的 Extension Host 版本。
+
+要用本机的 Extension Host 源码联调，将两个仓库放在同一父目录。如果 GoDesk 根目录还没有 `go.work`，从该目录执行一次：
 
 ```sh
-workspace="$(mktemp -d)"
-GOWORK=off go -C "$workspace" work init "$PWD/backend" "$(realpath ../Extension-Host)"
-GOWORK="$workspace/go.work" make build
+GOWORK=off go work init ./backend ../Extension-Host
+make dev
 ```
+
+之后运行 `make dev` 或 `make build` 都会使用同级的 Extension Host 源码，包括未提交的改动。修改 Host 的 Go 代码后，重启开发进程即可生效。`go.work` 和 `go.work.sum` 由 Git 忽略。
+
+已有工作区时，可以用 `GOWORK=off make dev` 临时切回固定版本。要在本地按固定版本生成发布二进制，运行 `GOWORK=off make build`。

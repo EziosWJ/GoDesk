@@ -31,6 +31,8 @@ pnpm --dir frontend install --frozen-lockfile
 make dev
 ```
 
+首次克隆后默认使用 `backend/go.mod` 中固定的 Extension Host 版本。需要同时开发 GoDesk 和 Extension Host 时，按文档创建一次本地 Go 工作区，之后仍用 `make dev` 启动。 [Extension Host 源码联调](docs/extensions.md#从源码联调-godesk)
+
 打开 Vite 输出的地址，默认是 `http://localhost:5173`。Vite 将 `/api` 请求转发到 `127.0.0.1:5000`，Go 服务的健康检查可用 `curl -fsS http://localhost:5000/healthz` 验证，正常时返回 `{"status":"ok"}`。按 Ctrl+C 停止两个服务。联调使用项目根目录的 `data/godesk.db`。
 
 也可以在两个终端中分别启动前端和后端。

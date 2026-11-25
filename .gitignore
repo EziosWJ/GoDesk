@@ -3,3 +3,5 @@
 /godesk
 /backend/internal/webui/dist/
 /.pnpm-store/
+/go.work
+/go.work.sum

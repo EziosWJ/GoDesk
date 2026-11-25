@@ -382,11 +382,23 @@ func (f *fakePluginBackend) Detail(context.Context, string) (extservices.Service
 	return f.detail, nil
 }
 
+func (f *fakePluginBackend) Start(context.Context, string, bool) error {
+	return fmt.Errorf("unexpected service start")
+}
+
+func (f *fakePluginBackend) Stop(context.Context, string, bool) error {
+	return fmt.Errorf("unexpected service stop")
+}
+
 func (f *fakePluginBackend) Restart(_ context.Context, unit string, elevated bool) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.restarts = append(f.restarts, fakePluginRestartCall{unit: unit, elevated: elevated})
 	return nil
+}
+
+func (f *fakePluginBackend) Logs(context.Context, string, int) ([]string, error) {
+	return nil, fmt.Errorf("unexpected service log request")
 }
 
 func (f *fakePluginBackend) restartCalls() []fakePluginRestartCall {

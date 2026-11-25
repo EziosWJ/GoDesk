@@ -1,4 +1,4 @@
-import { Activity, Cable, FilePenLine, FolderClosed, List, Puzzle, Settings2, Terminal } from 'lucide-react'
+import { Activity, Cable, FilePenLine, FolderClosed, LayoutGrid, List, Puzzle, Settings2, Terminal } from 'lucide-react'
 import { Settings } from './AppPages'
 import { Services } from './Services'
 import { SystemMonitor } from './SystemMonitor'
@@ -19,6 +19,7 @@ export const apps = {
   monitor: { name: '系统监控', icon: Activity, launcherIcon: monitorLauncher, Content: SystemMonitor, width: 760, height: 520 },
   services: { name: '服务管理', icon: Cable, launcherIcon: servicesLauncher, Content: Services, width: 1000, height: 640 },
   extensions: { name: '扩展', icon: Puzzle, launcherIcon: extensionsLauncher, width: 820, height: 580 },
+  icons: { name: '图标管理', icon: LayoutGrid, launcherIcon: undefined, width: 640, height: 440 },
   settings: { name: '系统设置', icon: Settings2, launcherIcon: settingsLauncher, Content: Settings, width: 720, height: 480 },
 }
 export type AppId = keyof typeof apps

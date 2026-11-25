@@ -38,6 +38,10 @@ export class ExtensionError extends Error {
 
 const base = '/api/v1/extensions'
 
+export function extensionWebPath(id: string): string {
+  return `/extensions/${encodeURIComponent(id)}/web/`
+}
+
 async function request(path: string, init?: RequestInit): Promise<Response> {
   const response = await fetch(path, init)
   if (!response.ok) {

@@ -25,6 +25,7 @@ import (
 	"godesk/internal/privileges"
 	"godesk/internal/services"
 	"godesk/internal/terminal"
+	"godesk/internal/webshortcuts"
 	"godesk/internal/webui"
 
 	_ "modernc.org/sqlite"
@@ -99,6 +100,10 @@ func run(ctx context.Context, address, dataDir, serviceBackend, extensionGrants 
 		return fmt.Errorf("initialize terminal storage: %w", err)
 	}
 	defer terminals.Close()
+
+	if err := webshortcuts.Initialize(ctx, db); err != nil {
+		return fmt.Errorf("initialize web shortcut storage: %w", err)
+	}
 
 	monitoring := monitor.Start(ctx, monitor.DefaultInterval)
 	defer monitoring.Close()

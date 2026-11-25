@@ -59,12 +59,12 @@ type TaskbarProps = {
   startOpen: boolean
   startButton: Ref<HTMLButtonElement>
   onStart: () => void
-  onFocusApp: (id: string) => void
+  onToggleApp: (id: string) => void
   onOpenPopup: () => void
   onOpenMonitor: () => void
 }
 
-export function Taskbar({ running, focusedId, startOpen, startButton, onStart, onFocusApp, onOpenPopup, onOpenMonitor }: TaskbarProps) {
+export function Taskbar({ running, focusedId, startOpen, startButton, onStart, onToggleApp, onOpenPopup, onOpenMonitor }: TaskbarProps) {
   const footer = useRef<HTMLElement>(null)
   const appGroup = useRef<HTMLDivElement>(null)
   const panel = useRef<HTMLElement>(null)
@@ -233,7 +233,7 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
             const { icon: Icon } = apps[appId]
             return (
               <button key={id} type="button" className="taskbar-button taskbar-running" data-task-app={id} aria-pressed={focusedId === id}
-                aria-label={title} onClick={() => onFocusApp(id)}>
+                aria-label={title} onClick={() => onToggleApp(id)}>
                 <Icon className={`app-icon ${appId}`} size={20} aria-hidden="true" />
                 <span className="taskbar-tooltip" aria-hidden="true">{title}</span>
               </button>
@@ -290,7 +290,7 @@ export function Taskbar({ running, focusedId, startOpen, startButton, onStart, o
                     return <li key={id}><button type="button" onClick={() => {
                       pendingAppFocus.current = id
                       setPopup(null)
-                      onFocusApp(id)
+                      onToggleApp(id)
                     }}><Icon size={18} aria-hidden="true" />{title}</button></li>
                   })}
                 </ul>

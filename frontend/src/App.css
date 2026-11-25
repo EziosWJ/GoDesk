@@ -147,6 +147,12 @@
 
 .shortcut-tile img { width: 100%; height: 100%; }
 .shortcut-tile-fallback { display: none; }
+.shortcut-tile[data-glyph] {
+  border-radius: var(--react-web-desktop-radius-overlay);
+  background: #335b96;
+  color: white;
+}
+.shortcut-tile[data-glyph='web-shortcut'] { background: #276c65; }
 
 .app-icon { flex: none; color: var(--react-web-desktop-muted); }
 
@@ -769,6 +775,7 @@
   .wallpaper { display: none; }
   .shortcut-tile { border: 1px solid ButtonText; border-radius: var(--react-web-desktop-radius-overlay); }
   .shortcut-tile img { display: none; }
+  .shortcut-tile[data-glyph] { background: ButtonFace; color: ButtonText; }
   .shortcut-tile-fallback { display: block; color: ButtonText; }
   .file-folder-icon { --folder-back: Canvas; --folder-front: Canvas; --folder-edge: CanvasText; }
   .start-search:focus-within { outline-color: Highlight; }

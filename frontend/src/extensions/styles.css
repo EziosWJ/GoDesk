@@ -145,7 +145,7 @@
   white-space: nowrap;
 }
 
-.extension-actions { display: flex; flex: none; flex-wrap: wrap; gap: 5px; }
+.extension-actions { display: flex; flex: none; flex-wrap: wrap; gap: 5px; max-width: 100%; }
 .extension-actions .app-control { border: 1px solid var(--react-web-desktop-divider); }
 
 .extensions-empty {

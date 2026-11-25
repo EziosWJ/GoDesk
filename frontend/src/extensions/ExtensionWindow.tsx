@@ -1,3 +1,4 @@
+import { extensionWebPath } from './api'
 import './styles.css'
 
 // The plugin page runs in a same-origin iframe, matching the standalone host.
@@ -6,7 +7,7 @@ export function ExtensionWindow({ plugin }: { plugin: { id: string; name: string
     <iframe
       className="extension-frame"
       title={plugin.name}
-      src={`/extensions/${encodeURIComponent(plugin.id)}/web/`}
+      src={extensionWebPath(plugin.id)}
     />
   )
 }

@@ -14,11 +14,13 @@ import (
 	"godesk/internal/monitor"
 	"godesk/internal/services"
 	"godesk/internal/terminal"
+	"godesk/internal/webshortcuts"
 )
 
 func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monitoring *monitor.Collector, healthEngine *health.Engine, serviceBackend services.Backend, extensions http.Handler, desktop http.Handler) http.Handler {
 	mux := http.NewServeMux()
 	credentials.Register(mux)
+	webshortcuts.Register(mux, db, credentials.RequireSession)
 	terminals.Register(mux, credentials.RequireSession)
 	if monitoring != nil {
 		monitoring.Register(mux, credentials.RequireSession)

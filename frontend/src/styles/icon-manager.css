@@ -1,0 +1,63 @@
+.icon-manager {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--react-web-desktop-surface);
+}
+
+.icon-manager-toolbar,
+.icon-manager-row,
+.icon-manager-actions,
+.icon-manager-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.icon-manager-toolbar {
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--react-web-desktop-divider);
+  background: var(--react-web-desktop-panel);
+}
+
+.icon-manager-toolbar h2 { font-size: var(--text-react-web-desktop-subtitle); font-weight: 650; }
+
+.icon-manager-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.icon-manager-row {
+  padding: 10px;
+  border: 1px solid var(--react-web-desktop-divider);
+  border-radius: var(--react-web-desktop-radius-overlay);
+  background: var(--react-web-desktop-raised);
+}
+
+.icon-manager-address { min-width: 0; flex: 1 1 140px; }
+.icon-manager-address h3 { font-weight: 650; }
+.icon-manager-actions .app-control { border: 1px solid var(--react-web-desktop-divider); }
+
+.icon-manager-form { display: flex; flex-direction: column; min-height: 0; }
+
+.icon-manager-fields {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.icon-manager-fields label { display: grid; gap: 4px; min-width: 0; }
+.icon-manager-fields input {
+  min-width: 0;
+  min-height: var(--react-web-desktop-control);
+  padding: 4px 8px;
+  border: 1px solid var(--react-web-desktop-border);
+  border-radius: var(--react-web-desktop-radius-control);
+  background: var(--react-web-desktop-surface);
+}

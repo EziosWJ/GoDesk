@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
-  ExternalLink, PackagePlus, Play, Power, PowerOff, Puzzle, RefreshCw, Settings2, Square, Trash2,
+  ExternalLink, MonitorUp, MonitorX, PackagePlus, Play, Power, PowerOff, Puzzle, RefreshCw, Settings2, Square, Trash2,
 } from 'lucide-react'
 import {
   ExtensionError, extensionsApi,
@@ -230,47 +230,19 @@ function UninstallDialog({ plugin, onClose, onDone }: {
   )
 }
 
-export function Extensions({ onOpen }: { onOpen: (plugin: ExtensionPlugin) => void }) {
-  const [plugins, setPlugins] = useState<ExtensionPlugin[]>()
+export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut, onOpen }: {
+  plugins: ExtensionPlugin[] | undefined
+  loadError: string
+  load: () => Promise<void>
+  shortcuts: string[]
+  onSetShortcut: (id: string, pinned: boolean) => void
+  onOpen: (plugin: ExtensionPlugin) => void
+}) {
   const [error, setError] = useState('')
   const [pending, setPending] = useState('')
   const [configPlugin, setConfigPlugin] = useState<ExtensionPlugin>()
   const [uninstallPlugin, setUninstallPlugin] = useState<ExtensionPlugin>()
   const fileInput = useRef<HTMLInputElement>(null)
-
-  const load = useCallback(async (signal?: AbortSignal) => {
-    try {
-      const next = await extensionsApi.list(signal)
-      if (signal?.aborted) return
-      setPlugins(next)
-      setError('')
-    } catch (cause) {
-      if (signal?.aborted) return
-      if (unauthorized(cause)) {
-        window.location.reload()
-        return
-      }
-      setError(errorMessage(cause))
-    }
-  }, [])
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
-  }, [load])
-
-  useEffect(() => {
-    function refresh() {
-      if (document.visibilityState === 'visible') void load()
-    }
-    window.addEventListener('focus', refresh)
-    document.addEventListener('visibilitychange', refresh)
-    return () => {
-      window.removeEventListener('focus', refresh)
-      document.removeEventListener('visibilitychange', refresh)
-    }
-  }, [load])
 
   async function run(plugin: ExtensionPlugin, name: string, task: () => Promise<unknown>) {
     setPending(`${plugin.id}:${name}`)
@@ -323,17 +295,17 @@ export function Extensions({ onOpen }: { onOpen: (plugin: ExtensionPlugin) => vo
             {pending === 'install' ? '正在安装…' : '安装 ZIP'}
           </button>
           <button type="button" className="app-control extensions-icon-button"
-            aria-label="刷新扩展列表" title="刷新" onClick={() => void load()}>
+            aria-label="刷新扩展列表" title="刷新" onClick={() => { setError(''); void load() }}>
             <RefreshCw size={15} aria-hidden="true" />
           </button>
           <input ref={fileInput} type="file" accept=".zip,application/zip" hidden onChange={event => void install(event)} />
         </div>
       </header>
 
-      {error && <p className="extensions-error extensions-banner" role="alert">{error}</p>}
+      {(error || loadError) && <p className="extensions-error extensions-banner" role="alert">{error || loadError}</p>}
 
       <div className="extensions-list">
-        {plugins === undefined && <p className="extension-hint" role="status">正在加载扩展…</p>}
+        {plugins === undefined && !loadError && <p className="extension-hint" role="status">正在加载扩展…</p>}
         {plugins?.length === 0 && (
           <div className="extensions-empty">
             <Puzzle size={34} aria-hidden="true" />
@@ -347,6 +319,7 @@ export function Extensions({ onOpen }: { onOpen: (plugin: ExtensionPlugin) => vo
         {plugins?.map(plugin => {
           const busy = pending.startsWith(`${plugin.id}:`)
           const starting = plugin.status === 'starting' || plugin.status === 'stopping'
+          const pinned = shortcuts.includes(plugin.id)
           return (
             <article key={plugin.id} className="extension-row" data-status={plugin.status}>
               <div className="extension-row-main">
@@ -394,6 +367,13 @@ export function Extensions({ onOpen }: { onOpen: (plugin: ExtensionPlugin) => vo
                   onClick={() => onOpen(plugin)}>
                   <ExternalLink size={14} aria-hidden="true" />打开
                 </button>
+                {plugin.hasWeb && (
+                  <button type="button" className="app-control" disabled={busy}
+                    onClick={() => onSetShortcut(plugin.id, !pinned)}>
+                    {pinned ? <MonitorX size={14} aria-hidden="true" /> : <MonitorUp size={14} aria-hidden="true" />}
+                    {pinned ? '移除桌面快捷方式' : '添加到桌面'}
+                  </button>
+                )}
                 <button type="button" className="app-control" disabled={busy}
                   onClick={() => setUninstallPlugin(plugin)}>
                   <Trash2 size={14} aria-hidden="true" />卸载
@@ -412,7 +392,11 @@ export function Extensions({ onOpen }: { onOpen: (plugin: ExtensionPlugin) => vo
       {uninstallPlugin && (
         <UninstallDialog key={uninstallPlugin.id} plugin={uninstallPlugin}
           onClose={() => setUninstallPlugin(undefined)}
-          onDone={async () => { setUninstallPlugin(undefined); await load() }} />
+          onDone={async () => {
+            onSetShortcut(uninstallPlugin.id, false)
+            setUninstallPlugin(undefined)
+            await load()
+          }} />
       )}
     </div>
   )

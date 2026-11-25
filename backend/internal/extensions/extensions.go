@@ -24,7 +24,6 @@ type Options struct {
 	DataDir        string
 	Logger         *slog.Logger
 	ServiceBackend extservices.PluginBackend
-	ServiceGrants  map[string]host.ServiceGrant
 }
 
 // Manager owns the embedded extension host.
@@ -37,18 +36,12 @@ func Open(ctx context.Context, opts Options) (*Manager, error) {
 	extensionHost, err := host.Open(ctx, host.Options{
 		DataDir:        opts.DataDir,
 		Logger:         opts.Logger,
-		ServiceGrants:  opts.ServiceGrants,
 		ServiceBackend: opts.ServiceBackend,
 	})
 	if err != nil {
 		return nil, err
 	}
 	return &Manager{host: extensionHost}, nil
-}
-
-// LoadServiceGrants reads per-plugin service grants from a JSON file.
-func LoadServiceGrants(path string) (map[string]host.ServiceGrant, error) {
-	return host.LoadServiceGrantsFile(path)
 }
 
 // Restore starts the plugins that were enabled before the last shutdown.

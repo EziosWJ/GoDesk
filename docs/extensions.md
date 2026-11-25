@@ -13,7 +13,7 @@ Extension Host 由独立仓库 [EziosWJ/Extension-Host](https://github.com/Ezios
 
 两个入口使用相同的 Manifest、插件生命周期、数据格式和 HTTP/WS 契约。GoDesk 与 `godesk-ext` 可分别指定数据目录。同一插件包可以在两个入口运行，各进程管理自己的运行状态。
 
-首版面向部署者主动信任并安装的第三方插件。Web 插件与宿主同源，其脚本可以访问父页面并使用当前浏览器会话调用宿主 API。Lua 与宿主共用进程，文件 I/O 和子进程使用宿主 Linux 运行账号权限。能力授权约束通过 Host API 发起的操作。 [GoDesk 会话契约](authentication.md) · [主机权限契约](privileges.md)
+部署者主动启用自己信任的插件。Web 插件与宿主同源，其脚本可以访问父页面并使用当前浏览器会话调用宿主 API。Lua 与宿主共用进程，文件 I/O 和子进程使用宿主 Linux 运行账号权限。[GoDesk 会话契约](authentication.md) · [主机权限契约](privileges.md)
 
 ## 插件包与 Manifest
 
@@ -40,8 +40,7 @@ lua/proxies.lua
   "config": {
     "controller": { "type": "string", "required": true },
     "secret": { "type": "string", "secret": true }
-  },
-  "capabilities": ["http", "websocket", "storage", "services"]
+  }
 }
 ```
 
@@ -53,7 +52,6 @@ lua/proxies.lua
 | `hostApi` | 插件兼容的 Host API 版本闭区间，首版 Host API 为 `1`。 |
 | `entry.web`、`entry.lua` | 可选入口，分别对应 Web-only、Lua-only 或组合插件。 |
 | `config` | 可选配置字段描述。`secret` 标记的值可供插件后端使用，宿主的管理响应和日志省略该值。 |
-| `capabilities` | 可选的能力需求列表。部署者通过宿主配置授予实际目标和动作。 |
 
 ## 生命周期与存储
 
@@ -64,12 +62,12 @@ lua/proxies.lua
 | 启动 | 为已启用插件创建当前进程的插件实例。重复启动收敛到同一个实例。 |
 | 停止 | 停止当前实例并关闭其连接、订阅和任务，保留启用意图。可手动再启动，宿主下次启动也会恢复。 |
 | 禁用 | 清除启用意图并停止实例。宿主重启后继续处于禁用状态。 |
-| 卸载 | 先禁用并释放资源，再移除包、配置和授权。默认保留业务数据，显式选择清除时再删除业务库。 |
+| 卸载 | 先禁用并释放资源，再移除包和配置。默认保留业务数据，显式选择清除时再删除业务库。 |
 | 关闭窗口 | 释放该窗口的连接和订阅，插件实例继续随宿主运行。 |
 
 管理界面分别显示持久化的启用意图与当前实例状态，例如「已启用，启动失败」。同一个插件的生命周期操作依序处理。首版记录版本，插件升级、备份与回滚留到后续版本。
 
-Extension Host 在独立数据目录里管理 `host.db` 和每个插件的业务 SQLite。`host.db` 存储安装元数据、启用意图、授权和配置，业务库供所属插件使用。GoDesk 的 `godesk.db` 继续保存操作者和内置应用设置。日志按插件 ID 和版本记录。 [SQLite 架构决策](adr/0005-use-sqlite-for-persistent-state.md)
+Extension Host 在独立数据目录里管理 `host.db` 和每个插件的业务 SQLite。`host.db` 存储安装元数据、启用意图和配置，业务库供所属插件使用。GoDesk 的 `godesk.db` 继续保存操作者和内置应用设置。日志按插件 ID 和版本记录。 [SQLite 架构决策](adr/0005-use-sqlite-for-persistent-state.md)
 
 ## Lua 与主机能力
 
@@ -82,14 +80,14 @@ Extension Host 在独立数据目录里管理 `host.db` 和每个插件的业务
 | Host API 模块 | 首版职责 |
 | --- | --- |
 | `host.app` | 注册当前插件的 HTTP 处理器和生命周期钩子，向当前插件的浏览器订阅发布事件。 |
-| `host.http` | 向已授予的目标发起 HTTP 请求。 |
-| `host.ws` | 订阅已授予的目标 WebSocket，将事件交给当前插件实例。 |
+| `host.http` | 尚未实现。 |
+| `host.ws` | 尚未实现。 |
 | `host.storage` | 访问当前插件业务 SQLite。 |
 | `host.process` | 异步启动子进程，并把退出结果交回当前 Lua 实例。 |
 | `host.schedule` | 注册当前插件实例的定时任务，回调在实例的 Lua 执行队列中运行。 |
-| `host.services` | 查询和重启部署者授权的已有 systemd 服务。 |
+| `host.services` | 列出、查询、启动、停止、重启 systemd 服务及读取日志。 |
 
-插件身份由 Host 从运行实例取得。部署配置可把 Mihomo 的网络请求限定为指定控制地址，将服务操作限定为 `mihomo.service` 的查询与重启。服务调用默认使用运行账号，部署者可为指定动作显式选择非交互 sudo。GoDesk 原生服务管理继续遵守自身权限契约。 [GoDesk 服务契约](services.md#权限)
+服务查询和日志以 GoDesk 运行账号执行。启停和重启默认也使用该账号。插件可传入 `{ sudo = true }`，让非 root 宿主通过非交互 sudo 执行。系统权限决定操作是否获准。 [GoDesk 服务契约](services.md#权限)
 
 ### 异步进程
 
@@ -114,7 +112,7 @@ GoDesk 和独立管理界面以同源 iframe 装载插件 Web 入口。业务前
 | `/extensions/{id}/api/` | 当前插件注册的 HTTP 业务路由。 |
 | `/extensions/{id}/events` | 当前插件到浏览器的 WebSocket 事件流。 |
 
-双模式路径一致。嵌入模式将这些入口接入 GoDesk 会话验证。插件启用和启动后可以访问其运行入口，停止或禁用后宿主关闭该实例的现有事件订阅。窗口关闭只结束该窗口的订阅。Mihomo 实时流量经过 **Mihomo WS → Lua → Host 事件流 → 浏览器**。插件在自己的命名空间下定义业务请求、响应和事件内容。Host 根据当前路由选择插件实例，并处理包不存在、实例未运行、能力未授权和实例执行失败等宿主级错误。
+双模式路径一致。嵌入模式将这些入口接入 GoDesk 会话验证。插件启用和启动后可以访问其运行入口，停止或禁用后宿主关闭该实例的现有事件订阅。窗口关闭只结束该窗口的订阅。Mihomo 实时流量经过 **Mihomo WS → Lua → Host 事件流 → 浏览器**。插件在自己的命名空间下定义业务请求、响应和事件内容。Host 根据当前路由选择插件实例，并处理包不存在、实例未运行和实例执行失败等宿主级错误。
 
 ## 独立开发命令
 

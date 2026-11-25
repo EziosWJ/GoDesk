@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/EziosWJ/Extension-Host/host"
 	extservices "github.com/EziosWJ/Extension-Host/hostsys/services"
 	"github.com/coder/websocket"
 )
@@ -165,7 +164,7 @@ func TestEmbeddedPluginHTTPAndEvents(t *testing.T) {
 	}
 }
 
-func TestEmbeddedPluginServiceGrants(t *testing.T) {
+func TestEmbeddedPluginServices(t *testing.T) {
 	backend := &fakePluginBackend{
 		services: []extservices.Service{
 			{
@@ -195,13 +194,6 @@ func TestEmbeddedPluginServiceGrants(t *testing.T) {
 		DataDir:        t.TempDir(),
 		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		ServiceBackend: backend,
-		ServiceGrants: map[string]host.ServiceGrant{
-			testPluginID: {
-				Units:   []string{"alpha.service"},
-				Actions: []string{"list", "get", "restart"},
-				Elevate: []string{"restart"},
-			},
-		},
 	})
 	if err != nil {
 		t.Fatalf("open host: %v", err)
@@ -256,8 +248,8 @@ func TestEmbeddedPluginServiceGrants(t *testing.T) {
 	if err := json.Unmarshal(body, &listed); err != nil {
 		t.Fatalf("decode services list %q: %v", body, err)
 	}
-	if len(listed) != 1 || listed[0].Name != "alpha.service" {
-		t.Fatalf("services list = %#v, want only alpha.service", listed)
+	if len(listed) != 2 || listed[0].Name != "alpha.service" || listed[1].Name != "beta.service" {
+		t.Fatalf("services list = %#v, want alpha.service and beta.service", listed)
 	}
 
 	response, err = http.Get(api + "/services-get?unit=alpha.service")
@@ -267,17 +259,17 @@ func TestEmbeddedPluginServiceGrants(t *testing.T) {
 	body, _ = io.ReadAll(response.Body)
 	response.Body.Close()
 	if response.StatusCode != http.StatusOK || !strings.Contains(string(body), `"name":"alpha.service"`) {
-		t.Fatalf("granted get = %d, %q", response.StatusCode, body)
+		t.Fatalf("service get = %d, %q", response.StatusCode, body)
 	}
 
-	response, err = http.Get(api + "/services-get?unit=beta.service")
+	response, err = http.Get(api + "/services-get?unit=invalid")
 	if err != nil {
 		t.Fatal(err)
 	}
 	body, _ = io.ReadAll(response.Body)
 	response.Body.Close()
-	if response.StatusCode == http.StatusOK || !strings.Contains(string(body), "is not authorized") {
-		t.Fatalf("ungranted get = %d, %q", response.StatusCode, body)
+	if response.StatusCode != http.StatusInternalServerError || !strings.Contains(string(body), "invalid_unit") {
+		t.Fatalf("invalid service get = %d, %q", response.StatusCode, body)
 	}
 
 	response, err = http.Post(api+"/services-restart?unit=alpha.service", "", nil)
@@ -292,72 +284,6 @@ func TestEmbeddedPluginServiceGrants(t *testing.T) {
 	calls := backend.restartCalls()
 	if len(calls) != 1 || calls[0].unit != "alpha.service" || !calls[0].elevated {
 		t.Fatalf("restart calls = %#v, want one elevated restart of alpha.service", calls)
-	}
-}
-
-func TestEmbeddedPluginServiceGrantDeniesUngrantedAction(t *testing.T) {
-	backend := &fakePluginBackend{
-		services: []extservices.Service{{Name: "alpha.service", State: extservices.StateRunning}},
-		detail:   extservices.ServiceDetail{Name: "alpha.service", State: extservices.StateRunning},
-	}
-	manager, err := Open(t.Context(), Options{
-		DataDir:        t.TempDir(),
-		Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
-		ServiceBackend: backend,
-		ServiceGrants: map[string]host.ServiceGrant{
-			testPluginID: {
-				Units:   []string{"alpha.service"},
-				Actions: []string{"list", "get"},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatalf("open host: %v", err)
-	}
-	defer func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := manager.Close(ctx); err != nil {
-			t.Errorf("close host: %v", err)
-		}
-	}()
-
-	handler := manager.Handler(func(next http.Handler) http.Handler { return next })
-	server := httptest.NewServer(handler)
-	defer server.Close()
-
-	install, err := http.NewRequestWithContext(t.Context(), http.MethodPost,
-		server.URL+"/api/v1/extensions", bytes.NewReader(testPluginZip(t)))
-	if err != nil {
-		t.Fatal(err)
-	}
-	install.Header.Set("Content-Type", "application/zip")
-	response, err := http.DefaultClient.Do(install)
-	if err != nil {
-		t.Fatalf("install: %v", err)
-	}
-	response.Body.Close()
-	if response.StatusCode != http.StatusCreated {
-		t.Fatalf("install = %d", response.StatusCode)
-	}
-	response = post(t, server.URL+"/api/v1/extensions/"+testPluginID+"/enable")
-	response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("enable = %d", response.StatusCode)
-	}
-
-	api := server.URL + "/extensions/" + testPluginID + "/api"
-	response, err = http.Post(api+"/services-restart?unit=alpha.service", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	body, _ := io.ReadAll(response.Body)
-	response.Body.Close()
-	if response.StatusCode == http.StatusOK || !strings.Contains(string(body), "is not authorized") {
-		t.Fatalf("ungranted restart = %d, %q", response.StatusCode, body)
-	}
-	if calls := backend.restartCalls(); len(calls) != 0 {
-		t.Fatalf("restart calls = %#v, want none", calls)
 	}
 }
 
@@ -429,8 +355,7 @@ func testPluginZip(t *testing.T) []byte {
 			"name": "Echo",
 			"version": "0.1.0",
 			"hostApi": {"min": 1, "max": 1},
-			"entry": {"web": "web/index.html", "lua": "lua/init.lua"},
-			"capabilities": ["services"]
+			"entry": {"web": "web/index.html", "lua": "lua/init.lua"}
 		}`, testPluginID),
 		"web/index.html": "<!doctype html><title>Echo</title><p>echo web</p>",
 		"lua/init.lua": `
@@ -462,7 +387,7 @@ host.app.route("GET", "/services-get", function(request)
 end)
 
 host.app.route("POST", "/services-restart", function(request)
-  host.services.restart(request.query.unit)
+  host.services.restart(request.query.unit, { sudo = true })
   return reply({ ok = true })
 end)
 `,

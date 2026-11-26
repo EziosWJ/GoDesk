@@ -1,4 +1,4 @@
-import { useRef, useState, type MouseEvent, type ReactNode } from 'react'
+import { useState, type MouseEvent, type ReactNode } from 'react'
 import { ExternalLink, Image, MonitorX, Palette, PanelTop, RefreshCw, Terminal } from 'lucide-react'
 import { AppIcon, type AppIconId } from './AppIcon'
 import { CommandMenu, type MenuAnchor } from './CommandMenu'
@@ -38,13 +38,7 @@ export function DesktopSurface({
   onRemoveExtensionShortcut: (id: string) => void
   children: ReactNode
 }) {
-  const workArea = useRef<HTMLDivElement>(null)
   const [context, setContext] = useState<(MenuAnchor & { pluginId?: string }) | null>(null)
-
-  function bindWorkArea(node: HTMLDivElement | null) {
-    workArea.current = node
-    workAreaRef(node)
-  }
 
   function openDesktopMenu(anchor: MenuAnchor) {
     onSelect(null)
@@ -75,7 +69,7 @@ export function DesktopSurface({
     <>
       <div className="wallpaper" aria-hidden="true" />
       <div
-        ref={bindWorkArea}
+        ref={workAreaRef}
         className="work-area"
         tabIndex={0}
         role="group"

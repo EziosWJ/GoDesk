@@ -24,7 +24,7 @@ function SessionActionButton({ label, icon: Icon, disabled, danger, onClick }: {
 
 export function TerminalSessions({ active, windows, onOpen, onRename }: {
   active: boolean
-  windows: Readonly<Record<string, WindowState>>
+  windows: Readonly<Record<string, Pick<WindowState, 'stage' | 'meta'>>>
   onOpen: (session: TerminalSession, takeControl?: boolean) => void
   onRename: (session: TerminalSession) => void
 }) {

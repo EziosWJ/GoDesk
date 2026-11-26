@@ -14,7 +14,7 @@ function windowMotionDuration(style: CSSStyleDeclaration, token: 'overlay' | 'fe
 
 export function AppWindow({ binder, win, appId, closing, children, onRequestClose, onExited }: {
   binder: UseDesktopResult['binder']
-  win: WindowState
+  win: Pick<WindowState, 'id' | 'openedSeq' | 'title' | 'stage'>
   appId: AppId
   closing: boolean
   children: ReactNode

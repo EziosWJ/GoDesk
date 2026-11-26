@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { prefersReducedMotion } from '@surdeddd/wmkit'
 import type { DesktopOptions, WindowState } from '@surdeddd/wmkit'
-import { useDesktop, useWindowManager, useWmState } from '@surdeddd/wmkit/react'
+import { useDesktop, useWindowManager } from '@surdeddd/wmkit/react'
 import { AppWindow } from './AppWindow'
 import { apps, type AppId } from './apps.ts'
 import type { Session } from './auth'
@@ -18,6 +18,7 @@ import { ExtensionWindow } from './extensions/ExtensionWindow'
 import { extensionWebPath, type ExtensionPlugin } from './extensions/api'
 import { useExtensionCatalog } from './extensions/useExtensionCatalog'
 import { terminalApi, terminalClientId, terminalWindowId, type TerminalSession } from './terminal'
+import { useDesktopWindows, type DesktopWindow } from './useDesktopWindows'
 import { useHostHealth } from './useHostHealth'
 import { getWallpaperPreference, subscribeWallpaper } from './wallpapers'
 import { openWebShortcut, useWebShortcuts } from './webShortcuts'
@@ -93,7 +94,7 @@ export default function App({ onLogout, onSession }: {
 }) {
   const wm = useWindowManager({ keepInViewport: true, minVisible: 164, historyLimit: 0 })
   const { ref, binder } = useDesktop(wm, workAreaOptions)
-  const { windows, focusedId } = useWmState(wm)
+  const { windows, focusedId } = useDesktopWindows(wm)
   const hostHealth = useHostHealth()
   const running = Object.values(windows).map(win => ({
     id: win.id, appId: windowApp(win.id), title: win.title, minimized: win.stage === 'minimized',
@@ -101,7 +102,7 @@ export default function App({ onLogout, onSession }: {
   const [pinnedApps, setPinnedApps] = useState(readPinnedApps)
   const desktopWindows = useRef<Pick<WindowState, 'id' | 'openedSeq'>[]>([])
   const [appearanceRequest, requestAppearance] = useState(0)
-  const [closingWindows, setClosingWindows] = useState<WindowState[]>([])
+  const [closingWindows, setClosingWindows] = useState<DesktopWindow[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [extensionShortcuts, setExtensionShortcuts] = useState(readExtensionShortcuts)
   const [startOpen, setStartOpen] = useState(false)
@@ -380,7 +381,7 @@ export default function App({ onLogout, onSession }: {
     wm.close('editor')
   }
 
-  function renderApp(id: AppId, win: WindowState, closing: boolean) {
+  function renderApp(id: AppId, win: DesktopWindow, closing: boolean) {
     if (id === 'files') return <FileManager onOpenText={openTextFile} />
     if (id === 'editor') return (
       <TextEditorApp ref={closing ? null : editor}

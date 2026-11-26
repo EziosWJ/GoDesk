@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
+  <defs>
+    <linearGradient id="ws-globe" x1="8" y1="6" x2="40" y2="40" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#38D6C4"/>
+      <stop offset="0.52" stop-color="#0E9AA7"/>
+      <stop offset="1" stop-color="#005FB8"/>
+    </linearGradient>
+    <linearGradient id="ws-badge" x1="30" y1="29" x2="43" y2="43" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DCEEFF"/>
+    </linearGradient>
+  </defs>
+  <circle cx="23" cy="23" r="17.5" fill="url(#ws-globe)"/>
+  <ellipse cx="23" cy="23" rx="8.5" ry="17" stroke="#FFFFFF" stroke-opacity="0.52" stroke-width="1.8"/>
+  <path d="M6.5 18h33M6.5 28h33" stroke="#FFFFFF" stroke-opacity="0.48" stroke-width="1.8"/>
+  <circle cx="35.5" cy="35.5" r="8.5" fill="url(#ws-badge)" stroke="#0067C0" stroke-opacity="0.22" stroke-width="1"/>
+  <path d="M32.5 38.5l6-6m0 0h-4.5m4.5 0v4.5" stroke="#0067C0" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef } from 'react'
+import { useLayoutEffect, useRef, useSyncExternalStore } from 'react'
 import { editor } from 'monaco-editor/editor/editor.api'
 import 'monaco-editor/editor/browser/coreCommands'
 import 'monaco-editor/editor/contrib/clipboard/browser/clipboard'
@@ -12,6 +12,7 @@ import 'monaco-editor/languages/features/json/register'
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 import JsonWorker from 'monaco-editor/languages/features/json/json.worker?worker'
 import type { TextEditorProps } from './index'
+import { getAccentPreference, subscribeAppearance } from '../theme'
 
 // Register the services used by lazy JSON contributions before the first editor initializes.
 import 'monaco-editor/editor/common/services/treeViewsDndService'
@@ -24,6 +25,7 @@ globalThis.MonacoEnvironment = {
 }
 
 export default function MonacoEditor(props: TextEditorProps) {
+  const accent = useSyncExternalStore(subscribeAppearance, getAccentPreference)
   const host = useRef<HTMLDivElement>(null)
   const instance = useRef<editor.IStandaloneCodeEditor>(null)
   const latest = useRef(props)
@@ -36,9 +38,9 @@ export default function MonacoEditor(props: TextEditorProps) {
   useLayoutEffect(() => {
     if (!host.current) return
     const styles = getComputedStyle(host.current)
-    const color = (role: string) => styles.getPropertyValue('--react-web-desktop-' + role).trim()
+    const color = (role: string) => styles.getPropertyValue('--godesk-' + role).trim()
       .replace(/^#([\da-f]{3,4})$/i, (_, digits: string) => '#' + [...digits].map(digit => digit.repeat(2)).join(''))
-    const themeName = `react-web-desktop-${props.theme}`
+    const themeName = `godesk-${props.theme}`
 
     editor.defineTheme(themeName, {
       base: props.theme === 'dark' ? 'vs-dark' : 'vs',
@@ -61,12 +63,12 @@ export default function MonacoEditor(props: TextEditorProps) {
       },
     })
     editor.setTheme(themeName)
-  }, [props.theme])
+  }, [props.theme, accent])
 
   useLayoutEffect(() => {
     if (!host.current) return
     const { value, language, readOnly } = latest.current
-    const fontFamily = getComputedStyle(host.current).getPropertyValue('--react-web-desktop-font-mono').trim()
+    const fontFamily = getComputedStyle(host.current).getPropertyValue('--godesk-font-mono').trim()
     const fontSize = 14
     const model = editor.createModel(value, language)
     const view = editor.create(host.current, {

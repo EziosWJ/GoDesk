@@ -1,0 +1,389 @@
+/* Layout roots measure the window content before any panel padding. */
+.system-page {
+  background: var(--godesk-surface);
+  font: var(--text-godesk-body)/var(--text-godesk-body--line-height) var(--godesk-font-ui);
+}
+
+.system-caption {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+
+.system-subtitle {
+  font-size: var(--text-godesk-subtitle);
+  line-height: var(--text-godesk-subtitle--line-height);
+  font-weight: 600;
+}
+
+.system-title {
+  font-size: var(--text-godesk-title);
+  line-height: var(--text-godesk-title--line-height);
+  font-weight: 600;
+}
+.system-page { height: 100%; }
+.system-page [tabindex="-1"]:focus-visible, .system-scroll:focus-visible {
+  outline: 2px solid var(--godesk-focus);
+  outline-offset: -2px;
+}
+.system-scroll { min-width: 0; min-height: 0; overflow: auto; }
+.system-page .system-back { margin-bottom: 12px; padding-inline: 8px; }
+
+.settings-page { display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); }
+.settings-page[data-split="true"] { grid-template-columns: 200px minmax(0, 1fr); }
+
+/* Mica NavigationView rail with the Windows 11 accent selection indicator. */
+.settings-navigation { background: var(--godesk-mica-bg); padding: 10px 8px; }
+.settings-page[data-split="true"] .settings-navigation { border-inline-end: 1px solid var(--godesk-divider); }
+.settings-page .settings-category {
+  position: relative;
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: var(--godesk-row);
+  gap: 8px;
+  padding-inline: 14px;
+  border-radius: var(--godesk-radius-control);
+  font-weight: 500;
+}
+.settings-category + .settings-category { margin-top: 2px; }
+.settings-chevron { margin-inline-start: auto; color: var(--godesk-muted); }
+
+.settings-page .settings-category[aria-current] {
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+  font-weight: 600;
+}
+.settings-page .settings-category[aria-current]::before {
+  position: absolute;
+  inset-block: 9px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--godesk-accent);
+  content: "";
+}
+
+.settings-content { padding: 12px; }
+.settings-page[data-split="true"] .settings-content { padding: 16px 20px 20px; }
+.settings-note { margin-block: 4px 16px; }
+.settings-password-form {
+  display: grid;
+  gap: 12px;
+  max-width: 320px;
+  margin-block: 12px;
+}
+.settings-password-form label { display: grid; gap: 4px; }
+.settings-password-form button { justify-self: start; }
+.authentication-error { color: var(--godesk-danger); }
+
+.settings-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: var(--godesk-row);
+  padding-block: 8px;
+  border-top: 1px solid var(--godesk-divider);
+}
+.settings-list dt { display: flex; align-items: center; gap: 8px; }
+.settings-list dt svg { flex: none; color: var(--godesk-accent); }
+.settings-list dd { color: var(--godesk-muted); text-align: end; }
+.settings-summary { margin-block: 0 14px; }
+.settings-summary dd { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; }
+.settings-accent-chip {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%);
+}
+.settings-jump {
+  gap: 8px;
+  padding-inline: 10px 12px;
+  border: 1px solid var(--godesk-border);
+  background: var(--godesk-surface);
+}
+.settings-jump svg:last-child { color: var(--godesk-muted); }
+
+/* Appearance gallery */
+.settings-section + .settings-section { margin-block-start: 22px; }
+.settings-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin-block-end: 10px;
+}
+.settings-section-head h3 {
+  font-size: var(--text-godesk-subtitle);
+  line-height: var(--text-godesk-subtitle--line-height);
+  font-weight: 600;
+}
+.settings-section-head .system-caption { text-align: end; }
+.theme-cards, .accent-options, .wallpaper-options { min-width: 0; margin: 0; padding: 0; border: 0; }
+
+.theme-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+.theme-card, .accent-option, .wallpaper-option { position: relative; cursor: pointer; }
+.theme-card input, .accent-option input, .wallpaper-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.theme-card {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-subtle);
+  transition: background-color var(--godesk-duration-feedback) ease-out,
+    border-color var(--godesk-duration-feedback) ease-out;
+}
+.theme-card:hover { background: var(--godesk-hover); }
+.theme-card:has(input:checked) {
+  border-color: var(--godesk-accent);
+  background: var(--godesk-selected);
+  box-shadow: inset 0 0 0 1px var(--godesk-accent);
+}
+.theme-card:has(input:focus-visible),
+.accent-option:has(input:focus-visible),
+.wallpaper-option:has(input:focus-visible) { outline: 2px solid var(--godesk-focus); outline-offset: 2px; }
+
+.theme-card-preview {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  border-radius: calc(var(--godesk-radius-control) * 0.75);
+  background: var(--godesk-canvas);
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 10%);
+}
+.theme-card-preview[data-preview="light"] {
+  --preview-window: #ffffff;
+  --preview-bar: #f3f3f3;
+  --preview-line: rgb(0 0 0 / 16%);
+  --preview-edge: rgb(0 0 0 / 14%);
+  --preview-taskbar: rgb(243 243 243 / 90%);
+}
+.theme-card-preview[data-preview="dark"] {
+  --preview-window: #2c2c2c;
+  --preview-bar: #202020;
+  --preview-line: rgb(255 255 255 / 24%);
+  --preview-edge: rgb(255 255 255 / 16%);
+  --preview-taskbar: rgb(32 32 32 / 90%);
+}
+.theme-card-wallpaper {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-size: cover;
+}
+.theme-card-preview::after {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, transparent 42%, rgb(0 0 0 / 14%));
+  content: "";
+}
+.theme-card-window {
+  position: absolute;
+  inset: 16% 17% 23%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--preview-edge);
+  border-radius: 3px;
+  background: var(--preview-window);
+  box-shadow: 0 5px 12px rgb(0 0 0 / 20%);
+}
+.theme-card-window-bar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 2px;
+  height: 18%;
+  min-height: 6px;
+  padding-inline: 4px;
+  border-block-end: 1px solid var(--preview-edge);
+  background: var(--preview-bar);
+}
+.theme-card-window-bar i {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--preview-line);
+}
+.theme-card-window-bar i:first-child { background: var(--godesk-accent); }
+.theme-card-window-lines {
+  display: grid;
+  flex: 1;
+  align-content: center;
+  gap: 4px;
+  padding: 7px 8px;
+}
+.theme-card-window-lines i { height: 3px; border-radius: 2px; background: var(--preview-line); }
+.theme-card-window-lines i:last-child { width: 60%; }
+.theme-card-taskbar {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 15%;
+  background: var(--preview-taskbar);
+}
+.theme-card-taskbar i {
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--preview-line);
+}
+.theme-card-taskbar i:first-child { width: 8px; border-radius: 2px; background: var(--godesk-accent); }
+.theme-card-footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  font-weight: 500;
+}
+.theme-card-footer > svg { flex: none; color: var(--godesk-muted); }
+.theme-card:has(input:checked) .theme-card-footer > svg { color: var(--godesk-accent); }
+.theme-card-check {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-inline-start: auto;
+  border-radius: 999px;
+  background: var(--godesk-accent);
+  color: var(--godesk-on-accent);
+  opacity: 0;
+  transform: scale(0.7);
+  transition: opacity var(--godesk-duration-feedback) ease-out,
+    transform var(--godesk-duration-feedback) ease-out;
+}
+.theme-card:has(input:checked) .theme-card-check { opacity: 1; transform: none; }
+
+.accent-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 6px;
+}
+.accent-option {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 10px 6px 8px;
+  border: 1px solid transparent;
+  border-radius: var(--godesk-radius-overlay);
+}
+.accent-option:hover { background: var(--godesk-hover); }
+.accent-option:has(input:checked) {
+  border-color: color-mix(in srgb, var(--godesk-accent) 42%, transparent);
+  background: var(--godesk-selected);
+}
+.accent-swatch {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgb(0 0 0 / 14%), 0 1px 2px rgb(0 0 0 / 12%);
+}
+.accent-swatch svg { opacity: 0; }
+.accent-option:has(input:checked) .accent-swatch svg { opacity: 1; }
+.accent-name {
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  font-weight: 500;
+}
+.accent-value {
+  color: var(--godesk-muted);
+  font-family: var(--godesk-font-mono);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  text-transform: uppercase;
+}
+
+.wallpaper-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+}
+.wallpaper-option {
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--godesk-radius-overlay);
+}
+.wallpaper-option:hover { background: var(--godesk-hover); }
+.wallpaper-option:has(input:checked) {
+  border-color: var(--godesk-accent);
+  background: var(--godesk-selected);
+}
+.wallpaper-thumb {
+  position: relative;
+  display: block;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--godesk-divider);
+  border-radius: calc(var(--godesk-radius-control) * 0.75);
+  background-color: var(--godesk-canvas);
+  background-position: center;
+  background-size: cover;
+}
+.wallpaper-option:has(input:checked) .wallpaper-thumb { border-color: var(--godesk-accent); }
+.wallpaper-check {
+  position: absolute;
+  inset-block-start: 5px;
+  inset-inline-end: 5px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--godesk-accent);
+  color: var(--godesk-on-accent);
+  opacity: 0;
+}
+.wallpaper-option:has(input:checked) .wallpaper-check { opacity: 1; }
+.wallpaper-name {
+  overflow: hidden;
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (any-pointer: coarse) {
+  .settings-page .settings-category, .accent-option, .wallpaper-option {
+    min-width: var(--godesk-control-touch);
+    min-height: var(--godesk-control-touch);
+  }
+}
+
+@media (forced-colors: active) {
+  .settings-page[data-split="true"] .settings-navigation { border-inline-end-color: CanvasText; }
+  .settings-page .settings-category[aria-current]::before { background: Highlight; }
+  .theme-card:has(input:checked), .wallpaper-option:has(input:checked) { border-color: Highlight; }
+  .theme-card:has(input:focus-visible),
+  .accent-option:has(input:focus-visible),
+  .wallpaper-option:has(input:focus-visible) { outline-color: Highlight; }
+  .theme-card-wallpaper { display: none; }
+  .wallpaper-thumb { background-image: none !important; background-color: Canvas; }
+  .theme-card-check, .wallpaper-check { forced-color-adjust: none; }
+  .settings-accent-chip { forced-color-adjust: none; }
+}

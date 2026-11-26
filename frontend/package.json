@@ -1,6 +1,6 @@
 {
-  "name": "react-web-desktop",
-  "description": "A React, TypeScript, and Vite starter for web desktop applications.",
+  "name": "godesk-frontend",
+  "description": "goDesk Linux host web desktop frontend.",
   "private": true,
   "version": "0.0.0",
   "type": "module",

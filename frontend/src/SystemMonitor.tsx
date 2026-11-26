@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Activity, ArrowDown, ArrowUp, HardDrive, MemoryStick, Network } from 'lucide-react'
 import { monitorApi, MonitorError, type DiskStat, type Metrics, type NetworkSeries, type NetworkStat } from './monitor'
 import { PortsPanel } from './PortsPanel'
@@ -25,8 +25,9 @@ function formatRate(value: number) {
   return formatBytes(value, '/s')
 }
 
-function TrendChart({ name, samples }: { name: string; samples: number[] }) {
+function TrendChart({ name, samples, kind }: { name: string; samples: number[]; kind: 'cpu' | 'memory' }) {
   const values = samples.length > 0 ? samples : [0]
+  const [hover, setHover] = useState<number>()
   const points = values.map((value, index) => {
     const x = (index / Math.max(1, values.length - 1)) * 240
     const y = 100 - Math.max(0, Math.min(100, value))
@@ -34,15 +35,46 @@ function TrendChart({ name, samples }: { name: string; samples: number[] }) {
   }).join(' ')
   const minimum = Math.min(...values)
   const maximum = Math.max(...values)
+  const hovered = hover !== undefined && hover >= 0 && hover < values.length ? hover : undefined
+  const gradientId = `monitor-grad-${kind}`
+  const hoverPercent = hovered === undefined ? 0 : (hovered / Math.max(1, values.length - 1)) * 100
+  const hoverValue = hovered === undefined ? 0 : 100 - Math.max(0, Math.min(100, values[hovered]))
+  const hoverLabel = hovered === undefined ? ''
+    : `${hovered === values.length - 1 ? '现在' : `${values.length - 1 - hovered} 秒前`} · ${formatPercent(values[hovered])}`
+
+  function trackPointer(event: ReactPointerEvent<HTMLDivElement>) {
+    const bounds = event.currentTarget.getBoundingClientRect()
+    if (!bounds.width) return
+    const ratio = Math.min(1, Math.max(0, (event.clientX - bounds.left) / bounds.width))
+    setHover(Math.round(ratio * (values.length - 1)))
+  }
 
   return (
     <figure className="monitor-trend system-caption" aria-label={`${name}最近 60 秒，最低 ${formatPercent(minimum)}，最高 ${formatPercent(maximum)}`}>
       <div className="monitor-scale" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div>
-      <svg viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true">
-        <path className="monitor-gridlines" d="M0 0H240 M0 50H240 M0 100H240 M0 0V100 M120 0V100 M240 0V100" vectorEffect="non-scaling-stroke" />
-        <polygon className="monitor-fill" points={`0,100 ${points} 240,100`} />
-        <polyline className="monitor-line" points={points} vectorEffect="non-scaling-stroke" />
-      </svg>
+      <div className="monitor-plot" onPointerMove={trackPointer}
+        onPointerLeave={() => setHover(undefined)} onPointerCancel={() => setHover(undefined)}>
+        <svg viewBox="0 0 240 100" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" className="monitor-gradient-start" />
+              <stop offset="100%" className="monitor-gradient-end" />
+            </linearGradient>
+          </defs>
+          <path className="monitor-gridlines" d="M0 0H240 M0 50H240 M0 100H240 M0 0V100 M120 0V100 M240 0V100" vectorEffect="non-scaling-stroke" />
+          <polygon className="monitor-area" points={`0,100 ${points} 240,100`} fill={`url(#${gradientId})`} />
+          <polyline className="monitor-line" points={points} vectorEffect="non-scaling-stroke" />
+          {hovered !== undefined && <line className="monitor-cursor-line" x1={hoverPercent * 2.4} y1="0"
+            x2={hoverPercent * 2.4} y2="100" vectorEffect="non-scaling-stroke" />}
+        </svg>
+        {hovered !== undefined && (
+          <>
+            <span className="monitor-cursor-dot" style={{ left: `${hoverPercent}%`, top: `${hoverValue}%` }} aria-hidden="true" />
+            <span className="monitor-tooltip" aria-hidden="true"
+              style={{ left: `clamp(40px, ${hoverPercent}%, calc(100% - 40px))` }}>{hoverLabel}</span>
+          </>
+        )}
+      </div>
       <div className="monitor-time" aria-hidden="true"><span>60 秒前</span><span>现在</span></div>
     </figure>
   )
@@ -71,12 +103,14 @@ function TrendCard({ name, value, detail, samples, Icon, kind, footer }: {
 }) {
   return (
     <section className="monitor-resource" data-resource={kind} aria-label={name}>
-      <header className="monitor-resource-title"><Icon size={16} aria-hidden="true" /><h3>{name}</h3></header>
+      <header className="monitor-resource-title">
+        <Icon size={16} aria-hidden="true" /><h3>{name}</h3>
+        <span className="monitor-resource-detail system-caption">{detail}</span>
+      </header>
       <div className="monitor-reading">
         <strong>{value === null || value === undefined ? '—' : <>{numberFormat.format(value)}<span>%</span></>}</strong>
-        <span className="system-caption">{detail}</span>
       </div>
-      <TrendChart name={name} samples={samples} />
+      <TrendChart name={name} samples={samples} kind={kind} />
       {footer}
     </section>
   )
@@ -176,14 +210,14 @@ function Overview({ metrics, error }: { metrics?: Metrics; error: string }) {
       {metrics && (
         <>
           <div className="monitor-trends">
-            <TrendCard name="CPU" value={metrics.cpu?.percent} samples={metrics.series.cpu} Icon={Activity} kind="cpu"
+            <TrendCard name="CPU" value={metrics.cpu?.percent} samples={metrics.series?.cpu ?? []} Icon={Activity} kind="cpu"
               detail={metrics.cpu ? `${metrics.cpu.perCore.length} 核` : '—'}
               footer={metrics.cpu && metrics.cpu.perCore.length > 1 ? <CoreBars values={metrics.cpu.perCore} /> : undefined} />
-            <TrendCard name="内存" value={metrics.memory?.percent} samples={metrics.series.memory} Icon={MemoryStick} kind="memory"
+            <TrendCard name="内存" value={metrics.memory?.percent} samples={metrics.series?.memory ?? []} Icon={MemoryStick} kind="memory"
               detail={metrics.memory ? `${formatBytes(metrics.memory.used)} / ${formatBytes(metrics.memory.total)}` : '—'} />
           </div>
           <DiskSection disks={metrics.disks ?? []} />
-          <NetworkSection network={metrics.network ?? []} series={metrics.series.network ?? []} />
+          <NetworkSection network={metrics.network ?? []} series={metrics.series?.network ?? []} />
         </>
       )}
     </div>

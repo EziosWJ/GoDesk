@@ -3,9 +3,9 @@
 @import "./styles/theme.css";
 
 :root {
-  font-family: var(--react-web-desktop-font-ui);
-  color: var(--react-web-desktop-fg);
-  background: var(--react-web-desktop-canvas);
+  font-family: var(--godesk-font-ui);
+  color: var(--godesk-fg);
+  background: var(--godesk-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -18,9 +18,9 @@ html, body, #root {
 }
 
 button { cursor: pointer; }
-:where(code, pre, kbd, samp) { font-family: var(--react-web-desktop-font-mono); }
+:where(code, pre, kbd, samp) { font-family: var(--godesk-font-mono); }
 :where(button, input, select):focus-visible {
-  outline: 2px solid var(--react-web-desktop-focus);
+  outline: 2px solid var(--godesk-focus);
   outline-offset: -2px;
 }
 

@@ -1,0 +1,351 @@
+.start-menu {
+  --start-menu-duration: var(--godesk-duration-feedback);
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: calc(var(--godesk-taskbar-total) + 12px);
+  transform: translateX(-50%);
+  width: min(580px, calc(100% - 16px));
+  max-height: calc(100% - var(--godesk-taskbar-total) - 24px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--godesk-window-border);
+  border-radius: var(--godesk-radius-window);
+  background: var(--godesk-acrylic-strong);
+  backdrop-filter: var(--godesk-acrylic-blur);
+  box-shadow: inset 0 1px var(--godesk-acrylic-highlight), var(--godesk-shadow-window-active);
+  opacity: 0;
+  translate: 0 10px;
+  visibility: hidden;
+  pointer-events: none;
+  transition:
+    opacity var(--start-menu-duration) ease-out,
+    translate var(--start-menu-duration) ease-out,
+    visibility 0s var(--start-menu-duration);
+}
+
+.start-menu[data-open='true'] {
+  --start-menu-duration: var(--godesk-duration-overlay);
+  opacity: 1;
+  translate: 0 0;
+  visibility: visible;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.start-menu-main {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 22px 18px;
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.start-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  min-height: 40px;
+  border: 1px solid var(--godesk-border);
+  border-radius: 999px;
+  background: var(--godesk-surface);
+  color: var(--godesk-muted);
+  transition: border-color var(--godesk-duration-feedback) ease-out;
+}
+
+.start-search:focus-within {
+  border-color: var(--godesk-accent);
+  outline: 2px solid color-mix(in srgb, var(--godesk-focus) 36%, transparent);
+  outline-offset: 0;
+}
+
+.start-search input {
+  min-width: 0;
+  flex: 1;
+  padding: 7px 0;
+  background: transparent;
+  color: var(--godesk-fg);
+  outline: none;
+}
+
+.start-search input::placeholder { color: var(--godesk-muted); }
+
+.start-search-clear {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  color: var(--godesk-muted);
+}
+
+.start-search-clear:hover {
+  background: var(--godesk-hover);
+  color: var(--godesk-fg);
+}
+
+.start-section {
+  display: grid;
+  gap: 10px;
+}
+
+.start-section-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  padding-inline: 4px;
+}
+
+.start-section-header h2 {
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  font-weight: 600;
+  color: var(--godesk-fg);
+}
+
+.start-section-count,
+.start-section-hint {
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  color: var(--godesk-muted);
+}
+
+.start-apps {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.start-app-tile {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 7px;
+  padding: 10px 6px 8px;
+  border-radius: var(--godesk-radius-overlay);
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-caption);
+  font-weight: 400;
+  line-height: var(--text-godesk-caption--line-height);
+  text-align: center;
+  overflow-wrap: anywhere;
+  transition: background-color var(--godesk-duration-feedback) ease-out;
+}
+
+.start-app-tile:hover { background: var(--godesk-hover); }
+.start-app-tile:active { background: var(--godesk-pressed); }
+
+.start-app-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.start-pin-dot {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--godesk-accent);
+  opacity: 0.75;
+}
+
+.start-shortcuts-grid,
+.start-results {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.start-shortcut-row,
+.start-result-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border-radius: var(--godesk-radius-overlay);
+  color: var(--godesk-fg);
+  text-align: start;
+  transition: background-color var(--godesk-duration-feedback) ease-out;
+}
+
+.start-shortcut-row:hover,
+.start-result-item:hover { background: var(--godesk-hover); }
+
+.start-shortcut-row:active,
+.start-result-item:active { background: var(--godesk-pressed); }
+
+.start-result-text {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+
+.start-result-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  font-weight: 500;
+}
+
+.start-result-kind {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  color: var(--godesk-muted);
+}
+
+.start-result-trailing {
+  flex: none;
+  color: var(--godesk-muted);
+}
+
+.start-empty {
+  padding: 18px 8px;
+  text-align: center;
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-compact);
+}
+
+.start-empty-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-overlay);
+  background: color-mix(in srgb, var(--godesk-subtle) 65%, transparent);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+}
+
+.start-empty-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.start-empty-actions .app-control {
+  min-height: 28px;
+  padding-inline: 8px;
+  border: 1px solid var(--godesk-divider);
+  background: var(--godesk-surface);
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-caption);
+}
+
+.start-menu-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 22px;
+  border-top: 1px solid var(--godesk-divider);
+  background: color-mix(in srgb, var(--godesk-subtle) 72%, transparent);
+}
+
+.start-host-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.start-host-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+}
+
+.start-host-text {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.start-host-text strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  font-weight: 600;
+  color: var(--godesk-fg);
+}
+
+.start-host-text span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  color: var(--godesk-muted);
+}
+
+.start-footer-actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 6px;
+}
+
+.start-footer-icon {
+  width: var(--godesk-control-compact);
+  padding-inline: 0;
+  color: var(--godesk-muted);
+}
+
+.start-footer-icon:hover { color: var(--godesk-fg); }
+
+.start-logout-button {
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-compact);
+}
+
+@media (max-width: 600px) {
+  .start-menu-main { padding: 14px 14px 12px; gap: 14px; }
+  .start-apps { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .start-shortcuts-grid,
+  .start-results { grid-template-columns: minmax(0, 1fr); }
+  .start-menu-footer { padding: 10px 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .start-menu,
+  .start-search,
+  .start-app-tile,
+  .start-shortcut-row,
+  .start-result-item { transition: none; }
+}
+
+@media (forced-colors: active) {
+  .start-menu {
+    background: Canvas;
+    backdrop-filter: none;
+    border-color: CanvasText;
+    box-shadow: none;
+  }
+  .start-search:focus-within { outline-color: Highlight; }
+  .start-pin-dot { forced-color-adjust: none; background: Highlight; }
+}

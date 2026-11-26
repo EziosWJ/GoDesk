@@ -1,14 +1,14 @@
-.text-editor-app { display: flex; flex-direction: column; height: 100%; background: var(--react-web-desktop-surface); }
+.text-editor-app { display: flex; flex-direction: column; height: 100%; background: var(--godesk-surface); }
 
 .editor-toolbar {
   display: flex;
   flex: none;
   align-items: center;
   gap: 6px;
-  min-height: var(--react-web-desktop-toolbar);
+  min-height: var(--godesk-toolbar);
   padding: 4px 8px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
-  background: var(--react-web-desktop-shell);
+  border-bottom: 1px solid var(--godesk-divider);
+  background: var(--godesk-shell);
 }
 
 .editor-tabs {
@@ -16,8 +16,8 @@
   flex: none;
   align-items: stretch;
   overflow-x: auto;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
-  background: var(--react-web-desktop-subtle);
+  border-bottom: 1px solid var(--godesk-divider);
+  background: var(--godesk-subtle);
 }
 
 .editor-tab {
@@ -25,14 +25,14 @@
   flex: none;
   align-items: center;
   max-width: 230px;
-  border-right: 1px solid var(--react-web-desktop-divider);
-  color: var(--react-web-desktop-muted);
+  border-right: 1px solid var(--godesk-divider);
+  color: var(--godesk-muted);
 }
 
 .editor-tab[data-selected='true'] {
-  box-shadow: inset 0 2px var(--react-web-desktop-accent);
-  background: var(--react-web-desktop-surface);
-  color: var(--react-web-desktop-fg);
+  box-shadow: inset 0 2px var(--godesk-accent);
+  background: var(--godesk-surface);
+  color: var(--godesk-fg);
 }
 
 .editor-tab [role='tab'] {
@@ -40,7 +40,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  min-height: var(--react-web-desktop-control);
+  min-height: var(--godesk-control);
   padding: 3px 8px 3px 12px;
 }
 
@@ -51,10 +51,10 @@
   width: 26px;
   height: 26px;
   margin-inline-end: 4px;
-  border-radius: var(--react-web-desktop-radius-control);
+  border-radius: var(--godesk-radius-control);
 }
 
-.editor-tab-close:hover { background: var(--react-web-desktop-hover); }
+.editor-tab-close:hover { background: var(--godesk-hover); }
 .editor-dirty { width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
 
 .editor-workspace { position: relative; flex: 1; min-width: 0; min-height: 0; }
@@ -66,12 +66,12 @@
   gap: 10px;
   height: 100%;
   padding: 12px;
-  color: var(--react-web-desktop-muted);
+  color: var(--godesk-muted);
   text-align: center;
 }
 
 .editor-status > [role='status'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.editor-status > [data-warning='true'] { padding-block: 4px; color: var(--react-web-desktop-warning); white-space: normal; overflow-wrap: anywhere; }
+.editor-status > [data-warning='true'] { padding-block: 4px; color: var(--godesk-warning); white-space: normal; overflow-wrap: anywhere; }
 .editor-status > span + span { flex: none; }
 .editor-dialog-message { margin-top: 8px; }
 
@@ -80,6 +80,6 @@
 }
 
 @media (pointer: coarse) {
-  .editor-tab [role='tab'] { min-height: var(--react-web-desktop-control-touch); }
-  .editor-tab-close { width: var(--react-web-desktop-control-touch); height: var(--react-web-desktop-control-touch); }
+  .editor-tab [role='tab'] { min-height: var(--godesk-control-touch); }
+  .editor-tab-close { width: var(--godesk-control-touch); height: var(--godesk-control-touch); }
 }

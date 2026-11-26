@@ -1,143 +1,244 @@
 :root {
   color-scheme: light;
 
-  --react-web-desktop-canvas: #F2F1F3;
-  --react-web-desktop-surface: #FFFFFF;
-  --react-web-desktop-subtle: #F7F6F8;
-  --react-web-desktop-raised: #FFFFFF;
-  --react-web-desktop-shell: #F2F1F3;
-  --react-web-desktop-fg: #242326;
-  --react-web-desktop-muted: #5D5963;
-  --react-web-desktop-divider: #DDDADF;
-  --react-web-desktop-border: #807A85;
-  --react-web-desktop-hover: #E9E7EB;
-  --react-web-desktop-pressed: #DEDCE1;
-  --react-web-desktop-selected: #EEE9FA;
-  --react-web-desktop-accent: #6246B5;
-  --react-web-desktop-accent-hover: #543A9F;
-  --react-web-desktop-accent-pressed: #483285;
-  --react-web-desktop-on-accent: #FFFFFF;
-  --react-web-desktop-focus: #6246B5;
-  --react-web-desktop-success: #186344;
-  --react-web-desktop-warning: #784800;
-  --react-web-desktop-danger: #A3293D;
-  --react-web-desktop-on-danger: #FFFFFF;
-  --react-web-desktop-info: #285984;
-  --react-web-desktop-disabled: #77727C;
-  --react-web-desktop-scrim: rgb(24 24 27 / 42%);
-  --react-web-desktop-panel: #F6F4FB;
-  --react-web-desktop-window-border: #BEB7CC;
-  --react-web-desktop-window-title-active: #EFEAF9;
-  --react-web-desktop-shadow-overlay: 0 6px 18px rgb(24 24 27 / 16%);
-  --react-web-desktop-shadow-window: 0 2px 5px rgb(39 27 65 / 7%), 0 10px 28px rgb(39 27 65 / 13%);
-  --react-web-desktop-shadow-window-active: 0 3px 8px rgb(39 27 65 / 10%), 0 18px 42px rgb(39 27 65 / 21%);
-  --react-web-desktop-font-ui: "Figtree Variable", "Noto Sans SC Variable", "Microsoft YaHei UI", "PingFang SC", "Segoe UI", sans-serif;
-  --react-web-desktop-font-mono-fallback: "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
-  --react-web-desktop-font-mono: "JetBrains Mono Variable", var(--react-web-desktop-font-mono-fallback);
-  --react-web-desktop-taskbar: 56px;
-  --react-web-desktop-safe-bottom: env(safe-area-inset-bottom, 0px);
-  --react-web-desktop-taskbar-total: calc(var(--react-web-desktop-taskbar) + var(--react-web-desktop-safe-bottom));
-  --react-web-desktop-titlebar: 44px;
-  --react-web-desktop-toolbar: 44px;
-  --react-web-desktop-control-compact: 32px;
-  --react-web-desktop-control: 36px;
-  --react-web-desktop-control-touch: 44px;
-  --react-web-desktop-row-compact: 32px;
-  --react-web-desktop-row: 40px;
-  --react-web-desktop-radius-control: 0.375rem;
-  --react-web-desktop-radius-overlay: 0.5rem;
-  --react-web-desktop-radius-window: 0.75rem;
-  --react-web-desktop-duration-feedback: 120ms;
-  --react-web-desktop-duration-overlay: 180ms;
+  --godesk-canvas: #F3F3F3;
+  --godesk-surface: #FFFFFF;
+  --godesk-subtle: #F9F9F9;
+  --godesk-panel: #F6F6F6;
+  --godesk-raised: #FCFCFC;
+  --godesk-shell: #F4F4F4;
+  --godesk-fg: #242424;
+  --godesk-muted: #595959;
+  --godesk-divider: rgb(0 0 0 / 7%);
+  --godesk-border: #00000026;
+  --godesk-window-border: rgb(0 0 0 / 12%);
+  --godesk-hover: #EDEDED;
+  --godesk-pressed: #E5E5E5;
+  --godesk-success: #186344;
+  --godesk-warning: #784800;
+  --godesk-danger: #A3293D;
+  --godesk-on-danger: #FFFFFF;
+  --godesk-info: #285984;
+  --godesk-disabled: #747474;
+  --godesk-scrim: rgb(0 0 0 / 42%);
+
+  --godesk-acrylic-bg: rgb(249 249 249 / 78%);
+  --godesk-acrylic-strong: rgb(252 252 252 / 92%);
+  --godesk-acrylic-blur: blur(28px) saturate(160%);
+  --godesk-acrylic-highlight: rgb(255 255 255 / 65%);
+  --godesk-mica-bg: var(--godesk-panel);
+  --godesk-mica-inactive: var(--godesk-shell);
+  --godesk-shadow-overlay: 0 2px 6px rgb(0 0 0 / 8%), 0 12px 32px rgb(0 0 0 / 12%);
+  --godesk-shadow-window: 0 2px 6px rgb(0 0 0 / 7%), 0 12px 32px rgb(0 0 0 / 10%);
+  --godesk-shadow-window-active: 0 4px 10px rgb(0 0 0 / 10%), 0 20px 48px rgb(0 0 0 / 17%);
+
+  --godesk-font-ui: "Figtree Variable", "Noto Sans SC Variable", "Microsoft YaHei UI", "PingFang SC", "Segoe UI", sans-serif;
+  --godesk-font-mono-fallback: "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
+  --godesk-font-mono: "JetBrains Mono Variable", var(--godesk-font-mono-fallback);
+  --godesk-taskbar: 48px;
+  --godesk-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --godesk-taskbar-total: calc(var(--godesk-taskbar) + var(--godesk-safe-bottom));
+  --godesk-titlebar: 38px;
+  --godesk-toolbar: 44px;
+  --godesk-control-compact: 32px;
+  --godesk-control: 36px;
+  --godesk-control-touch: 44px;
+  --godesk-row-compact: 32px;
+  --godesk-row: 40px;
+  --godesk-radius-control: 0.375rem;
+  --godesk-radius-overlay: 0.5rem;
+  --godesk-radius-window: 0.75rem;
+  --godesk-duration-feedback: 120ms;
+  --godesk-duration-overlay: 180ms;
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --react-web-desktop-canvas: #18181B;
-  --react-web-desktop-surface: #202023;
-  --react-web-desktop-subtle: #262629;
-  --react-web-desktop-raised: #2B2A2E;
-  --react-web-desktop-shell: #18181B;
-  --react-web-desktop-fg: #F3F2F5;
-  --react-web-desktop-muted: #BDB8C3;
-  --react-web-desktop-divider: #3D3A41;
-  --react-web-desktop-border: #827D8A;
-  --react-web-desktop-hover: #343238;
-  --react-web-desktop-pressed: #403D45;
-  --react-web-desktop-selected: #383048;
-  --react-web-desktop-accent: #BBA7FA;
-  --react-web-desktop-accent-hover: #CDBEFF;
-  --react-web-desktop-accent-pressed: #AA92EF;
-  --react-web-desktop-on-accent: #211A30;
-  --react-web-desktop-focus: #BBA7FA;
-  --react-web-desktop-success: #88D6AF;
-  --react-web-desktop-warning: #F6CC86;
-  --react-web-desktop-danger: #FF9BAA;
-  --react-web-desktop-on-danger: #18181B;
-  --react-web-desktop-info: #9FC5EA;
-  --react-web-desktop-disabled: #8C8693;
-  --react-web-desktop-scrim: rgb(0 0 0 / 56%);
-  --react-web-desktop-panel: #282631;
-  --react-web-desktop-window-border: #595268;
-  --react-web-desktop-window-title-active: #332C40;
-  --react-web-desktop-shadow-overlay: 0 6px 18px rgb(0 0 0 / 45%);
-  --react-web-desktop-shadow-window: 0 2px 6px rgb(0 0 0 / 22%), 0 10px 28px rgb(0 0 0 / 34%);
-  --react-web-desktop-shadow-window-active: 0 3px 8px rgb(0 0 0 / 28%), 0 18px 42px rgb(0 0 0 / 50%);
+  --godesk-canvas: #1C1C1C;
+  --godesk-surface: #202020;
+  --godesk-subtle: #272727;
+  --godesk-panel: #2C2C2C;
+  --godesk-raised: #323232;
+  --godesk-shell: #202020;
+  --godesk-fg: #F5F5F5;
+  --godesk-muted: #C0C0C0;
+  --godesk-divider: rgb(255 255 255 / 8%);
+  --godesk-border: #FFFFFF26;
+  --godesk-window-border: rgb(255 255 255 / 12%);
+  --godesk-hover: #363636;
+  --godesk-pressed: #404040;
+  --godesk-success: #88D6AF;
+  --godesk-warning: #F6CC86;
+  --godesk-danger: #FF9BAA;
+  --godesk-on-danger: #1C1C1C;
+  --godesk-info: #9FC5EA;
+  --godesk-disabled: #959595;
+  --godesk-scrim: rgb(0 0 0 / 56%);
+
+  --godesk-acrylic-bg: rgb(32 32 32 / 78%);
+  --godesk-acrylic-strong: rgb(44 44 44 / 92%);
+  --godesk-acrylic-highlight: rgb(255 255 255 / 8%);
+  --godesk-shadow-overlay: 0 2px 8px rgb(0 0 0 / 24%), 0 14px 36px rgb(0 0 0 / 38%);
+  --godesk-shadow-window: 0 3px 8px rgb(0 0 0 / 22%), 0 14px 36px rgb(0 0 0 / 34%);
+  --godesk-shadow-window-active: 0 5px 12px rgb(0 0 0 / 27%), 0 22px 52px rgb(0 0 0 / 48%);
+}
+
+:root,
+:root[data-accent="blue"] {
+  --godesk-accent: #0067C0;
+  --godesk-accent-hover: #005FB8;
+  --godesk-accent-pressed: #004E98;
+  --godesk-on-accent: #FFFFFF;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #F0F6FC;
+}
+
+:root[data-theme="dark"],
+:root[data-theme="dark"][data-accent="blue"] {
+  --godesk-accent: #60CDFF;
+  --godesk-accent-hover: #7AD6FF;
+  --godesk-accent-pressed: #4CC2FF;
+  --godesk-on-accent: #002233;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #263A45;
+}
+
+:root[data-accent="iris"] {
+  --godesk-accent: #6246B5;
+  --godesk-accent-hover: #543A9F;
+  --godesk-accent-pressed: #483285;
+  --godesk-on-accent: #FFFFFF;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #F3EFFB;
+}
+
+:root[data-theme="dark"][data-accent="iris"] {
+  --godesk-accent: #BBA7FA;
+  --godesk-accent-hover: #CDBEFF;
+  --godesk-accent-pressed: #AA92EF;
+  --godesk-on-accent: #211A30;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #373146;
+}
+
+:root[data-accent="teal"] {
+  --godesk-accent: #007C7B;
+  --godesk-accent-hover: #006E6D;
+  --godesk-accent-pressed: #005D5C;
+  --godesk-on-accent: #FFFFFF;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #ECF7F6;
+}
+
+:root[data-theme="dark"][data-accent="teal"] {
+  --godesk-accent: #4FD1C5;
+  --godesk-accent-hover: #72DED4;
+  --godesk-accent-pressed: #3DBFB3;
+  --godesk-on-accent: #052824;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #233A38;
+}
+
+:root[data-accent="amber"] {
+  --godesk-accent: #B45309;
+  --godesk-accent-hover: #A24708;
+  --godesk-accent-pressed: #8D3D07;
+  --godesk-on-accent: #FFFFFF;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #FBF2E8;
+}
+
+:root[data-theme="dark"][data-accent="amber"] {
+  --godesk-accent: #FBBF24;
+  --godesk-accent-hover: #FCD34D;
+  --godesk-accent-pressed: #F5AE15;
+  --godesk-on-accent: #302000;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #3C3423;
+}
+
+:root[data-accent="rose"] {
+  --godesk-accent: #BE185D;
+  --godesk-accent-hover: #A91452;
+  --godesk-accent-pressed: #941147;
+  --godesk-on-accent: #FFFFFF;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #FCEEF4;
+}
+
+:root[data-theme="dark"][data-accent="rose"] {
+  --godesk-accent: #F472B6;
+  --godesk-accent-hover: #F897CB;
+  --godesk-accent-pressed: #ED60AB;
+  --godesk-on-accent: #320E25;
+  --godesk-focus: var(--godesk-accent);
+  --godesk-selected: #412D39;
+}
+
+@media (forced-colors: active) {
+  :root, :root[data-theme="dark"] {
+    --godesk-acrylic-bg: Canvas;
+    --godesk-acrylic-strong: Canvas;
+    --godesk-acrylic-blur: none;
+    --godesk-acrylic-highlight: transparent;
+    --godesk-mica-bg: Canvas;
+    --godesk-mica-inactive: Canvas;
+  }
 }
 
 @theme inline {
-  --color-react-web-desktop-canvas: var(--react-web-desktop-canvas);
-  --color-react-web-desktop-surface: var(--react-web-desktop-surface);
-  --color-react-web-desktop-subtle: var(--react-web-desktop-subtle);
-  --color-react-web-desktop-raised: var(--react-web-desktop-raised);
-  --color-react-web-desktop-shell: var(--react-web-desktop-shell);
-  --color-react-web-desktop-fg: var(--react-web-desktop-fg);
-  --color-react-web-desktop-muted: var(--react-web-desktop-muted);
-  --color-react-web-desktop-divider: var(--react-web-desktop-divider);
-  --color-react-web-desktop-border: var(--react-web-desktop-border);
-  --color-react-web-desktop-hover: var(--react-web-desktop-hover);
-  --color-react-web-desktop-pressed: var(--react-web-desktop-pressed);
-  --color-react-web-desktop-selected: var(--react-web-desktop-selected);
-  --color-react-web-desktop-accent: var(--react-web-desktop-accent);
-  --color-react-web-desktop-accent-hover: var(--react-web-desktop-accent-hover);
-  --color-react-web-desktop-accent-pressed: var(--react-web-desktop-accent-pressed);
-  --color-react-web-desktop-on-accent: var(--react-web-desktop-on-accent);
-  --color-react-web-desktop-focus: var(--react-web-desktop-focus);
-  --color-react-web-desktop-success: var(--react-web-desktop-success);
-  --color-react-web-desktop-warning: var(--react-web-desktop-warning);
-  --color-react-web-desktop-danger: var(--react-web-desktop-danger);
-  --color-react-web-desktop-on-danger: var(--react-web-desktop-on-danger);
-  --color-react-web-desktop-info: var(--react-web-desktop-info);
-  --color-react-web-desktop-disabled: var(--react-web-desktop-disabled);
-  --color-react-web-desktop-scrim: var(--react-web-desktop-scrim);
-  --shadow-react-web-desktop-overlay: var(--react-web-desktop-shadow-overlay);
-  --shadow-react-web-desktop-window: var(--react-web-desktop-shadow-window);
-  --font-react-web-desktop-sans: var(--react-web-desktop-font-ui);
-  --font-react-web-desktop-mono: var(--react-web-desktop-font-mono);
-  --spacing-react-web-desktop-taskbar: var(--react-web-desktop-taskbar);
-  --spacing-react-web-desktop-titlebar: var(--react-web-desktop-titlebar);
-  --spacing-react-web-desktop-toolbar: var(--react-web-desktop-toolbar);
-  --spacing-react-web-desktop-control-compact: var(--react-web-desktop-control-compact);
-  --spacing-react-web-desktop-control: var(--react-web-desktop-control);
-  --spacing-react-web-desktop-control-touch: var(--react-web-desktop-control-touch);
-  --spacing-react-web-desktop-row-compact: var(--react-web-desktop-row-compact);
-  --spacing-react-web-desktop-row: var(--react-web-desktop-row);
-  --radius-react-web-desktop-control: var(--react-web-desktop-radius-control);
-  --radius-react-web-desktop-overlay: var(--react-web-desktop-radius-overlay);
-  --radius-react-web-desktop-window: var(--react-web-desktop-radius-window);
-  --text-react-web-desktop-caption: 0.75rem;
-  --text-react-web-desktop-caption--line-height: 1rem;
-  --text-react-web-desktop-compact: 0.8125rem;
-  --text-react-web-desktop-compact--line-height: 1.125rem;
-  --text-react-web-desktop-body: 0.875rem;
-  --text-react-web-desktop-body--line-height: 1.25rem;
-  --text-react-web-desktop-subtitle: 1rem;
-  --text-react-web-desktop-subtitle--line-height: 1.5rem;
-  --text-react-web-desktop-title: 1.25rem;
-  --text-react-web-desktop-title--line-height: 1.75rem;
-  --text-react-web-desktop-metric: 1.75rem;
-  --text-react-web-desktop-metric--line-height: 2.25rem;
-  --container-react-web-desktop-split: 600px;
-  --container-react-web-desktop-wide: 960px;
+  --color-godesk-canvas: var(--godesk-canvas);
+  --color-godesk-surface: var(--godesk-surface);
+  --color-godesk-subtle: var(--godesk-subtle);
+  --color-godesk-raised: var(--godesk-raised);
+  --color-godesk-shell: var(--godesk-shell);
+  --color-godesk-fg: var(--godesk-fg);
+  --color-godesk-muted: var(--godesk-muted);
+  --color-godesk-divider: var(--godesk-divider);
+  --color-godesk-border: var(--godesk-border);
+  --color-godesk-hover: var(--godesk-hover);
+  --color-godesk-pressed: var(--godesk-pressed);
+  --color-godesk-selected: var(--godesk-selected);
+  --color-godesk-accent: var(--godesk-accent);
+  --color-godesk-accent-hover: var(--godesk-accent-hover);
+  --color-godesk-accent-pressed: var(--godesk-accent-pressed);
+  --color-godesk-on-accent: var(--godesk-on-accent);
+  --color-godesk-focus: var(--godesk-focus);
+  --color-godesk-success: var(--godesk-success);
+  --color-godesk-warning: var(--godesk-warning);
+  --color-godesk-danger: var(--godesk-danger);
+  --color-godesk-on-danger: var(--godesk-on-danger);
+  --color-godesk-info: var(--godesk-info);
+  --color-godesk-disabled: var(--godesk-disabled);
+  --color-godesk-scrim: var(--godesk-scrim);
+  --shadow-godesk-overlay: var(--godesk-shadow-overlay);
+  --shadow-godesk-window: var(--godesk-shadow-window);
+  --font-godesk-sans: var(--godesk-font-ui);
+  --font-godesk-mono: var(--godesk-font-mono);
+  --spacing-godesk-taskbar: var(--godesk-taskbar);
+  --spacing-godesk-titlebar: var(--godesk-titlebar);
+  --spacing-godesk-toolbar: var(--godesk-toolbar);
+  --spacing-godesk-control-compact: var(--godesk-control-compact);
+  --spacing-godesk-control: var(--godesk-control);
+  --spacing-godesk-control-touch: var(--godesk-control-touch);
+  --spacing-godesk-row-compact: var(--godesk-row-compact);
+  --spacing-godesk-row: var(--godesk-row);
+  --radius-godesk-control: var(--godesk-radius-control);
+  --radius-godesk-overlay: var(--godesk-radius-overlay);
+  --radius-godesk-window: var(--godesk-radius-window);
+  --text-godesk-caption: 0.75rem;
+  --text-godesk-caption--line-height: 1rem;
+  --text-godesk-compact: 0.8125rem;
+  --text-godesk-compact--line-height: 1.125rem;
+  --text-godesk-body: 0.875rem;
+  --text-godesk-body--line-height: 1.25rem;
+  --text-godesk-subtitle: 1rem;
+  --text-godesk-subtitle--line-height: 1.5rem;
+  --text-godesk-title: 1.25rem;
+  --text-godesk-title--line-height: 1.75rem;
+  --text-godesk-metric: 1.75rem;
+  --text-godesk-metric--line-height: 2.25rem;
+  --container-godesk-split: 600px;
+  --container-godesk-wide: 960px;
 }

@@ -1,0 +1,100 @@
+.app-icon { flex: none; color: var(--godesk-muted); }
+
+.app-body { padding: 18px; }
+
+.muted { color: var(--godesk-muted); }
+
+.data-table { width: 100%; text-align: left; border-collapse: collapse; }
+.data-table th, .data-table td { padding: 9px 13px; border-bottom: 1px solid var(--godesk-divider); }
+.data-table th {
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  color: var(--godesk-muted);
+  font-weight: 500;
+}
+.data-table td:not(:first-child) {
+  white-space: nowrap;
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+.data-table tr:last-child td { border-bottom: 0; }
+
+.app-statusbar {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 8px;
+  min-height: var(--godesk-control-compact);
+  padding-inline: 12px;
+  border-top: 1px solid var(--godesk-divider);
+  background: var(--godesk-subtle);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+
+.editor-status { justify-content: space-between; }
+
+.settings-password-form input, .terminal-name-field input {
+  width: 100%;
+  min-height: var(--godesk-control);
+  padding-inline: 8px;
+  border: 1px solid var(--godesk-border);
+  border-radius: 6px;
+  background: var(--godesk-panel);
+}
+
+.task-button:active,
+.start-apps button:active,
+.window-controls button:not([data-wm-close]):active { background: var(--godesk-pressed); }
+
+@media (forced-colors: active) {
+  .start-menu, .app-window { border-color: CanvasText; }
+  .titlebar { border-bottom-color: CanvasText; }
+  .wallpaper { display: none; }
+  .shortcut-tile { border: 1px solid ButtonText; border-radius: var(--godesk-radius-overlay); }
+  .shortcut-tile img { display: none; }
+  .shortcut-tile[data-glyph] { background: ButtonFace; color: ButtonText; }
+  .shortcut-tile-fallback { display: block; color: ButtonText; }
+  .start-search:focus-within { outline-color: Highlight; }
+  .shortcut[aria-pressed='true'],
+  .task-button[aria-expanded='true'],
+  .task-button.running[aria-pressed='true'],
+  .app-window[data-wm-focused] { border-color: Highlight; }
+}
+
+.app-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--godesk-control-compact);
+  padding-inline: 8px;
+  border-radius: var(--godesk-radius-control);
+}
+
+.app-control:not(:disabled, [aria-disabled="true"]):hover { background: var(--godesk-hover); }
+.app-control:not(:disabled, [aria-disabled="true"]):active { background: var(--godesk-pressed); }
+.app-control:is(:disabled, [aria-disabled="true"]) { color: var(--godesk-muted); cursor: default; }
+.app-control.primary-control { border: 1px solid transparent; }
+.app-control.primary-control:not(:disabled, [aria-disabled="true"]) {
+  border-color: var(--godesk-accent);
+  background: var(--godesk-accent);
+  color: var(--godesk-on-accent);
+}
+.app-control.primary-control:not(:disabled, [aria-disabled="true"]):hover {
+  background: var(--godesk-accent-hover);
+  border-color: var(--godesk-accent-hover);
+}
+.app-control.primary-control:not(:disabled, [aria-disabled="true"]):active {
+  background: var(--godesk-accent-pressed);
+  border-color: var(--godesk-accent-pressed);
+}
+.app-control.primary-control:focus-visible { outline-offset: 2px; }
+
+.app-control svg { flex: none; }
+
+@media (any-pointer: coarse) {
+  .app-control { min-width: var(--godesk-control-touch); min-height: var(--godesk-control-touch); }
+}

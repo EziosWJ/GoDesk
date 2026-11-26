@@ -2,11 +2,33 @@ import { LockKeyhole } from 'lucide-react'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import App from './App'
 import { AuthError, authSession, type Session as AuthSession } from './auth'
+import { subscribeAppearance } from './theme'
+import { getWallpaperPreference, subscribeWallpaper, wallpapers } from './wallpapers'
 import './styles/login.css'
 
 function LoginScreen({ children, label }: { children: ReactNode; label: string }) {
+  const [wallpaper, setWallpaper] = useState(getWallpaperPreference)
+  const [theme, setTheme] = useState<'light' | 'dark'>(
+    () => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+  )
+
+  useEffect(() => {
+    const sync = () => {
+      setWallpaper(getWallpaperPreference())
+      setTheme(document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light')
+    }
+    const unsubscribeAppearance = subscribeAppearance(sync)
+    const unsubscribeWallpaper = subscribeWallpaper(sync)
+    return () => {
+      unsubscribeAppearance()
+      unsubscribeWallpaper()
+    }
+  }, [])
+
   return (
     <main className="login-screen" aria-label={label}>
+      <div className="login-wallpaper" aria-hidden="true"
+        style={{ backgroundImage: `url(${wallpapers[wallpaper][theme]})` }} />
       <div className="login-card">
         <header className="login-brand">
           <img src={`${import.meta.env.BASE_URL}favicon.svg`} alt="" width={64} height={64} />

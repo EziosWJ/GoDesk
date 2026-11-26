@@ -1,0 +1,136 @@
+.app-window {
+  --window-inner-radius: calc(var(--godesk-radius-window) - 1px);
+  --window-titlebar-height: var(--godesk-titlebar);
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--godesk-window-border);
+  border-radius: var(--godesk-radius-window);
+  background: var(--godesk-surface);
+  box-shadow: var(--godesk-shadow-window);
+  outline: none;
+  container-type: inline-size;
+  transition: box-shadow var(--godesk-duration-feedback) ease-out;
+}
+
+.app-window[data-wm-focused] {
+  box-shadow: var(--godesk-shadow-window-active);
+}
+
+.app-window[data-wm-stage='maximized'] {
+  --window-inner-radius: 0px;
+  border-radius: 0;
+  box-shadow: none;
+  transition: none;
+}
+
+.titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: none;
+  gap: 8px;
+  height: var(--window-titlebar-height);
+  padding-inline-start: 12px;
+  border-radius: var(--window-inner-radius) var(--window-inner-radius) 0 0;
+  background: var(--godesk-mica-inactive);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-body);
+  font-weight: 600;
+  user-select: none;
+  transition: background-color var(--godesk-duration-feedback) ease-out,
+    color var(--godesk-duration-feedback) ease-out;
+}
+
+.app-window[data-wm-focused] .titlebar {
+  background: var(--godesk-mica-bg);
+  box-shadow: inset 0 1px var(--godesk-acrylic-highlight);
+  color: var(--godesk-fg);
+}
+
+.window-title-icon {
+  display: grid;
+  flex: none;
+  place-items: center;
+}
+
+.window-title-icon .shortcut-tile-fallback { display: none; }
+
+.window-controls {
+  /* Keep the controls clickable within WMKit's overlapping top and right resize handles. */
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex: none;
+  align-self: stretch;
+}
+
+.window-controls button {
+  display: grid;
+  width: 44px;
+  place-items: center;
+  transition: background-color var(--godesk-duration-feedback) ease-out;
+}
+
+.window-controls button:hover { background: var(--godesk-hover); }
+.window-controls button:active { background: var(--godesk-pressed); }
+.window-controls [data-wm-close] { border-start-end-radius: var(--window-inner-radius); }
+.window-controls [data-wm-close]:hover { background: #C42B1C; color: #fff; }
+.window-controls [data-wm-close]:active { background: #B22719; color: #fff; }
+
+.window-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  border-top: 1px solid var(--godesk-divider);
+  border-radius: 0 0 var(--window-inner-radius) var(--window-inner-radius);
+}
+
+.work-area [data-wm-snap-preview] {
+  border: 1px solid color-mix(in srgb, var(--godesk-accent) 76%, transparent);
+  border-radius: var(--godesk-radius-window);
+  background: color-mix(in srgb, var(--godesk-accent) 17%, transparent);
+  backdrop-filter: blur(10px) saturate(135%);
+  box-shadow: inset 0 1px var(--godesk-acrylic-highlight), var(--godesk-shadow-overlay);
+  opacity: 1;
+  transition: opacity var(--godesk-duration-feedback) ease-out,
+    width var(--godesk-duration-feedback) ease-out,
+    height var(--godesk-duration-feedback) ease-out,
+    transform var(--godesk-duration-feedback) ease-out;
+}
+
+@starting-style {
+  .work-area [data-wm-snap-preview] { opacity: 0; }
+}
+
+@media (pointer: coarse) {
+  .app-window { --window-titlebar-height: max(var(--godesk-titlebar), 44px); }
+}
+
+@media (forced-colors: active) {
+  .window-content { border-top-color: CanvasText; }
+  .window-title-icon img { display: none; }
+  .window-title-icon .shortcut-tile-fallback { display: block; color: CanvasText; }
+
+  .window-controls button:is(:hover, :active),
+  .window-controls [data-wm-close]:is(:hover, :active) {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+
+  .window-controls button:is(:hover, :active):focus-visible { outline-color: HighlightText; }
+
+  .work-area [data-wm-snap-preview] {
+    border: 2px solid Highlight;
+    background: transparent;
+    backdrop-filter: none;
+    box-shadow: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-window,
+  .titlebar,
+  .window-controls button,
+  .work-area [data-wm-snap-preview] { transition: none; }
+}

@@ -3,6 +3,7 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { connectTerminal, type TerminalSession } from './terminal'
+import { subscribeAppearance } from './theme'
 
 const connectionLabels = {
   connecting: '正在连接…',
@@ -38,12 +39,12 @@ export default function TerminalPage({ session, clientId, controlRequest, active
   useEffect(() => {
     const element = host.current!
     const styles = getComputedStyle(element)
-    const fontFamily = styles.getPropertyValue('--react-web-desktop-font-mono').trim()
+    const fontFamily = styles.getPropertyValue('--godesk-font-mono').trim()
     const fontSize = 13
     const terminal = new Terminal({
       cursorBlink: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       cursorStyle: 'bar',
-      fontFamily: styles.getPropertyValue('--react-web-desktop-font-mono-fallback').trim(),
+      fontFamily: styles.getPropertyValue('--godesk-font-mono-fallback').trim(),
       fontSize,
       lineHeight: 1.25,
       screenReaderMode: true,
@@ -55,7 +56,7 @@ export default function TerminalPage({ session, clientId, controlRequest, active
     terminal.loadAddon(fit)
     const updateTheme = () => {
       const colors = getComputedStyle(element)
-      const color = (name: string) => colors.getPropertyValue('--react-web-desktop-' + name).trim()
+      const color = (name: string) => colors.getPropertyValue('--godesk-' + name).trim()
       terminal.options.theme = {
         background: color('surface'), foreground: color('fg'), cursor: color('fg'),
         cursorAccent: color('surface'), selectionBackground: color('selected'),
@@ -67,8 +68,7 @@ export default function TerminalPage({ session, clientId, controlRequest, active
     terminal.textarea?.setAttribute('aria-label', '终端输入')
     terminal.attachCustomKeyEventHandler(event =>
       !((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && terminal.hasSelection()))
-    const themeObserver = new MutationObserver(updateTheme)
-    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    const unsubscribeAppearance = subscribeAppearance(updateTheme)
     measureRef.current = () => element.clientWidth && element.clientHeight ? fit.proposeDimensions() : undefined
     const sendSize = () => sendSizeRef.current?.()
     void document.fonts.load(`${fontSize}px ${fontFamily}`).then(() => {
@@ -83,7 +83,7 @@ export default function TerminalPage({ session, clientId, controlRequest, active
     resizeObserver.observe(element)
     return () => {
       resizeObserver.disconnect()
-      themeObserver.disconnect()
+      unsubscribeAppearance()
       sizeChange.dispose()
       terminal.dispose()
       terminalRef.current = null

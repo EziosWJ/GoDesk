@@ -1,0 +1,30 @@
+.service-dialog {
+  margin: auto;
+  width: min(440px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow: hidden;
+  color: var(--godesk-fg);
+  background: var(--godesk-acrylic-strong);
+  backdrop-filter: var(--godesk-acrylic-blur);
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-overlay);
+  box-shadow: inset 0 1px var(--godesk-acrylic-highlight), var(--godesk-shadow-overlay);
+}
+.service-dialog[open] { display: flex; flex-direction: column; }
+.service-dialog::backdrop { background: var(--godesk-scrim); }
+.service-dialog-body { padding: 16px; overflow: auto; }
+.service-dialog h2 { font-size: 1rem; font-weight: 650; }
+.service-target { font-family: var(--godesk-font-mono); overflow-wrap: anywhere; margin-block: 10px 4px; }
+.service-dialog-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; padding: 10px 16px; border-top: 1px solid var(--godesk-divider); }
+.service-dialog-actions .app-control { min-height: var(--godesk-control); border: 1px solid var(--godesk-border); }
+.service-dialog-actions .danger-control { background: var(--godesk-danger); color: var(--godesk-on-danger); border-color: var(--godesk-danger); }
+.service-dialog-actions .danger-control:not(:disabled):is(:hover, :active) { background: var(--godesk-danger); border-color: var(--godesk-on-danger); }
+.service-dialog-actions .danger-control:focus-visible { outline-offset: 2px; }
+
+@media (any-pointer: coarse) {
+  .service-dialog-actions .app-control { min-width: var(--godesk-control-touch); min-height: var(--godesk-control-touch); }
+}
+
+@media (forced-colors: active) {
+  .service-dialog { border-color: CanvasText; }
+}

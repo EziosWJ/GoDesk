@@ -3,15 +3,15 @@
   grid-template-rows: minmax(0, 1fr) auto;
   height: 100%;
   min-height: 0;
-  background: var(--react-web-desktop-surface);
-  font: var(--text-react-web-desktop-body)/var(--text-react-web-desktop-body--line-height) var(--react-web-desktop-font-ui);
+  background: var(--godesk-surface);
+  font: var(--text-godesk-body)/var(--text-godesk-body--line-height) var(--godesk-font-ui);
 }
 
 .services-body { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .services-warning {
   margin: 0;
   padding: 6px 12px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
+  border-bottom: 1px solid var(--godesk-divider);
 }
 
 .services-panes {
@@ -29,8 +29,8 @@
   flex: none;
   gap: 6px;
   padding: 8px 10px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
-  background: var(--react-web-desktop-surface);
+  border-bottom: 1px solid var(--godesk-divider);
+  background: var(--godesk-surface);
 }
 .services-toolbar-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .services-search {
@@ -39,12 +39,12 @@
   min-width: 0;
   align-items: center;
   gap: 6px;
-  min-height: var(--react-web-desktop-control-compact);
+  min-height: var(--godesk-control-compact);
   padding-inline: 8px;
-  border: 1px solid var(--react-web-desktop-border);
-  border-radius: var(--react-web-desktop-radius-control);
-  background: var(--react-web-desktop-panel);
-  color: var(--react-web-desktop-muted);
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-panel);
+  color: var(--godesk-muted);
 }
 .services-search svg { flex: none; }
 .services-search input {
@@ -53,21 +53,21 @@
   min-height: 26px;
   border: 0;
   background: transparent;
-  color: var(--react-web-desktop-fg);
+  color: var(--godesk-fg);
   font: inherit;
   outline: none;
 }
-.services-search input::placeholder { color: var(--react-web-desktop-muted); opacity: 1; }
-.services-search:focus-within { outline: 2px solid var(--react-web-desktop-focus); outline-offset: -1px; }
+.services-search input::placeholder { color: var(--godesk-muted); opacity: 1; }
+.services-search:focus-within { outline: 2px solid var(--godesk-focus); outline-offset: -1px; }
 .services-icon-button {
   flex: none;
-  width: var(--react-web-desktop-control-compact);
+  width: var(--godesk-control-compact);
   padding: 0;
-  border: 1px solid var(--react-web-desktop-divider);
+  border: 1px solid var(--godesk-divider);
 }
 .services-icon-button[aria-expanded='true'] {
-  background: var(--react-web-desktop-selected);
-  color: var(--react-web-desktop-accent);
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
 }
 
 .service-sort { position: relative; flex: none; }
@@ -78,27 +78,27 @@
   right: 0;
   min-width: 168px;
   padding: 6px;
-  border: 1px solid var(--react-web-desktop-border);
-  border-radius: var(--react-web-desktop-radius-overlay);
-  background: var(--react-web-desktop-raised);
-  box-shadow: var(--react-web-desktop-shadow-overlay);
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-raised);
+  box-shadow: var(--godesk-shadow-overlay);
 }
 .service-sort-menu [role='menuitemcheckbox'] {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 6px;
-  min-height: var(--react-web-desktop-control-compact);
+  min-height: var(--godesk-control-compact);
   padding-inline: 6px;
-  border-radius: var(--react-web-desktop-radius-control);
+  border-radius: var(--godesk-radius-control);
   text-align: start;
 }
-.service-sort-menu [role='menuitemcheckbox']:hover { background: var(--react-web-desktop-hover); }
+.service-sort-menu [role='menuitemcheckbox']:hover { background: var(--godesk-hover); }
 .service-menu-check {
   display: inline-flex;
   width: 14px;
   justify-content: center;
-  color: var(--react-web-desktop-accent);
+  color: var(--godesk-accent);
 }
 .service-sort-hint { margin: 4px 6px 2px; }
 
@@ -113,19 +113,19 @@
   padding-inline: 10px;
   border: 1px solid transparent;
   border-radius: 999px;
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
   line-height: 1;
   white-space: nowrap;
 }
-.service-chip:hover { background: var(--react-web-desktop-hover); }
+.service-chip:hover { background: var(--godesk-hover); }
 .service-chip[aria-pressed='true'] {
-  border-color: color-mix(in srgb, var(--react-web-desktop-accent) 35%, transparent);
-  background: var(--react-web-desktop-selected);
-  color: var(--react-web-desktop-accent);
+  border-color: color-mix(in srgb, var(--godesk-accent) 35%, transparent);
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
   font-weight: 600;
 }
-.service-chip-count { color: var(--react-web-desktop-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.service-chip-count { color: var(--godesk-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 .service-chip[aria-pressed='true'] .service-chip-count { color: inherit; }
 
 .services-list {
@@ -142,27 +142,27 @@
   width: 100%;
   min-height: 44px;
   padding: 5px 8px;
-  border-radius: var(--react-web-desktop-radius-control);
+  border-radius: var(--godesk-radius-control);
   text-align: start;
 }
-.service-row:hover { background: var(--react-web-desktop-hover); }
-.service-row[data-selected='true'] { background: var(--react-web-desktop-selected); }
+.service-row:hover { background: var(--godesk-hover); }
+.service-row[data-selected='true'] { background: var(--godesk-selected); }
 .service-row-top { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .service-row-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--react-web-desktop-fg);
-  font-family: var(--react-web-desktop-font-mono);
-  font-size: var(--text-react-web-desktop-compact);
-  line-height: var(--text-react-web-desktop-compact--line-height);
+  color: var(--godesk-fg);
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
 }
 .service-autostart {
   flex: none;
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--react-web-desktop-accent);
+  background: var(--godesk-accent);
 }
 .service-badge {
   display: inline-flex;
@@ -170,35 +170,35 @@
   align-items: center;
   gap: 4px;
   margin-inline-start: auto;
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
   white-space: nowrap;
 }
 .service-badge svg { flex: none; }
-.service-badge[data-status='running'] { color: var(--react-web-desktop-success); }
-.service-badge[data-status='completed'] { color: var(--react-web-desktop-accent); }
-.service-badge[data-status='failed'] { color: var(--react-web-desktop-danger); }
+.service-badge[data-status='running'] { color: var(--godesk-success); }
+.service-badge[data-status='completed'] { color: var(--godesk-accent); }
+.service-badge[data-status='failed'] { color: var(--godesk-danger); }
 .service-row-description {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
 }
-.service-row-placeholder { color: var(--react-web-desktop-disabled); }
+.service-row-placeholder { color: var(--godesk-disabled); }
 .service-row mark, .service-log-line mark {
   border-radius: 2px;
-  background: color-mix(in srgb, var(--react-web-desktop-accent) 24%, transparent);
+  background: color-mix(in srgb, var(--godesk-accent) 24%, transparent);
   color: inherit;
 }
 
-.services-empty { padding: 20px 12px; color: var(--react-web-desktop-muted); text-align: center; }
+.services-empty { padding: 20px 12px; color: var(--godesk-muted); text-align: center; }
 .services-empty p { margin: 0; }
-.services-empty-action { margin-top: 10px; border: 1px solid var(--react-web-desktop-divider); }
+.services-empty-action { margin-top: 10px; border: 1px solid var(--godesk-divider); }
 .service-list-error { margin: 6px 4px; padding: 8px 10px; }
-.service-alert { margin-block: 8px; color: var(--react-web-desktop-danger); }
+.service-alert { margin-block: 8px; color: var(--godesk-danger); }
 
 .services-splitter {
   position: relative;
@@ -212,12 +212,12 @@
   inset-block: 0;
   inset-inline-start: 50%;
   width: 1px;
-  background: var(--react-web-desktop-divider);
+  background: var(--godesk-divider);
   transform: translateX(-50%);
 }
 .services-splitter:is(:hover, :focus-visible)::before,
-.services-page[data-resizing='true'] .services-splitter::before { background: var(--react-web-desktop-accent); }
-.services-splitter:focus-visible { outline: 2px solid var(--react-web-desktop-focus); outline-offset: -2px; }
+.services-page[data-resizing='true'] .services-splitter::before { background: var(--godesk-accent); }
+.services-splitter:focus-visible { outline: 2px solid var(--godesk-focus); outline-offset: -2px; }
 .services-page[data-resizing='true'] { cursor: col-resize; user-select: none; }
 
 .service-detail {
@@ -226,48 +226,48 @@
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  background: var(--react-web-desktop-surface);
+  background: var(--godesk-surface);
 }
 .service-detail-backrow { flex: none; padding: 10px 12px 0; }
-.service-back { padding-inline: 8px; border: 1px solid var(--react-web-desktop-divider); }
+.service-back { padding-inline: 8px; border: 1px solid var(--godesk-divider); }
 .service-detail-content { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .service-detail-header {
   display: grid;
   flex: none;
   gap: 10px;
   padding: 12px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
+  border-bottom: 1px solid var(--godesk-divider);
 }
 .services-page[data-split='true'] .service-detail-header { padding: 14px 16px 12px; }
 .service-detail-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; }
 .service-detail-name {
   margin: 0;
   overflow-wrap: anywhere;
-  font-family: var(--react-web-desktop-font-mono);
-  font-size: var(--text-react-web-desktop-subtitle);
-  line-height: var(--text-react-web-desktop-subtitle--line-height);
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-subtitle);
+  line-height: var(--text-godesk-subtitle--line-height);
   font-weight: 600;
 }
 .service-detail-title .service-badge { margin-inline-start: 0; }
 .service-detail-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .service-action {
-  min-height: var(--react-web-desktop-control-compact);
+  min-height: var(--godesk-control-compact);
   padding-inline: 10px;
-  border: 1px solid var(--react-web-desktop-divider);
+  border: 1px solid var(--godesk-divider);
 }
 .service-action.primary-control { border-color: transparent; }
 .service-switch {
-  min-height: var(--react-web-desktop-control-compact);
+  min-height: var(--godesk-control-compact);
   padding-inline: 8px;
-  border: 1px solid var(--react-web-desktop-divider);
+  border: 1px solid var(--godesk-divider);
 }
 .service-switch-track {
   position: relative;
   width: 24px;
   height: 14px;
   border-radius: 999px;
-  background: var(--react-web-desktop-pressed);
-  transition: background var(--react-web-desktop-duration-feedback) ease-out;
+  background: var(--godesk-pressed);
+  transition: background var(--godesk-duration-feedback) ease-out;
 }
 .service-switch-thumb {
   position: absolute;
@@ -276,11 +276,11 @@
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--react-web-desktop-surface);
+  background: var(--godesk-surface);
   box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
-  transition: translate var(--react-web-desktop-duration-feedback) ease-out;
+  transition: translate var(--godesk-duration-feedback) ease-out;
 }
-.service-switch[aria-checked='true'] .service-switch-track { background: var(--react-web-desktop-accent); }
+.service-switch[aria-checked='true'] .service-switch-track { background: var(--godesk-accent); }
 .service-switch[aria-checked='true'] .service-switch-thumb { translate: 10px 0; }
 .service-switch[aria-disabled='true'] { opacity: 0.55; }
 .service-action-feedback { display: grid; gap: 2px; }
@@ -291,22 +291,22 @@
   flex: none;
   gap: 2px;
   padding: 0 12px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
+  border-bottom: 1px solid var(--godesk-divider);
 }
 .services-page[data-split='true'] .service-tabs { padding: 0 16px; }
 .service-tab {
-  min-height: var(--react-web-desktop-control);
+  min-height: var(--godesk-control);
   padding-inline: 10px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
-  color: var(--react-web-desktop-muted);
+  color: var(--godesk-muted);
   font: inherit;
 }
-.service-tab:hover { color: var(--react-web-desktop-fg); }
+.service-tab:hover { color: var(--godesk-fg); }
 .service-tab[aria-selected='true'] {
-  border-bottom-color: var(--react-web-desktop-accent);
-  color: var(--react-web-desktop-fg);
+  border-bottom-color: var(--godesk-accent);
+  color: var(--godesk-fg);
   font-weight: 600;
 }
 
@@ -315,16 +315,16 @@
 .services-page[data-split='true'] .service-detail-body { padding: 14px 16px 16px; }
 .service-group {
   overflow: hidden;
-  border: 1px solid var(--react-web-desktop-divider);
-  border-radius: var(--react-web-desktop-radius-overlay);
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-overlay);
 }
 .service-group h4 {
   margin: 0;
   padding: 6px 10px;
-  background: var(--react-web-desktop-subtle);
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  background: var(--godesk-subtle);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
   font-weight: 600;
 }
 .service-field-grid { margin: 0; padding: 0 10px; }
@@ -333,17 +333,17 @@
   grid-template-columns: 72px minmax(0, 1fr);
   gap: 8px;
   padding-block: 7px;
-  border-top: 1px solid var(--react-web-desktop-divider);
+  border-top: 1px solid var(--godesk-divider);
 }
 .service-field-grid > div:first-child { border-top: 0; }
 .service-field-grid dt {
   padding-block: 2px;
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
 }
 .service-field-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
-.service-mono { font-family: var(--react-web-desktop-font-mono); }
+.service-mono { font-family: var(--godesk-font-mono); }
 .service-numeric { font-variant-numeric: tabular-nums; }
 
 .service-logs-host { display: flex; flex-direction: column; overflow: hidden; }
@@ -356,12 +356,12 @@
   min-width: 140px;
   align-items: center;
   gap: 6px;
-  min-height: var(--react-web-desktop-control-compact);
+  min-height: var(--godesk-control-compact);
   padding-inline: 8px;
-  border: 1px solid var(--react-web-desktop-border);
-  border-radius: var(--react-web-desktop-radius-control);
-  background: var(--react-web-desktop-panel);
-  color: var(--react-web-desktop-muted);
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-panel);
+  color: var(--godesk-muted);
 }
 .service-log-search svg { flex: none; }
 .service-log-search input {
@@ -370,19 +370,19 @@
   min-height: 26px;
   border: 0;
   background: transparent;
-  color: var(--react-web-desktop-fg);
+  color: var(--godesk-fg);
   font: inherit;
   outline: none;
 }
-.service-log-search:focus-within { outline: 2px solid var(--react-web-desktop-focus); outline-offset: -1px; }
+.service-log-search:focus-within { outline: 2px solid var(--godesk-focus); outline-offset: -1px; }
 .service-log-toggle {
-  min-height: var(--react-web-desktop-control-compact);
-  border: 1px solid var(--react-web-desktop-divider);
-  font-size: var(--text-react-web-desktop-caption);
+  min-height: var(--godesk-control-compact);
+  border: 1px solid var(--godesk-divider);
+  font-size: var(--text-godesk-caption);
 }
 .service-log-toggle[aria-pressed='true'] {
-  background: var(--react-web-desktop-selected);
-  color: var(--react-web-desktop-accent);
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
 }
 .service-log-meta { margin: 0; }
 .service-log-view {
@@ -390,12 +390,12 @@
   min-height: 0;
   overflow: auto;
   padding: 8px;
-  border: 1px solid var(--react-web-desktop-divider);
-  border-radius: var(--react-web-desktop-radius-control);
-  background: var(--react-web-desktop-subtle);
-  font-family: var(--react-web-desktop-font-mono);
-  font-size: var(--text-react-web-desktop-compact);
-  line-height: var(--text-react-web-desktop-compact--line-height);
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-subtle);
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
 }
 .service-log-view[data-wrap='true'] .service-log-line { white-space: pre-wrap; overflow-wrap: anywhere; }
 .service-log-view[data-wrap='false'] .service-log-line { white-space: pre; }
@@ -408,7 +408,7 @@
   justify-content: center;
   gap: 6px;
   padding: 24px 16px;
-  color: var(--react-web-desktop-muted);
+  color: var(--godesk-muted);
   text-align: center;
 }
 
@@ -416,10 +416,10 @@
 .services-statusbar span:last-child { font-variant-numeric: tabular-nums; }
 
 @media (any-pointer: coarse) {
-  .service-row { min-height: var(--react-web-desktop-control-touch); }
+  .service-row { min-height: var(--godesk-control-touch); }
   .service-chip, .services-search, .services-icon-button, .service-action,
   .service-switch, .service-tab, .service-log-toggle, .service-log-search {
-    min-height: var(--react-web-desktop-control-touch);
+    min-height: var(--godesk-control-touch);
   }
 }
 

@@ -4,9 +4,12 @@
     <meta charset="UTF-8" />
     <script>
       // Apply the saved preference before styles can paint.
+      const legacyThemeKey = 'react-web-desktop-theme'
       let preference
+      let accent
       try {
-        preference = localStorage.getItem('react-web-desktop-theme')
+        preference = localStorage.getItem('godesk-theme') ?? localStorage.getItem(legacyThemeKey)
+        accent = localStorage.getItem('godesk-accent')
       } catch {
         // Storage can be unavailable in restricted browser contexts.
       }
@@ -15,6 +18,9 @@
       document.documentElement.dataset.theme = explicit
         ? preference
         : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      document.documentElement.dataset.accent = ['blue', 'iris', 'teal', 'amber', 'rose'].includes(accent)
+        ? accent
+        : 'blue'
     </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

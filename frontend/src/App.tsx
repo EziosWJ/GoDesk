@@ -1,44 +1,75 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react'
-import type { WindowState } from '@surdeddd/wmkit'
-import { useDesktop, useWindowManager, useWmState, useWmWindowRef } from '@surdeddd/wmkit/react'
-import { glassTheme } from '@surdeddd/wmkit/themes'
-import {
-  ExternalLink, Globe, Image, LogOut, Minus, MonitorX, PanelTop, RefreshCw, Search, Square, SquaresSubtract, X,
-} from 'lucide-react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { prefersReducedMotion } from '@surdeddd/wmkit'
+import type { DesktopOptions, WindowState } from '@surdeddd/wmkit'
+import { useDesktop, useWindowManager, useWmState } from '@surdeddd/wmkit/react'
+import { AppWindow } from './AppWindow'
 import { apps, type AppId } from './apps.ts'
 import type { Session } from './auth'
-import { CommandMenu, type MenuAnchor } from './CommandMenu'
+import { DesktopSurface, type DesktopShortcutItem } from './DesktopSurface'
 import { FileManager } from './FileManager'
 import { IconManager } from './IconManager'
-import { TextEditorApp, type EditorOpenRequest, type EditorWindowHandle } from './TextEditorApp'
+import type { DesktopNotification } from './QuickSettingsPanel'
+import { StartMenu } from './StartMenu'
 import { Taskbar } from './Taskbar'
 import { TerminalSessions } from './TerminalSessions'
+import { TextEditorApp, type EditorOpenRequest, type EditorWindowHandle } from './TextEditorApp'
 import { Extensions } from './extensions/Extensions'
 import { ExtensionWindow } from './extensions/ExtensionWindow'
 import { extensionWebPath, type ExtensionPlugin } from './extensions/api'
 import { useExtensionCatalog } from './extensions/useExtensionCatalog'
 import { terminalApi, terminalClientId, terminalWindowId, type TerminalSession } from './terminal'
+import { useHostHealth } from './useHostHealth'
+import { getWallpaperPreference, subscribeWallpaper } from './wallpapers'
 import { openWebShortcut, useWebShortcuts } from './webShortcuts'
 import { minimumWindowHeight, minimumWindowWidth, readWindowSize, saveWindowSize, windowSizeGroup } from './windowSize.ts'
 import './App.css'
 
-const workAreaOptions = {
-  animation: false,
-  snap: false,
+const workAreaOptions: DesktopOptions = {
+  // WMKit checks prefers-reduced-motion when starting each minimize or restore animation.
+  animation: true,
+  snap: { preview: true, topEdge: 'maximize' },
   grouping: false,
-  magnetism: false,
+  magnetism: { threshold: 10 },
+  minimizeTarget: win => document.querySelector(`.taskbar-center [data-task-app="${CSS.escape(win.id)}"]`) ??
+    document.querySelector('[data-task-popup="windows"]'),
   keyboard: { snapShortcuts: false, historyShortcuts: false, tabShortcuts: false },
 }
 
 const TerminalPage = lazy(() => import('./TerminalPage'))
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)')
 const appIds = Object.keys(apps) as AppId[]
-const previewGlass = new URLSearchParams(window.location.search).get('window-theme') === 'glass'
-const shortcutPreference = 'react-web-desktop-extension-shortcuts'
+const shortcutPreference = 'godesk-extension-shortcuts'
+const legacyShortcutPreference = 'react-web-desktop-extension-shortcuts'
+const pinnedAppsKey = 'godesk-pinned-apps'
+const defaultPinnedApps: AppId[] = ['files', 'editor', 'terminal', 'monitor', 'services']
+
+function readPinnedApps(): AppId[] {
+  try {
+    const stored = localStorage.getItem(pinnedAppsKey)
+    if (stored !== null) {
+      const value: unknown = JSON.parse(stored)
+      if (Array.isArray(value)) {
+        return [...new Set(value.filter((id): id is AppId => typeof id === 'string' && Object.hasOwn(apps, id)))]
+      }
+    }
+  } catch {
+    // Start with the default pins when storage is unavailable or invalid.
+  }
+  return defaultPinnedApps
+}
+
+function savePinnedApps(pinnedApps: AppId[]) {
+  try {
+    localStorage.setItem(pinnedAppsKey, JSON.stringify(pinnedApps))
+  } catch {
+    // Pins still work for the current page without storage.
+  }
+}
 
 function readExtensionShortcuts(): string[] {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(shortcutPreference) ?? '[]')
+    const value: unknown = JSON.parse(
+      localStorage.getItem(shortcutPreference) ?? localStorage.getItem(legacyShortcutPreference) ?? '[]',
+    )
     return Array.isArray(value) ? [...new Set(value.filter(id => typeof id === 'string'))] : []
   } catch {
     return []
@@ -51,123 +82,9 @@ function windowApp(id: string): AppId {
   return id as AppId
 }
 
-function windowMotionDuration(style: CSSStyleDeclaration, token: 'overlay' | 'feedback') {
-  const duration = style.getPropertyValue(`--react-web-desktop-duration-${token}`).trim()
-  return Number.parseFloat(duration) * (duration.endsWith('ms') ? 1 : 1000)
-}
-
-function LauncherIcon({ id }: { id: AppId | 'web-shortcut' }) {
-  const { icon: Icon, launcherIcon } = id === 'web-shortcut' ? { icon: Globe, launcherIcon: undefined } : apps[id]
-  return (
-    <span className="shortcut-tile" data-glyph={launcherIcon ? undefined : id} aria-hidden="true">
-      {launcherIcon && <img src={launcherIcon} alt="" width={42} height={42} />}
-      <Icon className={launcherIcon ? 'shortcut-tile-fallback' : undefined} size={24} strokeWidth={1.75} />
-    </span>
-  )
-}
-
-function AppWindow({ binder, win, appId, closing, children, onRequestClose, onExited }: {
-  binder: ReturnType<typeof useDesktop>['binder']
-  win: WindowState
-  appId: AppId
-  closing: boolean
-  children: ReactNode
-  onRequestClose?: () => void
-  onExited: (openedSeq: number) => void
-}) {
-  const bindWindow = useWmWindowRef(binder, win.id)
-  const element = useRef<HTMLElement>(null)
-  const entrance = useRef<Animation>(null)
-  const ref = useCallback((node: HTMLElement | null) => {
-    element.current = node
-    if (!closing) bindWindow(node)
-  }, [bindWindow, closing])
-  const { icon: Icon } = apps[appId]
-  const maximized = win.stage === 'maximized'
-  const MaximizeIcon = maximized ? SquaresSubtract : Square
-
-  useLayoutEffect(() => {
-    const node = element.current
-    if (!node || reducedMotion.matches) return
-
-    // WMKit owns transform. The individual translate property adds the entry offset.
-    const animation = node.animate([
-      { opacity: 0, translate: '0 8px' },
-      { opacity: 1, translate: '0 0' },
-    ], { duration: windowMotionDuration(getComputedStyle(node), 'overlay'), easing: 'ease-out', fill: 'backwards' })
-    entrance.current = animation
-
-    function reduceMotion(event: MediaQueryListEvent) {
-      if (event.matches) animation.cancel()
-    }
-
-    reducedMotion.addEventListener('change', reduceMotion)
-    return () => {
-      reducedMotion.removeEventListener('change', reduceMotion)
-      animation.cancel()
-    }
-  }, [])
-
-  useLayoutEffect(() => {
-    if (!closing && win.stage !== 'normal') entrance.current?.cancel()
-  }, [closing, win.stage])
-
-  useLayoutEffect(() => {
-    const node = element.current
-    if (!closing || !node) return
-    if (reducedMotion.matches) {
-      onExited(win.openedSeq)
-      return
-    }
-
-    const style = getComputedStyle(node)
-    const { opacity, translate } = style
-    entrance.current?.cancel()
-    const animation = node.animate([
-      { opacity, translate },
-      { opacity: 0, translate },
-    ], { duration: windowMotionDuration(style, 'feedback'), easing: 'ease-out', fill: 'forwards' })
-    let active = true
-    function finish() {
-      if (active) onExited(win.openedSeq)
-    }
-    function reduceMotion(event: MediaQueryListEvent) {
-      if (event.matches) finish()
-    }
-
-    void animation.finished.then(finish, finish)
-    reducedMotion.addEventListener('change', reduceMotion)
-    return () => {
-      active = false
-      reducedMotion.removeEventListener('change', reduceMotion)
-      animation.cancel()
-    }
-  }, [closing, onExited, win.openedSeq])
-
-  return (
-    <section ref={ref} className="app-window" tabIndex={-1} aria-label={win.title} data-app-window={appId}
-      inert={closing} data-wm-window={closing && previewGlass ? '' : undefined}>
-      <header className="titlebar" data-wm-drag>
-        <span className="flex min-w-0 items-center gap-2">
-          <Icon className={`app-icon ${appId}`} size={16} />
-          <span data-wm-title className="truncate">{win.title}</span>
-        </span>
-        <span className="window-controls" data-wm-controls>
-          <button data-wm-minimize aria-label="最小化" title="最小化"><Minus size={16} /></button>
-          <button data-wm-maximize aria-label={maximized ? '还原' : '最大化'} title={maximized ? '还原' : '最大化'}>
-            <MaximizeIcon size={14} />
-          </button>
-          <button data-wm-close aria-label="关闭" title="关闭" onClickCapture={onRequestClose && (event => {
-            event.stopPropagation()
-            onRequestClose()
-          })}><X size={17} /></button>
-        </span>
-      </header>
-      <div className="window-content" data-wm-content>
-        {children}
-      </div>
-    </section>
-  )
+function isEditableContext(target: EventTarget | null) {
+  if (!(target instanceof Element)) return false
+  return Boolean(target.closest('input, textarea, select, [contenteditable="true"], .xterm, .monaco-editor'))
 }
 
 export default function App({ onLogout, onSession }: {
@@ -177,25 +94,87 @@ export default function App({ onLogout, onSession }: {
   const wm = useWindowManager({ keepInViewport: true, minVisible: 164, historyLimit: 0 })
   const { ref, binder } = useDesktop(wm, workAreaOptions)
   const { windows, focusedId } = useWmState(wm)
-  const running = Object.values(windows).map(win => ({ id: win.id, appId: windowApp(win.id), title: win.title }))
+  const hostHealth = useHostHealth()
+  const running = Object.values(windows).map(win => ({
+    id: win.id, appId: windowApp(win.id), title: win.title, minimized: win.stage === 'minimized',
+  }))
+  const [pinnedApps, setPinnedApps] = useState(readPinnedApps)
+  const desktopWindows = useRef<Pick<WindowState, 'id' | 'openedSeq'>[]>([])
+  const [appearanceRequest, requestAppearance] = useState(0)
   const [closingWindows, setClosingWindows] = useState<WindowState[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [extensionShortcuts, setExtensionShortcuts] = useState(readExtensionShortcuts)
-  const { plugins, loadError, load: loadExtensions } = useExtensionCatalog(
-    extensionShortcuts.length > 0 || Boolean(windows.extensions),
-  )
-  const webShortcuts = useWebShortcuts()
   const [startOpen, setStartOpen] = useState(false)
   const [query, setQuery] = useState('')
+  const { plugins, loadError, load: loadExtensions } = useExtensionCatalog(
+    extensionShortcuts.length > 0 || Boolean(windows.extensions) || startOpen,
+  )
+  const webShortcuts = useWebShortcuts()
   const startButton = useRef<HTMLButtonElement>(null)
   const startSearch = useRef<HTMLInputElement>(null)
   const logoutDialog = useRef<HTMLDialogElement>(null)
   const [logoutPending, setLogoutPending] = useState(false)
   const [logoutError, setLogoutError] = useState('')
   const pendingWindowFocus = useRef<string | null>(null)
-  const [launchError, setLaunchError] = useState('')
+  const [notifications, setNotifications] = useState<DesktopNotification[]>([])
+  const nextNotificationId = useRef(0)
   const editor = useRef<EditorWindowHandle>(null)
   const [editorRequest, setEditorRequest] = useState<EditorOpenRequest>()
+  const [wallpaper, setWallpaper] = useState(getWallpaperPreference)
+
+  useEffect(() => savePinnedApps(pinnedApps), [pinnedApps])
+  useEffect(() => subscribeWallpaper(() => setWallpaper(getWallpaperPreference())), [])
+
+  const togglePinApp = useCallback((id: AppId) => {
+    setPinnedApps(current => current.includes(id) ? current.filter(appId => appId !== id) : [...current, id])
+  }, [])
+
+  const readNotifications = useCallback(() => {
+    setNotifications(current => current.map(item => item.read ? item : { ...item, read: true }))
+  }, [])
+
+  function notify(message: string, kind: DesktopNotification['kind'] = 'error') {
+    const notification = { id: ++nextNotificationId.current, message, kind, createdAt: Date.now(), read: false }
+    setNotifications(current => [notification, ...current])
+  }
+
+  function showDesktop() {
+    const state = wm.getState()
+    const visible = state.order.map(id => state.windows[id]).filter(win => win.stage !== 'minimized')
+    if (visible.length) {
+      desktopWindows.current = visible.map(({ id, openedSeq }) => ({ id, openedSeq }))
+      for (const { id } of visible) wm.minimize(id)
+      return
+    }
+    const restore = desktopWindows.current
+    desktopWindows.current = []
+    for (const { id, openedSeq } of restore) {
+      if (state.windows[id]?.openedSeq === openedSeq) wm.restore(id)
+    }
+  }
+
+  function closeTaskWindow(id: string) {
+    if (id === 'editor') {
+      if (wm.getState().windows[id]?.stage === 'minimized') wm.restore(id)
+      editor.current?.requestClose()
+    } else {
+      wm.close(id)
+    }
+  }
+
+  function openAppearance() {
+    openWindow('settings')
+    requestAppearance(current => current + 1)
+  }
+
+  useLayoutEffect(() => {
+    if (!appearanceRequest) return
+    const settings = document.querySelector<HTMLElement>('[data-wm-window="settings"]:not([inert])')
+    settings?.focus({ preventScroll: true })
+    // Use the settings page's existing category action in both split and narrow layouts.
+    const categories = settings?.querySelectorAll<HTMLButtonElement>('.settings-category')
+    Array.from(categories ?? []).find(button => button.textContent?.trim() === '外观')?.click()
+  }, [appearanceRequest])
 
   useEffect(() => {
     try {
@@ -214,7 +193,7 @@ export default function App({ onLogout, onSession }: {
     const node = document.querySelector<HTMLElement>(`[data-wm-window="${win.id}"]`)
     if (!node) return
     if (!wm.getState().focusedId && node.contains(document.activeElement)) startButton.current?.focus()
-    if (!node.hidden && !reducedMotion.matches) setClosingWindows(current => [...current, win])
+    if (!node.hidden && !prefersReducedMotion(window)) setClosingWindows(current => [...current, win])
   }), [wm])
 
   useEffect(() => {
@@ -269,19 +248,39 @@ export default function App({ onLogout, onSession }: {
       document.querySelector<HTMLElement>(`[data-wm-window="${id}"]`)?.focus()
     }
   }, [startOpen])
-  const [context, setContext] = useState<(MenuAnchor & { pluginId?: string }) | null>(null)
-  const [wallpaper, setWallpaper] = useState<'iris' | 'graphite' | 'lavender'>('iris')
+
+  useEffect(() => {
+    function handleLauncherShortcut(event: KeyboardEvent) {
+      if (event.isComposing || event.defaultPrevented) return
+      const isCtrlK = (event.ctrlKey || event.metaKey) && !event.altKey && event.key.toLowerCase() === 'k'
+      const isAltSpace = event.altKey && !event.ctrlKey && !event.metaKey && event.code === 'Space'
+      if (!isCtrlK && !isAltSpace) return
+      if (isCtrlK && isEditableContext(event.target) && !startOpen) return
+      event.preventDefault()
+      setStartOpen(current => {
+        if (current) {
+          startButton.current?.focus()
+          return false
+        }
+        setQuery('')
+        return true
+      })
+    }
+
+    document.addEventListener('keydown', handleLauncherShortcut)
+    return () => document.removeEventListener('keydown', handleLauncherShortcut)
+  }, [startOpen])
 
   useEffect(() => {
     if (!startOpen) return
 
     function dismissOutside(event: PointerEvent) {
       if (!(event.target instanceof Element)) return
-      if (!event.target.closest('[data-start-ui]')) setStartOpen(false)
+      if (!event.target.closest('[data-start-ui], [role="menu"]')) setStartOpen(false)
     }
 
     function dismissWithEscape(event: KeyboardEvent) {
-      if (event.key !== 'Escape' || event.isComposing) return
+      if (event.key !== 'Escape' || event.isComposing || event.defaultPrevented) return
       startButton.current?.focus()
       setStartOpen(false)
     }
@@ -319,7 +318,7 @@ export default function App({ onLogout, onSession }: {
         id, title, width, height, meta,
         x: Math.min(Math.max(0, viewport.width - width), Math.max(12, (viewport.width - width) / 2 - 42 + offset)),
         y: Math.min(Math.max(0, viewport.height - height), Math.max(12, (viewport.height - height) / 2 - 38 + offset)),
-        minWidth: minimumWindowWidth, minHeight: minimumWindowHeight, snappable: false,
+        minWidth: minimumWindowWidth, minHeight: minimumWindowHeight,
       })
     }
     if (startOpen) pendingWindowFocus.current = id
@@ -327,12 +326,13 @@ export default function App({ onLogout, onSession }: {
   }
 
   function openExtension(plugin: ExtensionPlugin, target: 'desktop' | 'tab' = 'desktop') {
-    setLaunchError('')
     if (!plugin.enabled || plugin.status !== 'running') {
-      setLaunchError(`「${plugin.name}」未运行，请在「扩展」中启用或启动。`)
+      notify(`「${plugin.name}」未运行，请在「扩展」中启用或启动。`)
+      setStartOpen(false)
       return
     }
     if (target === 'tab') {
+      setStartOpen(false)
       window.open(extensionWebPath(plugin.id), '_blank', 'noopener')
       return
     }
@@ -363,24 +363,11 @@ export default function App({ onLogout, onSession }: {
   }
 
   async function launchTerminal() {
-    setLaunchError('')
     try {
       openSession(await terminalApi.create())
     } catch {
-      setLaunchError('无法新建终端，请重试')
+      notify('无法新建终端，请重试')
     }
-  }
-
-  function openDesktopMenu(anchor: MenuAnchor) {
-    setSelected(null)
-    setStartOpen(false)
-    setContext(anchor)
-  }
-
-  function openShortcutMenu(anchor: MenuAnchor, pluginId: string) {
-    setSelected(`extension-${pluginId}`)
-    setStartOpen(false)
-    setContext({ ...anchor, pluginId })
   }
 
   function openTextFile(path: string, elevated: boolean, readOnly: boolean) {
@@ -441,82 +428,36 @@ export default function App({ onLogout, onSession }: {
     }
   }
 
-  function showContextMenu(event: MouseEvent<HTMLElement>) {
-    if (!(event.target instanceof Element) || event.target.closest('.shortcut, .app-window')) return
-    event.preventDefault()
-    openDesktopMenu({ source: event.currentTarget, point: { x: event.clientX, y: event.clientY } })
-  }
-
-  const search = query.trim().toLowerCase()
-  const results = appIds.filter(id => apps[id].name.includes(search) || id.includes(search))
   const pluginShortcuts = extensionShortcuts.flatMap(id => {
     const plugin = plugins?.find(plugin => plugin.id === id && plugin.hasWeb)
     return plugin ? [plugin] : []
   })
-  const shortcuts = [
+  const shortcuts: DesktopShortcutItem[] = [
     ...(webShortcuts.items ?? []).map(item => ({
       id: `web-shortcut-${item.id}`, name: item.name, appId: 'web-shortcut' as const,
-      open: () => openWebShortcut(item.id), plugin: undefined,
+      open: () => openWebShortcut(item.id),
     })),
     ...pluginShortcuts.map(plugin => ({
       id: `extension-${plugin.id}`, name: plugin.name, appId: 'extensions' as const,
       open: () => openExtension(plugin), plugin,
     })),
-    ...appIds.map(id => ({ id, name: apps[id].name, appId: id, open: () => openApp(id), plugin: undefined })),
+    ...appIds.map(id => ({ id, name: apps[id].name, appId: id, open: () => openApp(id) })),
   ]
-  const contextPlugin = context?.pluginId ? pluginShortcuts.find(plugin => plugin.id === context.pluginId) : undefined
-  const contextBoundary = context?.pluginId ? context.source.closest<HTMLElement>('.work-area') : context?.source
 
   return (
-    <main className="desktop-shell text-react-web-desktop-body" data-wallpaper={wallpaper} aria-label="React Web Desktop 桌面">
-      {previewGlass && <style>{glassTheme}</style>}
-      <div className="wallpaper" aria-hidden="true">{wallpaper !== 'lavender' && <><i /><i /><i /></>}</div>
-      <div
-        ref={ref}
-        className="work-area"
-        tabIndex={0}
-        role="group"
-        aria-label="桌面工作区"
-        data-window-theme={previewGlass ? 'glass' : undefined}
-        onContextMenu={showContextMenu}
-        onKeyDown={event => {
-          if (event.target !== event.currentTarget || event.nativeEvent.isComposing ||
-            !(event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) return
-          event.preventDefault()
-          const bounds = event.currentTarget.getBoundingClientRect()
-          openDesktopMenu({ source: event.currentTarget, point: { x: bounds.left + 12, y: bounds.top + 12 } })
-        }}
-        onClick={event => { if (event.target instanceof Element && !event.target.closest('.shortcut, .app-window')) setSelected(null) }}
+    <main className="desktop-shell text-godesk-body" data-wallpaper={wallpaper} aria-label="goDesk 桌面">
+      <DesktopSurface
+        workAreaRef={ref}
+        shortcuts={shortcuts}
+        wallpaper={wallpaper}
+        selected={selected}
+        onSelect={setSelected}
+        onClearStartMenu={() => setStartOpen(false)}
+        onOpenTerminal={() => openApp('terminal')}
+        onOpenAppearance={openAppearance}
+        onOpenExtension={openExtension}
+        onRemoveExtensionShortcut={id => setExtensionShortcut(id, false)}
       >
-        <nav className="shortcut-list" aria-label="桌面快捷方式">
-          {shortcuts.map(({ id, name, appId, open, plugin }) => (
-            <button
-              key={id}
-              className="shortcut"
-              aria-pressed={selected === id}
-              onClick={event => {
-                setSelected(id)
-                const nativeEvent = event.nativeEvent
-                const touch = nativeEvent instanceof PointerEvent && nativeEvent.pointerType === 'touch'
-                if (event.detail === 0 || touch && (plugin || appId === 'web-shortcut')) open()
-              }}
-              onDoubleClick={open}
-              onContextMenu={plugin && (event => {
-                event.preventDefault()
-                event.stopPropagation()
-                openShortcutMenu({ source: event.currentTarget, point: { x: event.clientX, y: event.clientY } }, plugin.id)
-              })}
-              onKeyDown={plugin && (event => {
-                if (event.nativeEvent.isComposing || !(event.key === 'ContextMenu' || event.shiftKey && event.key === 'F10')) return
-                event.preventDefault()
-                openShortcutMenu({ source: event.currentTarget }, plugin.id)
-              })}
-            >
-              <LauncherIcon id={appId} />
-              <span>{name}</span>
-            </button>
-          ))}
-        </nav>
         {[...Object.values(windows), ...closingWindows].map(win => {
           const id = windowApp(win.id)
           const closing = windows[win.id]?.openedSeq !== win.openedSeq
@@ -528,85 +469,60 @@ export default function App({ onLogout, onSession }: {
             </AppWindow>
           )
         })}
-      </div>
+      </DesktopSurface>
 
-      {launchError && (
-        <div className="desktop-alert">
-          <span role="alert">{launchError}</span>
-          <button className="app-control" type="button" aria-label="关闭提示" onClick={() => setLaunchError('')}>
-            <X size={16} aria-hidden="true" />
-          </button>
-        </div>
-      )}
+      <StartMenu
+        open={startOpen}
+        query={query}
+        onQueryChange={setQuery}
+        searchRef={startSearch}
+        pinnedApps={pinnedApps}
+        togglePinApp={togglePinApp}
+        plugins={plugins}
+        webShortcuts={webShortcuts.items}
+        host={hostHealth.snapshot?.host}
+        onOpenApp={openApp}
+        onOpenExtension={openExtension}
+        onOpenWebShortcut={id => {
+          setStartOpen(false)
+          openWebShortcut(id)
+        }}
+        onOpenSettings={() => openWindow('settings')}
+        onRequestLogout={() => {
+          logoutDialog.current?.showModal()
+          setStartOpen(false)
+        }}
+      />
 
-      {context && contextBoundary && (!context.pluginId || contextPlugin) && (
-        <CommandMenu key={contextPlugin ? `extension-${contextPlugin.id}` : 'desktop'}
-          label={contextPlugin ? `${contextPlugin.name}快捷方式操作` : '桌面操作'}
-          anchor={context} layer={contextBoundary.parentElement!} boundary={contextBoundary} zIndex={2}
-          groups={contextPlugin ? [[
-            { label: '打开', icon: PanelTop, run: () => openExtension(contextPlugin) },
-            { label: '在新标签页打开', icon: ExternalLink, run: () => openExtension(contextPlugin, 'tab') },
-            { label: '移除桌面快捷方式', icon: MonitorX, run: () => setExtensionShortcut(contextPlugin.id, false) },
-          ]] : [
-            [{ label: '刷新', icon: RefreshCw, run: () => window.location.reload() }],
-            [
-              { label: '使用暮紫壁纸', icon: Image, checked: wallpaper === 'lavender',
-                run: () => setWallpaper(current => current === 'lavender' ? 'iris' : 'lavender') },
-              { label: '使用灰阶壁纸', icon: Image, checked: wallpaper === 'graphite',
-                run: () => setWallpaper(current => current === 'graphite' ? 'iris' : 'graphite') },
-            ],
-          ]}
-          onClose={() => setContext(null)}
-          restoreFocus={() => (context.source.isConnected ? context.source : contextBoundary).focus({ preventScroll: true })} />
-      )}
-
-      <section id="start-menu" className="start-menu" data-start-ui aria-label="开始菜单"
-        data-open={startOpen} inert={!startOpen}>
-        <form className="start-search" role="search" onKeyDown={event => {
-          if (event.key === 'Enter' && event.nativeEvent.isComposing) event.preventDefault()
-        }} onSubmit={event => {
-          event.preventDefault()
-          if (results.length === 1) openApp(results[0])
-        }}>
-          <Search size={17} aria-hidden="true" />
-          <input ref={startSearch} type="search" value={query} onChange={event => setQuery(event.target.value)}
-            placeholder="搜索应用" aria-label="搜索应用" />
-        </form>
-        <h2>应用</h2>
-        <div className="start-apps">
-          {results.map(id => {
-            const { name } = apps[id]
-            return (
-              <button key={id} onClick={() => openApp(id)}>
-                <LauncherIcon id={id} />
-                {name}
-              </button>
-            )
-          })}
-          {results.length === 0 && <p className="muted">未找到应用</p>}
-        </div>
-        <footer className="start-menu-footer">
-          <button className="app-control" type="button" aria-haspopup="dialog" onClick={() => {
-            logoutDialog.current?.showModal()
-            setStartOpen(false)
-          }}>
-            <LogOut size={16} aria-hidden="true" />
-            退出登录
-          </button>
-        </footer>
-      </section>
-
-      <Taskbar running={running} focusedId={focusedId} startOpen={startOpen} startButton={startButton}
+      <Taskbar running={running} focusedId={focusedId} pinnedApps={pinnedApps} togglePinApp={togglePinApp}
+        startOpen={startOpen} startButton={startButton}
+        health={hostHealth}
         onStart={() => {
           if (!startOpen) setQuery('')
           setStartOpen(value => !value)
         }}
+        onSearch={() => {
+          if (startOpen) startSearch.current?.focus({ preventScroll: true })
+          else {
+            setQuery('')
+            setStartOpen(true)
+          }
+        }}
+        onLaunchApp={openApp}
         onToggleApp={id => {
           if (wm.getState().focusedId === id) wm.minimize(id)
           else wm.focus(id)
         }}
+        onMinimize={id => wm.minimize(id)}
+        onRestore={id => wm.restore(id)}
+        onCloseWindow={closeTaskWindow}
+        onShowDesktop={showDesktop}
         onOpenPopup={() => setStartOpen(false)}
-        onOpenMonitor={() => openWindow('monitor')} />
+        onOpenMonitor={() => openWindow('monitor')}
+        onOpenAppearance={openAppearance}
+        notifications={notifications} onReadNotifications={readNotifications}
+        onDismissNotification={id => setNotifications(current => current.filter(item => item.id !== id))}
+        onClearNotifications={() => setNotifications([])} />
 
       <dialog ref={logoutDialog} className="service-dialog" aria-labelledby="logout-dialog-title"
         aria-describedby="logout-dialog-message" onClose={() => {

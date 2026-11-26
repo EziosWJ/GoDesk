@@ -10,7 +10,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 6px 10px 6px 16px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
+  border-bottom: 1px solid var(--godesk-divider);
 }
 
 .file-image-preview-header button { flex: none; }
@@ -22,7 +22,7 @@
   place-items: center;
   min-height: 0;
   padding: 12px;
-  background: var(--react-web-desktop-subtle);
+  background: var(--godesk-subtle);
   text-align: center;
 }
 

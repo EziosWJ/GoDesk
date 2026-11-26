@@ -1,7 +1,15 @@
-import { useLayoutEffect, useRef, useState, type FormEvent } from 'react'
-import { ArrowLeft, AudioLines, ChevronRight, LockKeyhole, Monitor, Settings2, Terminal, Timer } from 'lucide-react'
+import { useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react'
+import {
+  ArrowLeft, Check, ChevronRight, Languages, LockKeyhole, Monitor, Moon, Palette, Settings2, Sun, Terminal, Timer, Wallpaper,
+} from 'lucide-react'
 import { AuthError, authSession, type Session } from './auth'
-import { getThemePreference, setThemePreference, themeOptions, type ThemePreference } from './theme'
+import {
+  accentOptions, getAccentPreference, getThemePreference, setAccentPreference, setThemePreference,
+  subscribeAppearance, themeOptions, type AccentPreference, type ThemePreference,
+} from './theme'
+import {
+  getWallpaperPreference, setWallpaperPreference, subscribeWallpaper, wallpaperIds, wallpapers, type WallpaperId,
+} from './wallpapers'
 import { useSplitLayout } from './useSplitLayout'
 import { TerminalSettings } from './TerminalSettings'
 
@@ -13,15 +21,19 @@ const categories = {
 }
 
 type Category = keyof typeof categories
+type EffectiveTheme = 'light' | 'dark'
 
-const generalSettings = [
-  { name: '显示语言', value: '简体中文', Icon: Settings2 },
-  { name: '时间格式', value: '24 小时制', Icon: Timer },
-  { name: '系统音量', value: '75%', Icon: AudioLines },
-]
+const themeIcons = { system: Monitor, light: Sun, dark: Moon } as const
+
+function effectiveTheme(): EffectiveTheme {
+  return document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+}
 
 export function Settings({ onSession }: { onSession: (session: Session) => void }) {
-  const [theme, setTheme] = useState(getThemePreference)
+  const [theme, setTheme] = useState<ThemePreference>(getThemePreference)
+  const [accent, setAccent] = useState<AccentPreference>(getAccentPreference)
+  const [wallpaper, setWallpaper] = useState<WallpaperId>(getWallpaperPreference)
+  const [effective, setEffective] = useState<EffectiveTheme>(effectiveTheme)
   const [category, setCategory] = useState<Category>('appearance')
   const [showPage, setShowPage] = useState(false)
   const heading = useRef<HTMLHeadingElement>(null)
@@ -38,11 +50,48 @@ export function Settings({ onSession }: { onSession: (session: Session) => void 
     }
   })
 
+  // Keep the gallery in sync when appearance or wallpaper changes elsewhere (desktop menu, quick settings).
+  useEffect(() => {
+    const syncAppearance = () => {
+      setTheme(getThemePreference())
+      setAccent(getAccentPreference())
+      setEffective(effectiveTheme())
+    }
+    const unsubscribeAppearance = subscribeAppearance(syncAppearance)
+    const unsubscribeWallpaper = subscribeWallpaper(() => setWallpaper(getWallpaperPreference()))
+    return () => {
+      unsubscribeAppearance()
+      unsubscribeWallpaper()
+    }
+  }, [])
+
   useLayoutEffect(() => {
     if (nextFocus.current === 'heading') heading.current?.focus()
     if (nextFocus.current === 'category') buttons.current[category]?.focus()
     nextFocus.current = null
   }, [category, showPage, split])
+
+  function chooseTheme(value: ThemePreference) {
+    setThemePreference(value)
+    setTheme(value)
+    setEffective(value === 'system' ? effectiveTheme() : value)
+  }
+
+  function chooseAccent(value: AccentPreference) {
+    setAccentPreference(value)
+    setAccent(value)
+  }
+
+  function chooseWallpaper(value: WallpaperId) {
+    setWallpaperPreference(value)
+    setWallpaper(value)
+  }
+
+  function openAppearance() {
+    nextFocus.current = 'heading'
+    setCategory('appearance')
+    setShowPage(true)
+  }
 
   return (
     <div className="settings-page system-page" ref={root} data-split={split}>
@@ -72,31 +121,128 @@ export function Settings({ onSession }: { onSession: (session: Session) => void 
         <h2 ref={heading} tabIndex={-1} className="system-title">{categories[category].label}</h2>
         {category === 'appearance' ? (
           <>
-            <p className="system-caption settings-note" id="appearance-note">更改立即应用到整个桌面</p>
-            <fieldset className="theme-options" aria-label="桌面外观" aria-describedby="appearance-note">
-              {(Object.entries(themeOptions) as [ThemePreference, string][]).map(([value, label]) => (
-                <label key={value} className="theme-option">
-                  <input type="radio" name="desktop-theme" value={value} checked={theme === value} onChange={() => {
-                    setThemePreference(value)
-                    setTheme(value)
-                  }} />
-                  {label}
-                </label>
-              ))}
-            </fieldset>
+            <p className="system-caption settings-note" id="appearance-note">更改立即应用到整个桌面，并与桌面右键菜单保持同步</p>
+            <section className="settings-section" aria-labelledby="settings-theme-title">
+              <div className="settings-section-head">
+                <h3 id="settings-theme-title">主题模式</h3>
+                <p className="system-caption">
+                  {theme === 'system' ? `跟随系统 · 当前${effective === 'dark' ? '深色' : '浅色'}` : '手动选择固定外观'}
+                </p>
+              </div>
+              <fieldset className="theme-cards" aria-labelledby="settings-theme-title" aria-describedby="appearance-note">
+                {(Object.keys(themeOptions) as ThemePreference[]).map(value => {
+                  const preview = value === 'system' ? effective : value
+                  const ThemeIcon = themeIcons[value]
+                  return (
+                    <label key={value} className="theme-card">
+                      <input type="radio" name="desktop-theme" value={value} checked={theme === value}
+                        onChange={() => chooseTheme(value)} />
+                      <span className="theme-card-preview" data-preview={preview} aria-hidden="true">
+                        <span className="theme-card-wallpaper"
+                          style={{ backgroundImage: `url(${wallpapers[wallpaper][preview]})` }} />
+                        <span className="theme-card-window">
+                          <span className="theme-card-window-bar"><i /><i /><i /></span>
+                          <span className="theme-card-window-lines"><i /><i /><i /></span>
+                        </span>
+                        <span className="theme-card-taskbar"><i /><i /><i /><i /></span>
+                      </span>
+                      <span className="theme-card-footer">
+                        <ThemeIcon size={15} aria-hidden="true" />
+                        <span>{themeOptions[value]}</span>
+                        <span className="theme-card-check"><Check size={12} aria-hidden="true" /></span>
+                      </span>
+                    </label>
+                  )
+                })}
+              </fieldset>
+            </section>
+            <section className="settings-section" aria-labelledby="settings-accent-title">
+              <div className="settings-section-head">
+                <h3 id="settings-accent-title">强调色</h3>
+                <p className="system-caption">开始菜单、任务栏和控件会立即使用所选颜色</p>
+              </div>
+              <fieldset className="accent-options" aria-labelledby="settings-accent-title">
+                {(Object.keys(accentOptions) as AccentPreference[]).map(value => {
+                  const option = accentOptions[value]
+                  const color = effective === 'dark' ? option.dark : option.light
+                  return (
+                    <label key={value} className="accent-option">
+                      <input type="radio" name="desktop-accent" value={value} checked={accent === value}
+                        onChange={() => chooseAccent(value)} />
+                      <span className="accent-swatch" aria-hidden="true"
+                        style={{ background: color, color: effective === 'dark' ? '#1C1C1C' : '#FFFFFF' }}>
+                        <Check size={13} aria-hidden="true" />
+                      </span>
+                      <span className="accent-name">{option.label}</span>
+                      <span className="accent-value" aria-hidden="true">{color}</span>
+                    </label>
+                  )
+                })}
+              </fieldset>
+            </section>
+            <section className="settings-section" aria-labelledby="settings-wallpaper-title">
+              <div className="settings-section-head">
+                <h3 id="settings-wallpaper-title">桌面壁纸</h3>
+                <p className="system-caption">点击缩略图立即更换，悬停可预览名称</p>
+              </div>
+              <fieldset className="wallpaper-options" aria-labelledby="settings-wallpaper-title">
+                {wallpaperIds.map(id => (
+                  <label key={id} className="wallpaper-option" title={wallpapers[id].description}>
+                    <input type="radio" name="desktop-wallpaper" value={id} checked={wallpaper === id}
+                      onChange={() => chooseWallpaper(id)} />
+                    <span className="wallpaper-thumb" aria-hidden="true"
+                      style={{ backgroundImage: `url(${wallpapers[id][effective]})` }}>
+                      <span className="wallpaper-check"><Check size={12} aria-hidden="true" /></span>
+                    </span>
+                    <span className="wallpaper-name">{wallpapers[id].name}</span>
+                  </label>
+                ))}
+              </fieldset>
+            </section>
           </>
         ) : category === 'account' ? <ChangePassword onSession={onSession} /> : category === 'terminal' ? <TerminalSettings /> : (
-          <>
-            <p className="system-caption settings-note">示例设置</p>
-            <dl className="settings-list">
-              {generalSettings.map(({ name, value, Icon }) => (
-                <div key={name}><dt><Icon size={16} aria-hidden="true" />{name}</dt><dd>{value}</dd></div>
-              ))}
-            </dl>
-          </>
+          <GeneralSettings theme={theme} accent={accent} wallpaper={wallpaper} effective={effective}
+            onOpenAppearance={openAppearance} />
         )}
       </section>
     </div>
+  )
+}
+
+function GeneralSettings({ theme, accent, wallpaper, effective, onOpenAppearance }: {
+  theme: ThemePreference
+  accent: AccentPreference
+  wallpaper: WallpaperId
+  effective: EffectiveTheme
+  onOpenAppearance: () => void
+}) {
+  const appearanceLabel = theme === 'system'
+    ? `${themeOptions.system}（当前${effective === 'dark' ? '深色' : '浅色'}）`
+    : themeOptions[theme]
+  const accentColor = effective === 'dark' ? accentOptions[accent].dark : accentOptions[accent].light
+
+  return (
+    <>
+      <p className="system-caption settings-note">以下信息来自当前桌面环境，并随外观更改即时更新。</p>
+      <dl className="settings-list settings-summary">
+        <div><dt><Languages size={16} aria-hidden="true" />显示语言</dt><dd>简体中文</dd></div>
+        <div><dt><Timer size={16} aria-hidden="true" />时间格式</dt><dd>24 小时制</dd></div>
+        <div><dt><Monitor size={16} aria-hidden="true" />外观模式</dt><dd>{appearanceLabel}</dd></div>
+        <div>
+          <dt><Palette size={16} aria-hidden="true" />强调色</dt>
+          <dd>
+            <span className="settings-accent-chip" style={{ background: accentColor }} aria-hidden="true" />
+            {accentOptions[accent].label}
+          </dd>
+        </div>
+        <div><dt><Wallpaper size={16} aria-hidden="true" />桌面壁纸</dt><dd>{wallpapers[wallpaper].name}</dd></div>
+      </dl>
+      <button type="button" className="app-control settings-jump" onClick={onOpenAppearance}>
+        <Palette size={16} aria-hidden="true" />
+        调整外观
+        <ChevronRight size={16} aria-hidden="true" />
+      </button>
+    </>
   )
 }
 

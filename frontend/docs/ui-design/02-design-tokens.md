@@ -1,126 +1,81 @@
 # 02 · 设计 Token
 
-本页是 React Web Desktop 共享颜色、尺寸和动效的参数来源。表中数值均为 **React Web Desktop 自定义基线**。来源为外部标准的验收阈值见 [07](07-interaction-guidelines.md)。Fluent 2 提供了设计 Token 的组织方式。React Web Desktop 使用语义角色和主题映射，并采用自己的色值与尺寸。 [Fluent 2 Design tokens](https://fluent2.microsoft.design/design-tokens)
+本页定义 goDesk 前端的共享色彩、材质、字体、尺寸、圆角、阴影与动效基线。原始 CSS 变量统一声明于 `frontend/src/styles/theme.css`，前缀为 `--godesk-*`，并通过 Tailwind CSS 4 `@theme inline` 映射为工具类变量。
 
-## 颜色
+## 中性色板与材质 Token
 
-CSS 原始语义变量统一使用 `--react-web-desktop-<角色>`，可在 Tailwind 中经 `--color-react-web-desktop-<角色>` 暴露。下面列出的状态填色均为实色，避免透明层叠后颜色随背景变化。
-
-| 角色 | 浅色 | 深色 | 用途 |
+| 角色 | 浅色 (`light`) | 深色 (`dark`) | 用途 |
 | --- | --- | --- | --- |
-| `canvas` | `#F2F1F3` | `#18181B` | 桌面底色、无壁纸时的回退 |
-| `surface` | `#FFFFFF` | `#202023` | 窗口主内容、表格 |
-| `subtle` | `#F7F6F8` | `#262629` | 工具栏、属性面板、次级背景 |
-| `panel` | `#F6F4FB` | `#282631` | 非活动标题栏、应用侧栏、监控卡片外层 |
-| `window-title-active` | `#EFEAF9` | `#332C40` | 活动窗口的标题栏 |
-| `raised` | `#FFFFFF` | `#2B2A2E` | 菜单、弹窗 |
-| `shell` | `#F2F1F3` | `#18181B` | 任务栏实色及模糊不支持时的回退 |
-| `fg` | `#242326` | `#F3F2F5` | 主文字、默认图标 |
-| `muted` | `#5D5963` | `#BDB8C3` | 次级文字、时间和说明 |
-| `divider` | `#DDDADF` | `#3D3A41` | 装饰性分割线 |
-| `border` | `#807A85` | `#827D8A` | 必须可辨认的控件边界 |
-| `window-border` | `#BEB7CC` | `#595268` | 非活动窗口边框，活动边框混入 60% 的 `accent` |
-| `hover` | `#E9E7EB` | `#343238` | 中性控件悬停 |
-| `pressed` | `#DEDCE1` | `#403D45` | 中性控件按下 |
-| `selected` | `#EEE9FA` | `#383048` | 整项或整行的选中背景，可搭配名称加粗 |
-| `accent` | `#6246B5` | `#BBA7FA` | 主按钮背景、选中标记、可交互链接 |
-| `accent-hover` | `#543A9F` | `#CDBEFF` | 主按钮悬停背景 |
-| `accent-pressed` | `#483285` | `#AA92EF` | 主按钮按下背景 |
-| `on-accent` | `#FFFFFF` | `#211A30` | 主按钮文案与图标 |
-| `focus` | `#6246B5` | `#BBA7FA` | 键盘焦点环 |
-| `success` | `#186344` | `#88D6AF` | 正常、已完成 |
-| `warning` | `#784800` | `#F6CC86` | 需注意、风险 |
-| `danger` | `#A3293D` | `#FF9BAA` | 失败、危险操作 |
-| `on-danger` | `#FFFFFF` | `#18181B` | 危险实底按钮文案与图标 |
-| `info` | `#285984` | `#9FC5EA` | 信息、处理中 |
-| `disabled` | `#77727C` | `#8C8693` | 禁用控件文字与图标 |
-| `scrim` | `rgb(24 24 27 / 42%)` | `rgb(0 0 0 / 56%)` | 模态遮罩 |
+| `--godesk-canvas` | `#F3F3F3` | `#1C1C1C` | 桌面回退底色、壁纸兜底 |
+| `--godesk-surface` | `#FFFFFF` | `#202020` | 窗口主内容面、表格、卡片表面 |
+| `--godesk-subtle` | `#F9F9F9` | `#272727` | 工具栏、次级区域、状态栏 |
+| `--godesk-panel` | `#F6F6F6` | `#2C2C2C` | 侧栏、监控背景面板、Mica 活动基面 |
+| `--godesk-raised` | `#FCFCFC` | `#323232` | 菜单、浮层、对话框实色回退面 |
+| `--godesk-shell` | `#F4F4F4` | `#202020` | 任务栏实色回退面 |
+| `--godesk-fg` | `#242424` | `#F5F5F5` | 主文字与高对比前景 |
+| `--godesk-muted` | `#595959` | `#C0C0C0` | 次级文字、时间与说明 |
+| `--godesk-divider` | `rgb(0 0 0 / 7%)` | `rgb(255 255 255 / 8%)` | 发丝分割线 |
+| `--godesk-border` | `#00000026` | `#FFFFFF26` | 可交互控件边界 |
+| `--godesk-window-border` | `rgb(0 0 0 / 12%)` | `rgb(255 255 255 / 12%)` | 窗口与浮层发丝外边框 |
+| `--godesk-hover` | `#EDEDED` | `#363636` | 中性悬停底色 |
+| `--godesk-pressed` | `#E5E5E5` | `#404040` | 中性按下底色 |
+| `--godesk-acrylic-bg` | `rgb(249 249 249 / 78%)` | `rgb(32 32 32 / 78%)` | 任务栏 Acrylic 毛玻璃底色 |
+| `--godesk-acrylic-strong` | `rgb(252 252 252 / 92%)` | `rgb(44 44 44 / 92%)` | 开始菜单、弹出浮层、登录卡片强磨砂底色 |
+| `--godesk-acrylic-blur` | `blur(28px) saturate(160%)` | 同左 | Acrylic 背景模糊滤镜 |
+| `--godesk-acrylic-highlight` | `rgb(255 255 255 / 65%)` | `rgb(255 255 255 / 8%)` | 顶部发丝内高光线 |
+| `--godesk-mica-bg` | `var(--godesk-panel)` | 同左 | 激活窗口标题栏与侧边栏 Mica 层级 |
+| `--godesk-mica-inactive` | `var(--godesk-shell)` | 同左 | 非激活窗口标题栏背景 |
+| `--godesk-success` / `warning` / `danger` / `info` | `#186344` / `#784800` / `#A3293D` / `#285984` | `#88D6AF` / `#F6CC86` / `#FF9BAA` / `#9FC5EA` | 运维语义状态前景色 |
 
-大面积表面用中性色。主按钮使用 `accent` 与 `on-accent`，选中背景使用 `selected`，键盘焦点单独使用 `focus` 描边。状态前景用于 `surface`、`subtle` 或 `raised`，并搭配文字或图标。壁纸渐变色值定义在桌面样式中。 [Fluent 2 色彩规范](https://fluent2.microsoft.design/color) · [主题规范](09-theme-guidelines.md)
+在 `@media (forced-colors: active)` 下，全部 Acrylic 与 Mica 变量自动回退为 `Canvas` / `none` / `transparent`。
 
-## 字体与图标
+## 强调色预设（`data-accent`）
 
-界面使用 `--react-web-desktop-font-ui`，拉丁字母与数字优先用 Figtree Variable，简体中文优先用 Noto Sans SC Variable。终端、代码、路径和等宽标识使用 `--react-web-desktop-font-mono`，优先用 JetBrains Mono Variable。三套字体由 Fontsource 自托管，系统字体提供回退，OFL 许可证随构建产物分发。表格数值与时钟使用 `tabular-nums`。
+通过 `html[data-accent="<id>"]` 驱动 `--godesk-accent`、`--godesk-accent-hover`、`--godesk-accent-pressed`、`--godesk-on-accent`、`--godesk-focus`、`--godesk-selected`，所有 10 种亮/暗组合在按钮态与选中面均满足 WCAG AA（≥ 4.5:1）：
 
-| Token | 字号 / 行高 | 场景 |
+| 预设 ID | 名称 | 浅色强调色 | 深色强调色 |
+| --- | --- | --- | --- |
+| `blue`（默认） | 系统蓝 | `#0067C0` | `#60CDFF` |
+| `iris` | 鸢尾紫 | `#6246B5` | `#BBA7FA` |
+| `teal` | 青碧 | `#007C7B` | `#4FD1C5` |
+| `amber` | 琥珀 | `#B45309` | `#FBBF24` |
+| `rose` | 玫瑰 | `#BE185D` | `#F472B6` |
+
+## 字体与排版
+
+- UI 字体：`--godesk-font-ui`（`"Figtree Variable", "Noto Sans SC Variable", "Microsoft YaHei UI", "PingFang SC", "Segoe UI", sans-serif`）
+- 等宽字体：`--godesk-font-mono`（`"JetBrains Mono Variable", "Cascadia Code", "Consolas", "SFMono-Regular", monospace`）
+- 数值与时钟统一启用 `font-variant-numeric: tabular-nums`。
+
+| Token | 字号 / 行高 | 典型用途 |
 | --- | --- | --- |
-| `text-react-web-desktop-caption` | 12 / 16 | 辅助说明、文件元数据、次级时间。中文用 400 字重 |
-| `text-react-web-desktop-compact` | 13 / 18 | 紧凑菜单和路径用 400 字重，表头和面板分组标题用 500 |
-| `text-react-web-desktop-body` | 14 / 20 | 正文、文件名、应用名称用 400 字重，工具栏操作用 500 |
-| `text-react-web-desktop-subtitle` | 16 / 24 | 分组标题、关键指标标签用 600 字重 |
-| `text-react-web-desktop-title` | 20 / 28 | 页面、弹窗标题用 600 字重 |
-| `text-react-web-desktop-metric` | 28 / 36 | 核心指标读数用 600 字重 |
+| `--text-godesk-caption` | 12 / 16 px | 元数据、辅助说明、图标辅助标签 |
+| `--text-godesk-compact` | 13 / 18 px | 菜单项、桌面图标名称、路径、表头 |
+| `--text-godesk-body` | 14 / 20 px | 正文、文件名、标题栏标题、按钮文案 |
+| `--text-godesk-subtitle` | 16 / 24 px | 分组标题、指标卡片标题 |
+| `--text-godesk-title` | 20 / 28 px | 页面主标题 |
+| `--text-godesk-metric` | 28 / 36 px | 系统监控核心读数 |
 
-桌面、开始菜单和任务栏提示里的应用名，与文件图标下的文件名使用相同的 14 / 20 / 400 排版。Noto Sans SC 在 12 px 加粗时，笔画密集的字容易挤在一起。中文辅助文字最小用 12 px / 400，需要强调的紧凑文字升到 13 px / 500，标题需要 600 字重时至少用 14 px。布局变窄时优先允许换行或调整列宽。验收时用「系统设置」「文件管理器」等实际文案，在浅色、深色及 100%、125%、150% 缩放下检查笔画和裁切。
+## 尺寸、圆角与动效
 
-字号与行高以 16 px 根字号给出，CSS 使用 `rem`。Lucide 的常用尺寸是 16（行内、标题栏控制图标）、20（工具栏、任务栏）、24（桌面快捷方式）。图标尺寸和命中区各自定义。
-
-## 间距、圆角与高程
-
-- 间距标尺为 4、8、12、16、20、24、32、40、48、56 px，对应 Tailwind 默认 4 px 标尺下的 `1、2、3、4、5、6、8、10、12、14`。例如 `gap-2`、`p-4`、`px-6`。组件语义尺寸优先用下表的变量。
-- 圆角 `rounded-react-web-desktop-control` 6 px，`rounded-react-web-desktop-overlay` 8 px，`rounded-react-web-desktop-window` 12 px。最大化窗口和贴合工作区的移动端应用视图为 0。
-- `shadow-react-web-desktop-overlay` 用于菜单与弹窗，浅色 `0 6px 18px rgb(24 24 27 / 16%)`，深色 `0 6px 18px rgb(0 0 0 / 45%)`。
-- `--react-web-desktop-shadow-window` 用于普通窗口，`--react-web-desktop-shadow-window-active` 用于活动窗口。两者都通过近距离与远距离阴影表达高程，具体数值见 [theme.css](../../src/styles/theme.css)。平面内容用 1 px 分割线，窗口堆叠由 [04](04-window-guidelines.md) 定义。
-
-## 尺寸与动效
-
-| 参数 | CSS 变量或约定 | 基线 |
+| 参数 | CSS 变量 | 基线 |
 | --- | --- | --- |
-| 任务栏内容高度 | `--react-web-desktop-taskbar` | 56 px，底部安全区另计 |
-| 标题栏 / 工具栏最小高度 | `--react-web-desktop-titlebar` / `--react-web-desktop-toolbar` | 44 / 44 px |
-| 紧凑 / 标准 / 触控目标 | `--react-web-desktop-control-compact` / `--react-web-desktop-control` / `--react-web-desktop-control-touch` | 32 / 36 / 44 px |
-| 标题栏控制（精细指针） | 宽用标准，高用紧凑 | 每个 36 × 32 px |
-| 表头与数据行最小高度 | `--react-web-desktop-row-compact` / `--react-web-desktop-row` | 32 / 40 px，触控时可交互行至少 44 px |
-| 内容内边距 | 紧凑 / 标准 | 12 / 16 px |
-| 分栏尺寸 | 导航最小 / 首选，主区最小，检查器最小 / 首选 | 192 / 224，360，256 / 288 px |
-| 普通浮动窗口 | 最小，通用首次打开建议 | 320 × 240，720 × 480 CSS px |
-| 漂移保留范围 | `minVisible` 起点，最终按抓取区验收 | 176 CSS px；具体见 [04](04-window-guidelines.md) |
-| 浮动窗口缩放热区 | 边 / 角，精细指针 | 6 / 12 CSS px |
-| 视口与应用容器断点 | 视口；应用双栏 / 三栏 | 640；600 / 960 CSS px，见 [08](08-responsive-guidelines.md) |
-| 焦点环 | 宽度 / 偏移 | 2 / 2 CSS px；允许内绘以防裁切 |
-| 过渡 | `--react-web-desktop-duration-feedback` / `--react-web-desktop-duration-overlay` | 120 / 180 ms，`ease-out`，减少动效时去掉装饰过渡 |
+| 任务栏高度 | `--godesk-taskbar` | `48px`（另加 `env(safe-area-inset-bottom)`） |
+| 窗口标题栏高度 | `--godesk-titlebar` | `38px`（触控自动升至 `44px`） |
+| 工具栏最小高度 | `--godesk-toolbar` | `44px`（文件管理器紧凑顶栏采用 `38px`） |
+| 紧凑 / 标准 / 触控控件 | `--godesk-control-compact` / `--godesk-control` / `--godesk-control-touch` | `32 / 36 / 44 px` |
+| 紧凑 / 标准列表行 | `--godesk-row-compact` / `--godesk-row` | `32 / 40 px` |
+| 圆角 | `--godesk-radius-control` / `overlay` / `window` | `6 / 8 / 12 px`（最大化窗口为 `0`） |
+| 动效时长 | `--godesk-duration-feedback` / `overlay` | `120 / 180 ms`，`ease-out` |
+| 应用容器断点 | `--container-godesk-split` / `wide` | `600 / 960 px`（`@godesk-split/app`、`@godesk-wide/app`） |
 
-触控目标在宽、高两个方向均至少 44 CSS px。标题栏、工具栏和数据行尺寸为最小值，允许因字体缩放和换行而增高。任务栏 56 px 是默认内容高度，窄屏不通过缩小命中区换空间。
+## 偏好持久化键与迁移
 
-## Tailwind CSS 4 对应关系
-
-原始色值在 `src/styles/theme.css` 的 `:root` 与 `:root[data-theme="dark"]` 声明，通过顶层 `@theme inline` 映射到 Tailwind。 [Tailwind CSS Theme variables](https://tailwindcss.com/docs/theme)
-
-```css
-@import "tailwindcss";
-
-:root {
-  --react-web-desktop-surface: #FFFFFF;
-  --react-web-desktop-fg: #242326;
-  --react-web-desktop-control: 2.25rem;
-  --react-web-desktop-shadow-window: 0 2px 5px rgb(39 27 65 / 7%), 0 10px 28px rgb(39 27 65 / 13%);
-}
-
-:root[data-theme="dark"] {
-  --react-web-desktop-surface: #202023;
-  --react-web-desktop-fg: #F3F2F5;
-  --react-web-desktop-shadow-window: 0 2px 6px rgb(0 0 0 / 22%), 0 10px 28px rgb(0 0 0 / 34%);
-}
-
-@theme inline {
-  --color-react-web-desktop-surface: var(--react-web-desktop-surface);
-  --color-react-web-desktop-fg: var(--react-web-desktop-fg);
-  --spacing-react-web-desktop-control: var(--react-web-desktop-control);
-  --text-react-web-desktop-body: 0.875rem;
-  --text-react-web-desktop-body--line-height: 1.25rem;
-  --radius-react-web-desktop-window: 0.75rem;
-  --shadow-react-web-desktop-window: var(--react-web-desktop-shadow-window);
-  --container-react-web-desktop-split: 600px;
-  --container-react-web-desktop-wide: 960px;
-}
-```
-
-| 命名空间 | 使用示例 |
-| --- | --- |
-| `--color-react-web-desktop-*` | `bg-react-web-desktop-surface text-react-web-desktop-fg border-react-web-desktop-border` |
-| `--spacing-react-web-desktop-*` | `min-h-react-web-desktop-control`，其他语义尺寸按同一命名方式映射 |
-| `--text-react-web-desktop-*` / `--font-react-web-desktop-*` | `text-react-web-desktop-body font-react-web-desktop-mono` |
-| `--radius-react-web-desktop-*` / `--shadow-react-web-desktop-*` | `rounded-react-web-desktop-window shadow-react-web-desktop-window` |
-| `--container-react-web-desktop-*` | `@react-web-desktop-split/app:*`、`@react-web-desktop-wide/app:*`，父元素为 `@container/app` |
-
-WMKit 的几何值以 CSS px 传入。后续迁移时用同一份定义或契约测试同步 CSS 与 TS，避免颜色、状态和窗口尺寸分散在组件中。
+| 偏好项 | 当前 Key | 兼容读取的旧 Key |
+| --- | --- | --- |
+| 主题模式 | `godesk-theme` | `react-web-desktop-theme` |
+| 强调色 | `godesk-accent` | 无（默认 `blue`） |
+| 桌面壁纸 | `godesk-wallpaper` | 无（默认 `bloom`；旧值 `iris`/`lavender` 映射为 `prism`） |
+| 任务栏固定应用 | `godesk-pinned-apps` | 无（默认 `files, editor, terminal, monitor, services`） |
+| 窗口尺寸记忆 | `godesk-window-size:<group>` | `react-web-desktop-window-size:<group>`、`react-web-desktop-file-window-size` |
+| 插件桌面快捷方式 | `godesk-extension-shortcuts` | `react-web-desktop-extension-shortcuts` |

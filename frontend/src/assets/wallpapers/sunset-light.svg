@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FDF6EE"/>
+      <stop offset="0.55" stop-color="#FAECDF"/>
+      <stop offset="1" stop-color="#F6E2D8"/>
+    </linearGradient>
+    <linearGradient id="s1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FDBA74" stop-opacity="0.58"/>
+      <stop offset="0.55" stop-color="#FB7185" stop-opacity="0.4"/>
+      <stop offset="1" stop-color="#C084FC" stop-opacity="0.25"/>
+    </linearGradient>
+    <linearGradient id="s2" x1="1" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FDE68A" stop-opacity="0.62"/>
+      <stop offset="1" stop-color="#F97316" stop-opacity="0.28"/>
+    </linearGradient>
+    <filter id="b" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="40"/>
+    </filter>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <circle cx="1360" cy="360" r="460" fill="url(#s1)" filter="url(#b)"/>
+  <ellipse cx="720" cy="780" rx="620" ry="300" transform="rotate(-10 720 780)" fill="url(#s2)" filter="url(#b)"/>
+  <path d="M-100 840C420 560 980 860 1980 420V1140H-100Z" fill="#FFFFFF" fill-opacity="0.34"/>
+</svg>

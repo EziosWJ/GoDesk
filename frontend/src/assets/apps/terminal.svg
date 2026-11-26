@@ -1,12 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48" fill="none">
   <defs>
-    <linearGradient id="g" x2="1" y2="1">
-      <stop stop-color="#515873" />
-      <stop offset="1" stop-color="#252A3E" />
+    <linearGradient id="tm-bg" x1="5" y1="8" x2="43" y2="41" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3A3D45"/>
+      <stop offset="1" stop-color="#191B20"/>
+    </linearGradient>
+    <linearGradient id="tm-bar" x1="5" y1="8" x2="43" y2="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4B4F5A"/>
+      <stop offset="1" stop-color="#32353E"/>
+    </linearGradient>
+    <linearGradient id="tm-prompt" x1="12" y1="21" x2="24" y2="33" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7AD6FF"/>
+      <stop offset="1" stop-color="#2899F5"/>
     </linearGradient>
   </defs>
-  <rect x="1" y="1" width="46" height="46" rx="12" fill="url(#g)" />
-  <g fill="none" stroke="white" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" transform="translate(8 8) scale(.67)">
-    <path d="m12 17 8 7-8 7M25 31h12" />
-  </g>
+  <rect x="4" y="8" width="40" height="32" rx="6" fill="url(#tm-bg)" stroke="#555A66" stroke-opacity="0.6" stroke-width="1"/>
+  <path d="M4.5 14a5.5 5.5 0 0 1 5.5-5.5h28a5.5 5.5 0 0 1 5.5 5.5v2.5h-39V14Z" fill="url(#tm-bar)"/>
+  <rect x="9" y="11" width="10" height="3" rx="1.5" fill="#FFFFFF" fill-opacity="0.22"/>
+  <circle cx="38" cy="12.5" r="1.5" fill="#FFFFFF" fill-opacity="0.4"/>
+  <circle cx="33" cy="12.5" r="1.5" fill="#FFFFFF" fill-opacity="0.24"/>
+  <path d="M12.5 22.5L18.5 27.5L12.5 32.5" stroke="url(#tm-prompt)" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="22" y="30.8" width="12.5" height="3" rx="1.5" fill="#F2F6FA"/>
 </svg>

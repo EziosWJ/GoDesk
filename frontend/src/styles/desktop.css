@@ -1,0 +1,191 @@
+.desktop-shell {
+  position: relative;
+  isolation: isolate;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--godesk-canvas);
+}
+
+.wallpaper {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background-color: var(--godesk-canvas);
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-image: url('../assets/wallpapers/bloom-light.svg');
+}
+
+[data-theme='dark'] .wallpaper { background-image: url('../assets/wallpapers/bloom-dark.svg'); }
+
+[data-wallpaper='aurora'] .wallpaper { background-image: url('../assets/wallpapers/aurora-light.svg'); }
+[data-theme='dark'] [data-wallpaper='aurora'] .wallpaper { background-image: url('../assets/wallpapers/aurora-dark.svg'); }
+
+[data-wallpaper='prism'] .wallpaper { background-image: url('../assets/wallpapers/prism-light.svg'); }
+[data-theme='dark'] [data-wallpaper='prism'] .wallpaper { background-image: url('../assets/wallpapers/prism-dark.svg'); }
+
+[data-wallpaper='sunset'] .wallpaper { background-image: url('../assets/wallpapers/sunset-light.svg'); }
+[data-theme='dark'] [data-wallpaper='sunset'] .wallpaper { background-image: url('../assets/wallpapers/sunset-dark.svg'); }
+
+[data-wallpaper='graphite'] .wallpaper { background-image: url('../assets/wallpapers/graphite-light.svg'); }
+[data-theme='dark'] [data-wallpaper='graphite'] .wallpaper { background-image: url('../assets/wallpapers/graphite-dark.svg'); }
+
+.work-area {
+  position: absolute;
+  inset: 0 0 var(--godesk-taskbar-total);
+  z-index: 0;
+  isolation: isolate;
+  overflow: hidden;
+}
+
+.work-area:focus-visible {
+  outline: 2px solid var(--godesk-focus);
+  outline-offset: -2px;
+}
+
+/* Windows-style top-to-bottom multi-column desktop grid. */
+.shortcut-list {
+  position: absolute;
+  inset: 14px 14px 12px;
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, minmax(84px, auto));
+  grid-auto-columns: 84px;
+  gap: 8px 6px;
+  align-content: start;
+  justify-content: start;
+  align-items: start;
+  overflow: auto;
+  scrollbar-width: none;
+  pointer-events: none;
+}
+
+.shortcut-list::-webkit-scrollbar { display: none; }
+
+.shortcut {
+  pointer-events: auto;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  gap: 5px;
+  width: 84px;
+  min-height: 82px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--godesk-radius-overlay);
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-compact);
+  font-weight: 400;
+  line-height: var(--text-godesk-compact--line-height);
+  text-align: center;
+  overflow-wrap: anywhere;
+  user-select: none;
+  transition:
+    background-color var(--godesk-duration-feedback) ease-out,
+    border-color var(--godesk-duration-feedback) ease-out;
+}
+
+.shortcut-label {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-shadow:
+    0 1px 2px rgb(255 255 255 / 90%),
+    0 0 8px rgb(255 255 255 / 72%);
+}
+
+[data-theme='dark'] .shortcut-label {
+  text-shadow:
+    0 1px 3px rgb(0 0 0 / 88%),
+    0 0 10px rgb(0 0 0 / 64%);
+}
+
+.shortcut:hover {
+  background: rgb(255 255 255 / 44%);
+  border-color: rgb(255 255 255 / 55%);
+  backdrop-filter: blur(8px);
+}
+
+[data-theme='dark'] .shortcut:hover {
+  background: rgb(255 255 255 / 10%);
+  border-color: rgb(255 255 255 / 14%);
+}
+
+.shortcut:active {
+  background: rgb(255 255 255 / 62%);
+}
+
+[data-theme='dark'] .shortcut:active {
+  background: rgb(255 255 255 / 16%);
+}
+
+.shortcut[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--godesk-accent) 18%, rgb(255 255 255 / 52%));
+  border-color: color-mix(in srgb, var(--godesk-accent) 62%, transparent);
+  backdrop-filter: blur(10px);
+}
+
+[data-theme='dark'] .shortcut[aria-pressed='true'] {
+  background: color-mix(in srgb, var(--godesk-accent) 22%, rgb(255 255 255 / 10%));
+  border-color: color-mix(in srgb, var(--godesk-accent) 68%, transparent);
+}
+
+.shortcut:focus-visible {
+  outline: 2px solid var(--godesk-focus);
+  outline-offset: -2px;
+  background: color-mix(in srgb, var(--godesk-surface) 75%, transparent);
+}
+
+.shortcut[aria-pressed='true']:focus-visible {
+  background: color-mix(in srgb, var(--godesk-accent) 20%, var(--godesk-surface));
+}
+
+.shortcut-tile {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  flex: none;
+}
+
+.shortcut-tile img {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 2px 4px rgb(0 0 0 / 16%));
+}
+
+[data-theme='dark'] .shortcut-tile img {
+  filter: drop-shadow(0 3px 6px rgb(0 0 0 / 38%));
+}
+
+.shortcut-tile-fallback { display: none; }
+
+@media (max-width: 520px) {
+  .shortcut-list {
+    inset: 10px 8px 10px;
+    grid-auto-flow: row;
+    grid-template-rows: none;
+    grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+    grid-auto-columns: auto;
+    pointer-events: auto;
+  }
+
+  .shortcut { width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shortcut { transition: none; }
+}
+
+@media (forced-colors: active) {
+  .shortcut-label { text-shadow: none; }
+  .shortcut-tile img { filter: none; }
+  .shortcut:hover,
+  .shortcut:active,
+  .shortcut[aria-pressed='true'] {
+    backdrop-filter: none;
+  }
+}

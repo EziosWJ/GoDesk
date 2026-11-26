@@ -3,8 +3,8 @@
   flex-direction: column;
   height: 100%;
   min-height: 0;
-  background: var(--react-web-desktop-surface);
-  font: var(--text-react-web-desktop-body)/var(--text-react-web-desktop-body--line-height) var(--react-web-desktop-font-ui);
+  background: var(--godesk-surface);
+  font: var(--text-godesk-body)/var(--text-godesk-body--line-height) var(--godesk-font-ui);
 }
 
 .extensions-toolbar {
@@ -15,31 +15,31 @@
   justify-content: space-between;
   gap: 10px;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--react-web-desktop-divider);
-  background: var(--react-web-desktop-panel);
+  border-bottom: 1px solid var(--godesk-divider);
+  background: var(--godesk-panel);
 }
 
 .extensions-toolbar h2 {
   margin: 0;
-  font-size: var(--text-react-web-desktop-subtitle);
-  line-height: var(--text-react-web-desktop-subtitle--line-height);
+  font-size: var(--text-godesk-subtitle);
+  line-height: var(--text-godesk-subtitle--line-height);
   font-weight: 650;
 }
 
 .extensions-toolbar p { margin: 2px 0 0; }
 .extensions-toolbar-actions { display: flex; flex: none; gap: 6px; }
-.extensions-toolbar-actions .app-control { border: 1px solid var(--react-web-desktop-divider); }
+.extensions-toolbar-actions .app-control { border: 1px solid var(--godesk-divider); }
 .extensions-icon-button {
-  width: var(--react-web-desktop-control-compact);
+  width: var(--godesk-control-compact);
   padding: 0;
 }
 
 .extensions-banner { margin: 8px 12px 0; }
 .extensions-error {
   margin: 0;
-  color: var(--react-web-desktop-danger);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-danger);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
   overflow-wrap: anywhere;
 }
 
@@ -60,13 +60,13 @@
   justify-content: space-between;
   gap: 10px;
   padding: 10px 12px;
-  border: 1px solid var(--react-web-desktop-divider);
-  border-radius: var(--react-web-desktop-radius-overlay);
-  background: var(--react-web-desktop-raised);
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-raised);
 }
 
 .extension-row[data-status='failed'] {
-  border-color: color-mix(in srgb, var(--react-web-desktop-danger) 45%, var(--react-web-desktop-divider));
+  border-color: color-mix(in srgb, var(--godesk-danger) 45%, var(--godesk-divider));
 }
 
 .extension-row-main {
@@ -87,20 +87,20 @@
 .extension-title h3 {
   margin: 0;
   overflow: hidden;
-  color: var(--react-web-desktop-fg);
-  font-size: var(--text-react-web-desktop-body);
-  line-height: var(--text-react-web-desktop-body--line-height);
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-body);
+  line-height: var(--text-godesk-body--line-height);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.extension-icon { flex: none; color: var(--react-web-desktop-accent); }
+.extension-icon { flex: none; color: var(--godesk-accent); }
 .extension-version {
-  color: var(--react-web-desktop-muted);
-  font-family: var(--react-web-desktop-font-mono);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-muted);
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
 }
 
 .extension-status {
@@ -109,27 +109,27 @@
   gap: 4px;
   padding: 1px 8px;
   border-radius: 999px;
-  background: var(--react-web-desktop-subtle);
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  background: var(--godesk-subtle);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
   white-space: nowrap;
 }
 .extension-status[data-status='running'] {
-  background: color-mix(in srgb, var(--react-web-desktop-success) 14%, transparent);
-  color: var(--react-web-desktop-success);
+  background: color-mix(in srgb, var(--godesk-success) 14%, transparent);
+  color: var(--godesk-success);
 }
 .extension-status[data-status='failed'] {
-  background: color-mix(in srgb, var(--react-web-desktop-danger) 13%, transparent);
-  color: var(--react-web-desktop-danger);
+  background: color-mix(in srgb, var(--godesk-danger) 13%, transparent);
+  color: var(--godesk-danger);
 }
 
 .extension-capability {
   padding: 0 5px;
-  border: 1px solid var(--react-web-desktop-divider);
+  border: 1px solid var(--godesk-divider);
   border-radius: 4px;
-  color: var(--react-web-desktop-muted);
-  font-family: var(--react-web-desktop-font-mono);
+  color: var(--godesk-muted);
+  font-family: var(--godesk-font-mono);
   font-size: 10px;
   line-height: 16px;
 }
@@ -137,16 +137,16 @@
 .extension-id {
   margin: 0;
   overflow: hidden;
-  color: var(--react-web-desktop-muted);
-  font-family: var(--react-web-desktop-font-mono);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-muted);
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .extension-actions { display: flex; flex: none; flex-wrap: wrap; gap: 5px; max-width: 100%; }
-.extension-actions .app-control { border: 1px solid var(--react-web-desktop-divider); }
+.extension-actions .app-control { border: 1px solid var(--godesk-divider); }
 
 .extensions-empty {
   display: flex;
@@ -156,18 +156,18 @@
   justify-content: center;
   gap: 7px;
   padding: 30px 16px;
-  color: var(--react-web-desktop-muted);
+  color: var(--godesk-muted);
   text-align: center;
 }
-.extensions-empty h3 { margin: 0; color: var(--react-web-desktop-fg); }
+.extensions-empty h3 { margin: 0; color: var(--godesk-fg); }
 .extensions-empty p { margin: 0; }
-.extensions-empty .app-control { margin-top: 6px; border: 1px solid var(--react-web-desktop-divider); }
+.extensions-empty .app-control { margin-top: 6px; border: 1px solid var(--godesk-divider); }
 
 .extension-hint {
   margin: 0;
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
 }
 
 .extension-dialog {
@@ -175,14 +175,14 @@
   width: min(460px, calc(100% - 24px));
   max-height: calc(100% - 24px);
   overflow: hidden;
-  border: 1px solid var(--react-web-desktop-border);
-  border-radius: var(--react-web-desktop-radius-overlay);
-  background: var(--react-web-desktop-raised);
-  color: var(--react-web-desktop-fg);
-  box-shadow: var(--react-web-desktop-shadow-overlay);
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-raised);
+  color: var(--godesk-fg);
+  box-shadow: var(--godesk-shadow-overlay);
 }
 .extension-dialog[open] { display: flex; flex-direction: column; }
-.extension-dialog::backdrop { background: var(--react-web-desktop-scrim); }
+.extension-dialog::backdrop { background: var(--godesk-scrim); }
 .extension-dialog form { display: flex; flex-direction: column; min-height: 0; }
 
 .extension-dialog-body {
@@ -193,8 +193,8 @@
 }
 .extension-dialog-body h2 {
   margin: 0;
-  font-size: var(--text-react-web-desktop-subtitle);
-  line-height: var(--text-react-web-desktop-subtitle--line-height);
+  font-size: var(--text-godesk-subtitle);
+  line-height: var(--text-godesk-subtitle--line-height);
   font-weight: 650;
 }
 
@@ -204,29 +204,29 @@
   display: flex;
   align-items: baseline;
   gap: 6px;
-  color: var(--react-web-desktop-muted);
-  font-size: var(--text-react-web-desktop-caption);
-  line-height: var(--text-react-web-desktop-caption--line-height);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
   font-weight: 500;
 }
-.extension-field-type { color: var(--react-web-desktop-muted); font-weight: 400; opacity: 0.8; }
+.extension-field-type { color: var(--godesk-muted); font-weight: 400; opacity: 0.8; }
 .extension-field input[type='text'],
 .extension-field input[type='password'],
 .extension-field input[type='number'] {
-  min-height: var(--react-web-desktop-control-compact);
+  min-height: var(--godesk-control-compact);
   padding: 4px 8px;
-  border: 1px solid var(--react-web-desktop-border);
-  border-radius: var(--react-web-desktop-radius-control);
-  background: var(--react-web-desktop-surface);
-  color: var(--react-web-desktop-fg);
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+  color: var(--godesk-fg);
   font: inherit;
 }
-.extension-field input:focus-visible { outline: 2px solid var(--react-web-desktop-focus); outline-offset: 1px; }
+.extension-field input:focus-visible { outline: 2px solid var(--godesk-focus); outline-offset: 1px; }
 .extension-check {
   display: flex;
   align-items: center;
   gap: 7px;
-  color: var(--react-web-desktop-fg);
+  color: var(--godesk-fg);
 }
 
 .extension-dialog-actions {
@@ -235,19 +235,19 @@
   justify-content: flex-end;
   gap: 8px;
   padding: 10px 16px;
-  border-top: 1px solid var(--react-web-desktop-divider);
+  border-top: 1px solid var(--godesk-divider);
 }
 .extension-dialog-actions .app-control {
-  min-height: var(--react-web-desktop-control);
-  border: 1px solid var(--react-web-desktop-border);
+  min-height: var(--godesk-control);
+  border: 1px solid var(--godesk-border);
 }
 .extension-dialog-actions .danger-control {
-  border-color: var(--react-web-desktop-danger);
-  background: var(--react-web-desktop-danger);
-  color: var(--react-web-desktop-on-danger);
+  border-color: var(--godesk-danger);
+  background: var(--godesk-danger);
+  color: var(--godesk-on-danger);
 }
 .extension-dialog-actions .danger-control:not(:disabled):is(:hover, :active) {
-  border-color: var(--react-web-desktop-on-danger);
+  border-color: var(--godesk-on-danger);
 }
 
 .extension-frame {
@@ -255,7 +255,7 @@
   width: 100%;
   height: 100%;
   border: 0;
-  background: var(--react-web-desktop-surface);
+  background: var(--godesk-surface);
 }
 
 @media (any-pointer: coarse) {
@@ -264,6 +264,6 @@
   .extension-field input[type='text'],
   .extension-field input[type='password'],
   .extension-field input[type='number'] {
-    min-height: var(--react-web-desktop-control-touch);
+    min-height: var(--godesk-control-touch);
   }
 }

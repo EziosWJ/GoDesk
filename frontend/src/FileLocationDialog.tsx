@@ -8,7 +8,7 @@ type Position = { x: number; y: number }
 type Drag = { pointerId: number; handle: HTMLElement; start: Position; origin: Position }
 type Size = { width: number; height: number }
 type Resize = Drag & { bounds: DOMRect; size?: Size; previousSize?: Size }
-const sizePreference = 'react-web-desktop-file-location-size'
+const sizePreference = 'godesk-file-location-size'
 const minimumSize = { width: 520, height: 380 }
 const defaultSize = { width: 820, height: 540 }
 

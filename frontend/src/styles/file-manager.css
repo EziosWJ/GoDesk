@@ -1,0 +1,432 @@
+@reference "../index.css";
+
+.file-location-group .app-control[aria-current] {
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+  font-weight: 600;
+}
+
+.file-manager { display: flex; flex-direction: column; height: 100%; background: var(--godesk-surface); }
+.file-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 38px;
+  padding: 3px 8px;
+  background: var(--godesk-surface);
+  border-bottom: 1px solid var(--godesk-divider);
+}
+.file-navigation { gap: 6px; border-bottom: 0; }
+.file-actions { gap: 3px; background: var(--godesk-subtle); }
+.file-root-status { display: inline-flex; align-items: center; gap: 0.375rem; white-space: nowrap; }
+.file-toolbar > .app-control { flex: none; }
+.file-toolbar .app-control { font-weight: 500; }
+.file-toolbar :is([aria-expanded="true"], .file-hidden-toggle[aria-pressed="true"]) {
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+}
+.file-tool-group { display: flex; flex: none; align-items: center; gap: 2px; }
+.file-toolbar .file-tool { width: var(--godesk-control-compact); padding-inline: 0; }
+.file-extra-tools { margin-inline-start: 2px; padding-inline-start: 5px; border-inline-start: 1px solid var(--godesk-divider); }
+.file-toolbar-divider {
+  flex: none;
+  width: 1px;
+  height: 20px;
+  margin-inline: 3px;
+  background: var(--godesk-divider);
+}
+.file-toolbar .file-tool:disabled { color: var(--godesk-disabled); }
+.file-toolbar .file-more { margin-inline-start: 2px; }
+.file-path {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  cursor: text;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-subtle);
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  transition: border-color var(--godesk-duration-feedback) ease-out;
+}
+.file-path:hover { border-color: color-mix(in srgb, var(--godesk-fg) 24%, transparent); }
+.file-path ol { display: flex; align-items: center; width: max-content; min-height: 30px; padding-inline: 2px; }
+.file-path li { display: flex; align-items: center; white-space: nowrap; }
+.file-path li > svg { flex: none; color: var(--godesk-muted); }
+.file-path [aria-current] { display: flex; align-items: center; gap: 6px; padding-inline: 8px; border-radius: var(--godesk-radius-control); font-weight: 500; }
+.file-path button.app-control { font-weight: 400; }
+.file-path :is(button, [aria-current]) svg { flex: none; color: var(--godesk-muted); }
+.file-path button:focus-visible { outline-offset: -2px; }
+.file-search {
+  display: flex;
+  align-items: center;
+  flex: 0 0 clamp(96px, 29cqi, 240px);
+  gap: 6px;
+  padding-inline: 8px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-subtle);
+  color: var(--godesk-muted);
+  transition: border-color var(--godesk-duration-feedback) ease-out;
+}
+.file-search:hover { border-color: color-mix(in srgb, var(--godesk-fg) 24%, transparent); }
+.file-search svg { flex: none; }
+.file-search input {
+  width: 100%;
+  min-width: 0;
+  min-height: 30px;
+  color: var(--godesk-fg);
+}
+.file-search input::placeholder { color: var(--godesk-muted); opacity: 1; }
+.file-search:focus-within { outline: 2px solid var(--godesk-focus); outline-offset: -1px; }
+.file-search input:focus-visible { outline: none; }
+.file-panes { position: relative; display: grid; grid-template-columns: var(--file-columns, minmax(0, 1fr)); flex: 1; min-height: 0; }
+.file-manager[data-inspector-collapsed="false"] .file-panes {
+  grid-template-columns: var(--file-wide-columns, var(--file-columns, minmax(0, 1fr)));
+}
+.file-list { min-width: 0; overflow: auto; grid-column: var(--file-list-column, 1); grid-row: 1; background: var(--godesk-surface); }
+.file-list:focus-visible { outline: 2px solid var(--godesk-focus); outline-offset: -2px; }
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, var(--file-cell-width)), 1fr));
+  gap: 6px;
+  padding: 10px;
+}
+.file-grid[data-layout="tiles"] { --file-cell-width: 154px; }
+.file-grid[data-layout="icons"] { --file-cell-width: 100px; grid-auto-rows: minmax(106px, auto); }
+.file-grid-entry {
+  display: flex;
+  min-width: 0;
+  border-radius: var(--godesk-radius-control);
+}
+.file-grid-entry[data-selected="false"]:hover { background: var(--godesk-hover); }
+.file-grid-entry[data-selected="true"] { background: var(--godesk-selected); }
+.file-grid-entry .file-name {
+  width: 100%;
+  min-width: 0;
+  justify-content: flex-start;
+  gap: 9px;
+  padding: 7px 9px;
+  text-align: start;
+}
+.file-grid-entry .file-name:not(:disabled):is(:hover, :active) { background: transparent; }
+.file-name-text { min-width: 0; }
+.file-grid-entry .file-name-text { display: grid; gap: 1px; }
+.file-grid-entry .file-display-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-grid-entry small {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-grid[data-layout="tiles"] .file-name { min-height: 55px; }
+.file-grid[data-layout="tiles"] .file-name .file-type-icon { width: 28px; height: 28px; }
+.file-grid[data-layout="icons"] .file-name { flex-direction: column; justify-content: center; gap: 6px; text-align: center; }
+.file-grid[data-layout="icons"] .file-name-text { max-width: 100%; }
+.file-grid[data-layout="icons"] .file-name .file-type-icon { width: 46px; height: 46px; }
+.file-grid-entry .file-rename { flex-wrap: wrap; justify-content: center; align-content: center; width: 100%; padding: 5px; }
+.file-grid-entry .file-rename .file-type-icon { display: none; }
+.file-grid-entry .file-rename input { flex-basis: 100%; }
+.file-grid-empty { padding: 6px 13px; }
+.file-sidebar, .file-inspector {
+  z-index: 1;
+  display: none;
+  min-width: 0;
+  overflow: auto;
+  padding: 8px 12px;
+  background: var(--godesk-subtle);
+}
+.file-sidebar {
+  border-inline-end: 1px solid var(--godesk-divider);
+  background: var(--godesk-mica-bg);
+  padding: 10px 8px 12px;
+}
+.file-inspector { border-inline-start: 1px solid var(--godesk-divider); }
+.file-panel-heading { display: flex; justify-content: space-between; align-items: center; min-height: 32px; margin-bottom: 8px; }
+.file-panel-heading h2, .file-location-group h3 {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  font-weight: 500;
+}
+.file-location-heading { display: var(--file-location-control, flex); }
+.file-location-group + .file-location-group {
+  margin-block-start: 12px;
+  padding-block-start: 12px;
+  border-block-start: 1px solid var(--godesk-divider);
+}
+.file-location-group h3 {
+  padding-inline: 12px;
+  margin-block-end: 4px;
+}
+.file-location-group .app-control {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: var(--godesk-row-compact);
+  justify-content: flex-start;
+  gap: 8px;
+  padding-inline: 12px;
+  border-radius: var(--godesk-radius-control);
+}
+.file-location-group .app-control[aria-current]::before {
+  position: absolute;
+  inset-block: 7px;
+  inset-inline-start: 0;
+  width: 3px;
+  border-radius: 999px;
+  background: var(--godesk-accent);
+  content: "";
+}
+.file-location-group .app-control:not([aria-current]) svg { color: var(--godesk-muted); }
+.file-inspector p { overflow-wrap: anywhere; }
+.file-object { display: flex; align-items: flex-start; gap: 10px; padding-block: 8px 14px; }
+.file-object-name { font-weight: 650; min-width: 0; }
+.file-type-icon { width: 18px; height: 18px; flex: none; }
+.file-object .file-type-icon { width: 26px; height: 26px; }
+.file-type-icon.file-folder-icon { height: auto; }
+.file-inspector dl { border-top: 1px solid var(--godesk-divider); }
+.file-inspector dl > div {
+  display: grid;
+  grid-template-columns: 3em minmax(0, 1fr);
+  align-items: baseline;
+  gap: 10px;
+  padding-block: 8px;
+  border-bottom: 1px solid var(--godesk-divider);
+}
+.file-inspector dt { color: var(--godesk-muted); }
+.file-inspector dd { overflow-wrap: anywhere; }
+.file-permission-values { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 8px; }
+.file-permission-values code + code {
+  padding: 0 4px;
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+  color: var(--godesk-muted);
+}
+.file-property-actions { display: grid; gap: 10px; margin-top: 14px; }
+.file-property-actions:empty { display: none; }
+.file-property-edits { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 104px), 1fr)); gap: 6px; }
+.file-property-edits .app-control {
+  gap: 6px;
+  min-height: var(--godesk-control);
+  padding-inline: 7px;
+  border: 1px solid var(--godesk-divider);
+  background: var(--godesk-surface);
+}
+.file-property-edits svg { flex: none; color: var(--godesk-muted); }
+.file-property-actions .file-property-open {
+  justify-content: flex-start;
+  min-height: var(--godesk-control);
+  padding-inline: 10px;
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+}
+.file-property-form { display: grid; gap: 8px; margin-top: 14px; }
+.file-property-form label { display: grid; gap: 4px; }
+.file-property-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--godesk-control);
+  padding-inline: 8px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+}
+.file-property-form .file-mode-input { font-family: var(--godesk-font-mono); }
+.file-property-form [role="alert"] { color: var(--godesk-danger); }
+.file-property-form > div { display: flex; flex-wrap: wrap; gap: 6px; }
+.file-table { min-width: 520px; }
+.file-table th { background: var(--godesk-surface); }
+.file-table :is(th, td):not(:first-child) { white-space: nowrap; }
+.file-table code, .file-inspector code { font-family: var(--godesk-font-mono); }
+.file-table tr[data-selected] { cursor: pointer; }
+.file-table tr[data-selected="false"]:hover { background: var(--godesk-hover); }
+.file-table tr[data-selected="true"] { background: var(--godesk-selected); }
+.file-table tr:has(.file-name:focus-visible) { outline: 2px solid var(--godesk-focus); outline-offset: -2px; }
+.file-table td:first-child:has(.file-name) { width: 100%; padding: 0; }
+.file-table .file-name {
+  width: 100%;
+  min-height: calc(var(--godesk-row) - 1px);
+  padding-inline: 10px 8px;
+  justify-content: flex-start;
+  text-align: start;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+.file-table .file-name:not(:disabled):is(:hover, :active) { background: transparent; }
+.file-list [data-selected="true"] .file-display-name { font-weight: 600; }
+.file-table :is(th, td):last-child { text-align: end; font-variant-numeric: tabular-nums; }
+
+@media (forced-colors: active) {
+  .file-sidebar { border-inline-end-color: CanvasText; }
+  .file-folder-icon { --folder-back: Canvas; --folder-front: Canvas; --folder-edge: CanvasText; }
+  .file-list:focus-visible,
+  .file-table tr:has(.file-name:focus-visible) { outline-color: Highlight; }
+  :is(.file-grid-entry, .file-table tr)[data-selected="true"] {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+  }
+  .file-list [data-selected="true"] :is(td, .file-name small, .file-name .file-display-name) { color: inherit; }
+  .file-list [data-selected="true"] :is(.file-rename, .file-type-icon) { forced-color-adjust: auto; }
+  .file-table tr[data-selected="true"]:has(.file-name:focus-visible),
+  .file-grid-entry[data-selected="true"] .file-name:focus-visible { outline-color: HighlightText; }
+  .file-search:focus-within { outline-color: Highlight; }
+  .file-location-group .app-control[aria-current] { outline: 1px solid Highlight; outline-offset: -1px; }
+  .file-location-group .app-control[aria-current]::before { background: Highlight; }
+}
+.file-locations-button, .file-close-locations { display: var(--file-location-control, inline-flex); }
+.file-sidebar {
+  display: var(--file-sidebar-display, none);
+  grid-area: 1 / 1;
+}
+.file-manager[data-panel="locations"] .file-sidebar {
+  display: block;
+  position: var(--file-sidebar-position, absolute);
+  inset: 0 auto 0 0;
+  width: var(--file-sidebar-width, min(100%, 224px));
+  box-shadow: var(--file-sidebar-shadow, var(--godesk-shadow-overlay));
+}
+.file-manager[data-inspector-collapsed="false"] .file-inspector {
+  display: var(--file-inspector-display, none);
+  grid-area: var(--file-inspector-area, auto);
+}
+.file-manager[data-inspector-collapsed="false"][data-panel="properties"] .file-inspector {
+  display: block;
+  position: var(--file-inspector-position, absolute);
+  inset: 0 0 0 auto;
+  width: var(--file-inspector-width, min(100%, 288px));
+  box-shadow: var(--file-inspector-shadow, var(--godesk-shadow-overlay));
+}
+
+@variant @godesk-split/app {
+  .file-toolbar, .file-panes { --file-location-control: none; }
+  .file-panes {
+    --file-columns: minmax(192px, 224px) minmax(360px, 1fr);
+    --file-list-column: 2;
+    --file-sidebar-display: block;
+    --file-sidebar-position: static;
+    --file-sidebar-width: auto;
+    --file-sidebar-shadow: none;
+  }
+}
+
+@variant @godesk-wide/app {
+  .file-panes {
+    --file-wide-columns: minmax(192px, 224px) minmax(360px, 1fr) minmax(256px, 288px);
+    --file-inspector-display: block;
+    --file-inspector-area: 1 / 3;
+    --file-inspector-position: static;
+    --file-inspector-width: auto;
+    --file-inspector-shadow: none;
+  }
+}
+
+@variant @max-godesk-split/app {
+  .file-table :is(th, td):nth-child(2) { display: none; }
+}
+
+@media (any-pointer: coarse) {
+  .file-table .file-name { min-height: var(--godesk-control-touch); }
+  .file-search input, .file-path ol { min-height: var(--godesk-control-touch); }
+}
+
+.file-manager { position: relative; }
+.file-action-spacer { flex: 1; }
+.file-status > span:first-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.file-status [role="status"] { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.file-status button { flex: none; color: var(--godesk-accent); }
+.file-list [data-cut="true"] .file-display-name { color: var(--godesk-muted); text-decoration: underline dashed; }
+.file-manager :is([data-entry-id], .file-sidebar button)[data-drop-target="true"] {
+  background: var(--godesk-selected);
+  outline: 2px dashed var(--godesk-accent);
+  outline-offset: -2px;
+}
+.file-upload-drop {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--godesk-selected) 65%, transparent);
+  outline: 2px dashed var(--godesk-accent);
+  outline-offset: -4px;
+}
+.file-upload-drop > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  color: var(--godesk-fg);
+  background: var(--godesk-surface);
+}
+.file-rename { display: flex; align-items: center; gap: 6px; padding-inline: 5px; }
+.file-rename button { flex: none; white-space: nowrap; }
+.file-rename input { flex: 1; }
+.file-rename input {
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+  color: var(--godesk-fg);
+}
+.file-rename input:focus-visible { outline: 2px solid var(--godesk-focus); }
+.file-dialog-list {
+  margin-block: 12px;
+  padding-inline-start: 20px;
+  list-style: disc;
+  overflow-wrap: anywhere;
+}
+
+/* Compact the command bar before the window reaches the split-layout breakpoint. */
+@container app (max-width: 840px) {
+  .file-extra-tools { display: none; }
+}
+
+@container app (max-width: 720px) {
+  .file-new-label, .file-layout-label, .file-toolbar-divider { display: none; }
+}
+
+@container app (max-width: 560px) {
+  .file-locations-button > span,
+  .file-properties-button > span,
+  .file-admin-label { display: none; }
+}
+
+@variant @max-godesk-split/app {
+  .file-extra-tools, .file-new-label, .file-layout-label { display: none; }
+  .file-navigation { gap: 4px; }
+}
+
+@media (any-pointer: coarse) {
+  @container app (max-width: 360px) {
+    .file-actions :is(.file-locations-button, .file-properties-button) > span { display: none; }
+    .file-actions { flex-wrap: wrap; }
+  }
+}
+
+.file-address-form {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-address-form input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  color: var(--godesk-fg);
+  background: var(--godesk-surface);
+  border: 1px solid var(--godesk-divider);
+  border-radius: 4px;
+}

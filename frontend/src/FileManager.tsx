@@ -43,7 +43,7 @@ const layouts = {
   icons: { label: '大图标', icon: Grid2X2 },
 } as const
 type FileLayout = keyof typeof layouts
-const layoutPreference = 'react-web-desktop-file-layout'
+const layoutPreference = 'godesk-file-layout'
 const layoutKeys = Object.keys(layouts) as FileLayout[]
 const popupLabels = { context: '文件上下文菜单', actions: '更多操作', layout: '文件布局' }
 const clipboardActions = [
@@ -885,7 +885,7 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
         if (editing || !managedFile(file) || operationLock.current) return event.preventDefault()
         dragItems.current = active ? selectedItems.filter(managedFile).map(item => item.id) : [file.id]
         event.dataTransfer.effectAllowed = 'move'
-        event.dataTransfer.setData('application/x-react-web-desktop-files', 'move')
+        event.dataTransfer.setData('application/x-godesk-files', 'move')
       },
       onDragEnd: clearDrag,
       ...(file.directory ? dropHandlers(file.id) : {}),
@@ -1031,12 +1031,14 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
         </button>
         {runningAsRoot === true ? <span className="file-root-status">
           <Shield size={16} aria-hidden="true" />root
-        </span> : <button type="button" className={`app-control${elevated ? ' primary-control' : ''}`} aria-pressed={elevated}
+        </span> : <button type="button" className={`app-control${elevated ? ' primary-control' : ''}`}
+          aria-label="管理员模式" title="管理员模式" aria-pressed={elevated}
           disabled={runningAsRoot === undefined || loading || !!operation || !!modal || !!rename}
           onClick={toggleElevation}>
-          <Shield size={16} aria-hidden="true" /><span>管理员模式</span>
+          <Shield size={16} aria-hidden="true" /><span className="file-admin-label">管理员模式</span>
         </button>}
         <span className="file-action-spacer" />
+        <span className="file-toolbar-divider" aria-hidden="true" />
         <button className="app-control file-layout-button" aria-label="布局" title={`布局：${layouts[layout].label}`}
           aria-haspopup="menu" aria-expanded={popup?.kind === 'layout'}
           aria-controls={popup?.kind === 'layout' ? popupId : undefined}

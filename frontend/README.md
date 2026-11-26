@@ -6,13 +6,13 @@ goDesk 的 `frontend/` 基于 React Web Desktop 脚手架，使用 React、TypeS
 
 ## 界面预览
 
-![浅色桌面与文件管理器](docs/screenshots/desktop-light.png)
+![浅色桌面与文件管理器](docs/screenshots/desktop-light-2026.png)
 
 | 深色桌面的开始菜单 | 深色主题下的多窗口布局 |
 | --- | --- |
-| ![深色桌面的开始菜单](docs/screenshots/start-menu-dark.png) | ![并排打开的系统设置和系统监控窗口](docs/screenshots/system-monitor-dark.png) |
+| ![深色桌面的开始菜单](docs/screenshots/start-menu-dark-2026.png) | ![并排打开的系统设置和系统监控窗口](docs/screenshots/system-monitor-dark-2026.png) |
 
-![主机健康面板](docs/screenshots/health-panel-dark.png)
+![主机健康面板](docs/screenshots/health-panel-dark-2026.png)
 
 ## 快速开始
 

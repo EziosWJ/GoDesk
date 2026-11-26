@@ -2,11 +2,11 @@
 
 goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当前版本提供桌面前端、操作者认证、主机文件管理、文本编辑、终端、系统监控、主机健康状态中心和服务管理。
 
-![goDesk 桌面与文件管理器](frontend/docs/screenshots/desktop-light.png)
+![goDesk 桌面与文件管理器](frontend/docs/screenshots/desktop-light-2026.png)
 
 | 深色桌面的开始菜单 | 深色主题下的多窗口布局 |
 | --- | --- |
-| ![深色桌面的开始菜单](frontend/docs/screenshots/start-menu-dark.png) | ![并排打开的系统设置和系统监控窗口](frontend/docs/screenshots/system-monitor-dark.png) |
+| ![深色桌面的开始菜单](frontend/docs/screenshots/start-menu-dark-2026.png) | ![并排打开的系统设置和系统监控窗口](frontend/docs/screenshots/system-monitor-dark-2026.png) |
 
 ## 当前功能
 
@@ -137,7 +137,7 @@ system 级服务的写操作可使用免密 sudo，也可沿用运行账号的 p
 
 健康状态由后端消费系统监控的同一份指标快照计算，底栏每 5 秒轮询；GoDesk 连接中断与主机健康状态分开表达。阈值、持续判定和恢复规则见[主机健康状态中心 Spec](docs/specs/host-health-center.md)，接口契约见[系统监控与主机健康](docs/system-monitoring.md#主机健康状态接口)。
 
-![主机健康面板](frontend/docs/screenshots/health-panel-dark.png)
+![主机健康面板](frontend/docs/screenshots/health-panel-dark-2026.png)
 
 ## 相关文档
 

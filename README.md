@@ -20,6 +20,26 @@ goDesk 是面向单台 Linux 主机和一位操作者的 Web 桌面项目。当�
 - `backend/` 包含 Go 模块、HTTP 服务、SQLite 连接和前端资源嵌入代码。
 - `docs/adr/` 保存项目的 [架构决策记录](docs/adr/)。
 
+## 开源项目与致谢
+
+goDesk 的开发离不开以下开源项目，感谢它们的作者、维护者和贡献者：
+
+- [React Web Desktop](https://github.com/EziosWJ/react-web-desktop)：前端桌面脚手架。
+- [React](https://react.dev/)、[TypeScript](https://www.typescriptlang.org/) 和 [Vite](https://vite.dev/)：前端界面与开发构建工具链。
+- [WMKit](https://github.com/surdeddd/wmkit)：窗口交互与状态管理。
+- [xterm.js](https://xtermjs.org/) 和 [Monaco Editor](https://microsoft.github.io/monaco-editor/)：浏览器终端与文本编辑器。
+- [Tailwind CSS](https://tailwindcss.com/)、[Radix UI](https://www.radix-ui.com/) 和 [Lucide](https://lucide.dev/)：界面样式、菜单组件与图标。
+- [Extension Host](https://github.com/EziosWJ/Extension-Host)：扩展插件宿主。
+- [SQLite](https://sqlite.org/) 和 [modernc.org/sqlite](https://pkg.go.dev/modernc.org/sqlite)：数据持久化。
+- [gopsutil](https://github.com/shirou/gopsutil)：系统指标采集。
+- [creack/pty](https://github.com/creack/pty) 和 [coder/websocket](https://github.com/coder/websocket)：伪终端与实时通信。
+
+也感谢其他所有直接和间接依赖的开源项目，以及开源社区的贡献。
+
+## 许可证
+
+本项目采用 [Apache License 2.0](LICENSE) 许可证。
+
 ## 本地开发
 
 开发和完整构建使用 Linux、Go 1.26、Node.js 24、pnpm 12 和 GNU Make。从项目根目录运行以下命令。

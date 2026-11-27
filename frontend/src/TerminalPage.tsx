@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { connectTerminal, type TerminalSession } from './terminal'
+import { Shield } from 'lucide-react'
+import { connectTerminal, terminalApi, type TerminalSession } from './terminal'
 import { subscribeAppearance } from './theme'
 
 const connectionLabels = {
@@ -18,6 +19,68 @@ type TerminalEvent =
   | (Size & { type: 'snapshot'; output: string; controller: boolean })
   | (Size & { type: 'resize' })
   | { type: 'control'; controller: boolean }
+
+function TerminalSudoSetup() {
+  const label = '配置免密 sudo（可选）'
+  const titleId = useId()
+  const dialog = useRef<HTMLDialogElement>(null)
+  const [status, setStatus] = useState<{ setupCommand?: string } | 'unavailable'>()
+  const command = status === 'unavailable' ? undefined : status?.setupCommand
+  const [copyStatus, setCopyStatus] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void terminalApi.sudoStatus(controller.signal).then(result => {
+      if (!controller.signal.aborted) setStatus(result)
+    }).catch(() => {
+      if (!controller.signal.aborted) setStatus('unavailable')
+    })
+    return () => controller.abort()
+  }, [])
+
+  async function copyCommand(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopyStatus('命令已复制')
+    } catch {
+      setCopyStatus('无法访问剪贴板，请手动复制命令。')
+    }
+  }
+
+  return (
+    <>
+      <button className="app-control terminal-sudo-button" type="button" title={label} aria-label={label}
+        aria-haspopup="dialog" onClick={() => {
+          setCopyStatus('')
+          dialog.current?.showModal()
+        }}>
+        <Shield size={14} aria-hidden="true" />
+      </button>
+      <dialog ref={dialog} className="service-dialog" aria-labelledby={titleId}>
+        <div className="service-dialog-body terminal-sudo-note">
+          <h2 id={titleId}>{label}</h2>
+          {command ? (
+            <>
+              <p>需要使用 Go Desk 的管理员功能时，请将命令粘贴到当前终端并执行。运行 Go Desk 的 Linux 账号须已有 sudo 授权。</p>
+              <pre><code>{command}</code></pre>
+              <p>配置后，该账号下的所有进程都能免密执行 root 命令。重新打开终端即可刷新权限状态。</p>
+            </>
+          ) : (
+            <p role="status">{status === 'unavailable'
+              ? '暂时无法读取免密 sudo 状态。'
+              : status ? '当前运行账号已可免密执行管理员命令。' : '正在检查免密 sudo…'}</p>
+          )}
+          {copyStatus && <p role="status">{copyStatus}</p>}
+        </div>
+        <div className="service-dialog-actions">
+          {command && <button className="app-control primary-control" type="button"
+            onClick={() => { void copyCommand(command) }}>复制命令</button>}
+          <button className="app-control" type="button" onClick={() => dialog.current?.close()}>关闭</button>
+        </div>
+      </dialog>
+    </>
+  )
+}
 
 export default function TerminalPage({ session, clientId, controlRequest, active, closing }: {
   session: TerminalSession
@@ -254,7 +317,10 @@ export default function TerminalPage({ session, clientId, controlRequest, active
       </div>
       <footer className="app-statusbar terminal-status">
         <span role="status"><i aria-hidden="true" />{connectionLabels[status]}</span>
-        {size && <span aria-label={`${size.cols} 列，${size.rows} 行`}>{size.cols} × {size.rows}</span>}
+        <div className="terminal-status-actions">
+          {size && <span aria-label={`${size.cols} 列，${size.rows} 行`}>{size.cols} × {size.rows}</span>}
+          {status === 'controller' && !closing && <TerminalSudoSetup />}
+        </div>
       </footer>
     </section>
   )

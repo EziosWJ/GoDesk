@@ -33,6 +33,7 @@ export const terminalApi = {
   create: () => request<TerminalSession>(sessionsPath, 'POST', {}),
   rename: (id: string, name: string) => request<TerminalSession>(sessionPath(id), 'PATCH', { name }),
   end: (id: string) => request<void>(sessionPath(id), 'DELETE'),
+  sudoStatus: (signal?: AbortSignal) => request<{ setupCommand?: string }>('/api/v1/terminal/sudo', 'GET', undefined, signal),
   settings: (signal?: AbortSignal) => request<TerminalSettings>(settingsPath, 'GET', undefined, signal),
   saveSettings: (settings: TerminalSettings) => request<TerminalSettings>(settingsPath, 'PUT', settings),
 }

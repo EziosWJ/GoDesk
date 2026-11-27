@@ -158,6 +158,22 @@
 .terminal-name-field { display: grid; gap: 6px; }
 
 .terminal-status { justify-content: space-between; }
-.terminal-status span:first-child { display: inline-flex; align-items: center; gap: 6px; }
+.terminal-status > span { display: inline-flex; align-items: center; gap: 6px; }
 .terminal-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.terminal-status span:last-child { font-variant-numeric: tabular-nums; }
+.terminal-status-actions { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.terminal-sudo-button.app-control {
+  min-height: 24px;
+  padding-inline: 5px;
+  color: var(--godesk-muted);
+}
+.terminal-sudo-note pre {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-subtle);
+  font-family: var(--godesk-font-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}

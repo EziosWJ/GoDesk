@@ -7,8 +7,11 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"os"
 	"strings"
 	"time"
+
+	"godesk/internal/privileges"
 
 	"github.com/coder/websocket"
 )
@@ -20,12 +23,35 @@ func (m *Manager) Register(mux *http.ServeMux, requireSession func(http.Handler)
 		"PATCH /api/v1/terminal/sessions/{id}":       m.renameHTTP,
 		"DELETE /api/v1/terminal/sessions/{id}":      m.endHTTP,
 		"GET /api/v1/terminal/sessions/{id}/connect": m.connectHTTP,
+		"GET /api/v1/terminal/sudo":                  sudoSetupHTTP,
 		"GET /api/v1/settings/terminal":              m.settingsHTTP,
 		"PUT /api/v1/settings/terminal":              m.updateSettingsHTTP,
 	}
 	for pattern, handler := range routes {
 		mux.Handle(pattern, requireSession(handler))
 	}
+}
+
+func sudoSetupHTTP(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+	status := struct {
+		SetupCommand string `json:"setupCommand,omitempty"`
+	}{}
+	if privileges.Probe(ctx) != nil {
+		if ctx.Err() != nil {
+			http.Error(w, "sudo status unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		path, err := os.Executable()
+		if err != nil {
+			failed(w, err)
+			return
+		}
+		quotedPath := "'" + strings.ReplaceAll(path, "'", "'\"'\"'") + "'"
+		status.SetupCommand = "sudo -u root -- " + quotedPath + " --setup-sudo"
+	}
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (m *Manager) listHTTP(w http.ResponseWriter, _ *http.Request) {

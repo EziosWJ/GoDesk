@@ -46,7 +46,7 @@ The example listens on localhost. The default listen address is `0.0.0.0:5000`; 
 
 ### Host permissions
 
-Run goDesk as your usual Linux user. File management and service operations depend on host permissions. For passwordless administrator access, configure the optional sudo rule on the host:
+Run goDesk as your usual Linux user. Once you start goDesk and sign in, open Terminal if you need passwordless administrator access. Click the shield icon in the status bar, copy the command, and run it in the terminal. The Linux account running goDesk must already have sudo authorization. You can also run these commands from the binary's directory in a host shell:
 
 ```sh
 sudo ./godesk --setup-sudo

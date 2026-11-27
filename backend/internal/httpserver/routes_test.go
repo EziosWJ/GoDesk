@@ -41,6 +41,7 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 		"/":                           http.StatusAccepted,
 		"/api/v1/files/directory":     http.StatusUnauthorized,
 		"/api/v1/terminal/sessions":   http.StatusUnauthorized,
+		"/api/v1/terminal/sudo":       http.StatusUnauthorized,
 		"/api/v1/settings/terminal":   http.StatusUnauthorized,
 		"/api/v1/system/metrics":      http.StatusUnauthorized,
 		"/api/v1/system/ports":        http.StatusUnauthorized,

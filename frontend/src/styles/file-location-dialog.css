@@ -111,7 +111,9 @@
 .file-location-list :is(th, td):last-child { width: 84px; text-align: end; font-variant-numeric: tabular-nums; }
 .file-location-list td { height: var(--godesk-row-compact); color: var(--godesk-muted); }
 .file-location-list td:first-child { padding: 0; color: var(--godesk-fg); }
-.file-location-list tr[data-folder='true']:is(:hover, :focus-within) { background: var(--godesk-hover); }
+.file-location-list tr:is([data-folder='true'], [data-selectable='true']):is(:hover, :focus-within) { background: var(--godesk-hover); }
+.file-location-list tr[data-selected='true'] { background: var(--godesk-selected); }
+.file-location-selected { padding: 6px 12px; color: var(--godesk-muted); font-size: var(--text-godesk-compact); }
 .file-location-entry { display: flex; align-items: center; gap: 8px; width: 100%; min-height: var(--godesk-row-compact); padding-inline: 10px; text-align: start; }
 .file-location-entry:focus-visible { outline-offset: -2px; }
 .file-location-empty { padding: 18px 12px; color: var(--godesk-muted); }

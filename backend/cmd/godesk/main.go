@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"godesk/internal/auth"
+	"godesk/internal/buildinfo"
 	"godesk/internal/extensions"
 	"godesk/internal/files"
 	"godesk/internal/health"
@@ -35,18 +37,24 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := command(ctx, os.Args[1:]); err != nil {
+	if err := command(ctx, os.Args[1:], os.Stdout); err != nil {
 		slog.Error("goDesk stopped", "error", err)
 		os.Exit(1)
 	}
 }
 
-func command(ctx context.Context, args []string) error {
+func command(ctx context.Context, args []string, stdout io.Writer) error {
 	if len(args) > 0 {
 		switch args[0] {
+		case "--version", "-version":
+			if len(args) != 1 {
+				return fmt.Errorf("%s 不接受额外参数", args[0])
+			}
+			fmt.Fprintf(stdout, "godesk %s\n", buildinfo.Format())
+			return nil
 		case "reset-password":
 			return resetPassword(ctx, args[1:])
-		case "--setup-sudo", "--check-sudo", "--remove-sudo", "--file-operation", "--port-operation":
+		case "--setup-sudo", "--check-sudo", "--remove-sudo", "--file-operation", "--port-operation", "--process-operation":
 			if len(args) != 1 {
 				return fmt.Errorf("%s 不接受额外参数", args[0])
 			}
@@ -59,8 +67,10 @@ func command(ctx context.Context, args []string) error {
 				return privileges.Remove()
 			case "--file-operation":
 				return files.RunElevated(ctx, os.Stdin, os.Stdout)
-			default:
+			case "--port-operation":
 				return monitor.RunPortOperation(ctx, os.Stdin, os.Stdout)
+			default:
+				return monitor.RunProcessSignalOperation(ctx, os.Stdin, os.Stdout)
 			}
 		}
 	}

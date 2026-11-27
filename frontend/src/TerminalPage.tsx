@@ -1,10 +1,57 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useRef, useState, useSyncExternalStore, type KeyboardEvent } from 'react'
 import { FitAddon } from '@xterm/addon-fit'
+import { SearchAddon, type ISearchOptions } from '@xterm/addon-search'
+import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
-import { Shield } from 'lucide-react'
+import { ChevronDown, ChevronUp, Minus, Plus, Search, Shield, X } from 'lucide-react'
 import { connectTerminal, terminalApi, type TerminalSession } from './terminal'
+import {
+  adjustTerminalFontSize,
+  defaultTerminalFontSize,
+  getTerminalFontSize,
+  maxTerminalFontSize,
+  minTerminalFontSize,
+  resetTerminalFontSize,
+  subscribeTerminalFontSize,
+} from './terminalPreferences'
 import { subscribeAppearance } from './theme'
+
+const isApplePlatform = typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent)
+const primaryKeyLabel = isApplePlatform ? '⌘' : 'Ctrl'
+
+type TerminalShortcut = 'search' | 'zoom-in' | 'zoom-out' | 'zoom-reset'
+
+function matchTerminalShortcut(event: Pick<globalThis.KeyboardEvent, 'ctrlKey' | 'metaKey' | 'altKey' | 'shiftKey' | 'key' | 'code'>): TerminalShortcut | null {
+  const primary = (event.metaKey || event.ctrlKey) && !event.altKey
+  if (!primary) return null
+  if (event.shiftKey && event.key.toLowerCase() === 'f') return 'search'
+  if (event.key === '+' || event.key === '=' || event.code === 'Equal' || event.code === 'NumpadAdd') return 'zoom-in'
+  if (event.key === '-' || event.key === '_' || event.code === 'Minus' || event.code === 'NumpadSubtract') return 'zoom-out'
+  if (!event.shiftKey && (event.key === '0' || event.code === 'Digit0' || event.code === 'Numpad0')) return 'zoom-reset'
+  return null
+}
+
+function getSearchDecorations(): NonNullable<ISearchOptions['decorations']> {
+  const dark = document.documentElement.dataset.theme === 'dark'
+  return dark
+    ? {
+        matchBackground: '#5A461C',
+        matchBorder: '#B48224',
+        matchOverviewRuler: '#D4A039',
+        activeMatchBackground: '#8C651D',
+        activeMatchBorder: '#FBBF24',
+        activeMatchColorOverviewRuler: '#FBBF24',
+      }
+    : {
+        matchBackground: '#FDE68A',
+        matchBorder: '#D97706',
+        matchOverviewRuler: '#D97706',
+        activeMatchBackground: '#F59E0B',
+        activeMatchBorder: '#B45309',
+        activeMatchColorOverviewRuler: '#B45309',
+      }
+}
 
 const connectionLabels = {
   connecting: '正在连接…',
@@ -89,8 +136,11 @@ export default function TerminalPage({ session, clientId, controlRequest, active
   active: boolean
   closing: boolean
 }) {
+  const fontSize = useSyncExternalStore(subscribeTerminalFontSize, getTerminalFontSize)
   const host = useRef<HTMLDivElement>(null)
   const terminalRef = useRef<Terminal>(null)
+  const searchAddonRef = useRef<SearchAddon>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const measureRef = useRef<() => Size | undefined>(null)
   const sendSizeRef = useRef<() => void>(null)
   const requestControlRef = useRef<() => void>(null)
@@ -98,17 +148,126 @@ export default function TerminalPage({ session, clientId, controlRequest, active
   const sentControl = useRef(0)
   const [size, setSize] = useState<Size>()
   const [status, setStatus] = useState<ConnectionStatus>('connecting')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [caseSensitive, setCaseSensitive] = useState(false)
+  const [regex, setRegex] = useState(false)
+  const [searchResults, setSearchResults] = useState({ resultIndex: -1, resultCount: 0 })
+  const [searchRegexError, setSearchRegexError] = useState(false)
+  const [hoveredLink, setHoveredLink] = useState<string | null>(null)
+
+  function runSearch(
+    direction: 'next' | 'previous',
+    query: string,
+    options: { caseSensitive: boolean; regex: boolean; incremental?: boolean },
+  ) {
+    const searchAddon = searchAddonRef.current
+    const terminal = terminalRef.current
+    if (!searchAddon || !terminal) return
+    if (!query) {
+      searchAddon.clearDecorations()
+      terminal.clearSelection()
+      setSearchResults({ resultIndex: -1, resultCount: 0 })
+      setSearchRegexError(false)
+      return
+    }
+    if (options.regex) {
+      try {
+        new RegExp(query)
+      } catch {
+        searchAddon.clearDecorations()
+        terminal.clearSelection()
+        setSearchResults({ resultIndex: -1, resultCount: 0 })
+        setSearchRegexError(true)
+        return
+      }
+    }
+    setSearchRegexError(false)
+    const searchOptions: ISearchOptions = {
+      caseSensitive: options.caseSensitive,
+      regex: options.regex,
+      incremental: options.incremental,
+      decorations: getSearchDecorations(),
+    }
+    try {
+      if (direction === 'next') searchAddon.findNext(query, searchOptions)
+      else searchAddon.findPrevious(query, searchOptions)
+    } catch {
+      searchAddon.clearDecorations()
+      terminal.clearSelection()
+      setSearchResults({ resultIndex: -1, resultCount: 0 })
+    }
+  }
+
+  function openSearch() {
+    setSearchOpen(true)
+    if (searchQuery) {
+      runSearch('next', searchQuery, { caseSensitive, regex, incremental: true })
+    }
+    requestAnimationFrame(() => {
+      const input = searchInputRef.current
+      if (!input) return
+      input.focus()
+      input.select()
+    })
+  }
+
+  function closeSearch() {
+    setSearchOpen(false)
+    searchAddonRef.current?.clearDecorations()
+    terminalRef.current?.clearSelection()
+    setSearchResults({ resultIndex: -1, resultCount: 0 })
+    setSearchRegexError(false)
+    terminalRef.current?.focus()
+  }
+
+  function handleShortcutAction(action: TerminalShortcut) {
+    switch (action) {
+      case 'search':
+        openSearch()
+        break
+      case 'zoom-in':
+        adjustTerminalFontSize(1)
+        break
+      case 'zoom-out':
+        adjustTerminalFontSize(-1)
+        break
+      case 'zoom-reset':
+        resetTerminalFontSize()
+        break
+    }
+  }
+
+  const onTerminalShortcut = useEffectEvent((action: TerminalShortcut) => {
+    handleShortcutAction(action)
+  })
+
+  const onAppearanceRefreshSearch = useEffectEvent(() => {
+    if (searchOpen && searchQuery) {
+      runSearch('next', searchQuery, { caseSensitive, regex, incremental: true })
+    }
+  })
+
+  function handlePageKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.defaultPrevented || event.nativeEvent.isComposing) return
+    const action = matchTerminalShortcut(event.nativeEvent)
+    if (!action) return
+    event.preventDefault()
+    event.stopPropagation()
+    handleShortcutAction(action)
+  }
 
   useEffect(() => {
     const element = host.current!
     const styles = getComputedStyle(element)
     const fontFamily = styles.getPropertyValue('--godesk-font-mono').trim()
-    const fontSize = 13
+    const initialFontSize = getTerminalFontSize()
     const terminal = new Terminal({
+      allowProposedApi: true,
       cursorBlink: !window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       cursorStyle: 'bar',
       fontFamily: styles.getPropertyValue('--godesk-font-mono-fallback').trim(),
-      fontSize,
+      fontSize: initialFontSize,
       lineHeight: 1.25,
       screenReaderMode: true,
       scrollback: session.scrollbackLines,
@@ -116,7 +275,20 @@ export default function TerminalPage({ session, clientId, controlRequest, active
     })
     terminalRef.current = terminal
     const fit = new FitAddon()
+    const searchAddon = new SearchAddon()
+    const webLinks = new WebLinksAddon((event, uri) => {
+      if (!event.ctrlKey && !event.metaKey) return
+      if (!/^https?:\/\//i.test(uri)) return
+      window.open(uri, '_blank', 'noopener,noreferrer')
+    }, {
+      hover: (_event, uri) => setHoveredLink(uri),
+      leave: () => setHoveredLink(null),
+    })
     terminal.loadAddon(fit)
+    terminal.loadAddon(searchAddon)
+    terminal.loadAddon(webLinks)
+    searchAddonRef.current = searchAddon
+    const searchResultsChange = searchAddon.onDidChangeResults(setSearchResults)
     const updateTheme = () => {
       const colors = getComputedStyle(element)
       const color = (name: string) => colors.getPropertyValue('--godesk-' + name).trim()
@@ -125,16 +297,28 @@ export default function TerminalPage({ session, clientId, controlRequest, active
         cursorAccent: color('surface'), selectionBackground: color('selected'),
         green: color('success'), blue: color('info'),
       }
+      onAppearanceRefreshSearch()
     }
     updateTheme()
     terminal.open(element)
     terminal.textarea?.setAttribute('aria-label', '终端输入')
-    terminal.attachCustomKeyEventHandler(event =>
-      !((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && terminal.hasSelection()))
+    terminal.attachCustomKeyEventHandler(event => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'c' && terminal.hasSelection()) {
+        return false
+      }
+      const action = matchTerminalShortcut(event)
+      if (action) {
+        event.preventDefault()
+        event.stopPropagation()
+        if (event.type === 'keydown') onTerminalShortcut(action)
+        return false
+      }
+      return true
+    })
     const unsubscribeAppearance = subscribeAppearance(updateTheme)
     measureRef.current = () => element.clientWidth && element.clientHeight ? fit.proposeDimensions() : undefined
     const sendSize = () => sendSizeRef.current?.()
-    void document.fonts.load(`${fontSize}px ${fontFamily}`).then(() => {
+    void document.fonts.load(`${initialFontSize}px ${fontFamily}`).then(() => {
       if (terminalRef.current !== terminal) return
       terminal.options.fontFamily = fontFamily
       sendSize()
@@ -148,11 +332,21 @@ export default function TerminalPage({ session, clientId, controlRequest, active
       resizeObserver.disconnect()
       unsubscribeAppearance()
       sizeChange.dispose()
+      searchResultsChange.dispose()
       terminal.dispose()
       terminalRef.current = null
+      searchAddonRef.current = null
       measureRef.current = null
+      setHoveredLink(null)
     }
   }, [session.scrollbackLines])
+
+  useEffect(() => {
+    const terminal = terminalRef.current
+    if (!terminal || terminal.options.fontSize === fontSize) return
+    terminal.options.fontSize = fontSize
+    sendSizeRef.current?.()
+  }, [fontSize])
 
   useEffect(() => {
     if (closing) return
@@ -310,15 +504,174 @@ export default function TerminalPage({ session, clientId, controlRequest, active
     return () => cancelAnimationFrame(frame)
   }, [active])
 
+  const searchStatusText = searchRegexError
+    ? '正则无效'
+    : !searchQuery
+      ? ''
+      : searchResults.resultCount === 0
+        ? '无结果'
+        : searchResults.resultIndex >= 0
+          ? `${searchResults.resultIndex + 1}/${searchResults.resultCount}`
+          : `${searchResults.resultCount}+`
+
   return (
-    <section className="terminal-page" aria-label="主机终端">
+    <section className="terminal-page" aria-label="主机终端" onKeyDown={handlePageKeyDown}>
       <div className="terminal-screen" data-read-only={status !== 'controller' || undefined}>
         <div className="terminal-host" ref={host} />
+        {searchOpen && (
+          <div
+            className="terminal-search"
+            role="search"
+            aria-label="查找终端输出"
+            onKeyDown={event => {
+              if (event.key !== 'Escape') return
+              event.preventDefault()
+              event.stopPropagation()
+              closeSearch()
+            }}
+          >
+            <input
+              ref={searchInputRef}
+              className="terminal-search-input"
+              type="text"
+              value={searchQuery}
+              placeholder="查找输出…"
+              aria-label="查找终端输出"
+              aria-invalid={searchRegexError || undefined}
+              onChange={event => {
+                const next = event.target.value
+                setSearchQuery(next)
+                runSearch('next', next, { caseSensitive, regex, incremental: true })
+              }}
+              onKeyDown={event => {
+                if (event.key !== 'Enter' || event.nativeEvent.isComposing) return
+                event.preventDefault()
+                runSearch(event.shiftKey ? 'previous' : 'next', searchQuery, { caseSensitive, regex })
+              }}
+            />
+            {searchStatusText && (
+              <span className="terminal-search-count" data-error={searchRegexError || undefined} aria-live="polite">
+                {searchStatusText}
+              </span>
+            )}
+            <div className="terminal-search-actions">
+              <button
+                type="button"
+                className="app-control terminal-search-button terminal-search-toggle"
+                aria-label="区分大小写"
+                aria-pressed={caseSensitive}
+                title="区分大小写"
+                onClick={() => {
+                  const next = !caseSensitive
+                  setCaseSensitive(next)
+                  if (searchQuery) runSearch('next', searchQuery, { caseSensitive: next, regex, incremental: true })
+                }}
+              >
+                Aa
+              </button>
+              <button
+                type="button"
+                className="app-control terminal-search-button terminal-search-toggle"
+                aria-label="使用正则表达式"
+                aria-pressed={regex}
+                title="使用正则表达式"
+                onClick={() => {
+                  const next = !regex
+                  setRegex(next)
+                  if (searchQuery) runSearch('next', searchQuery, { caseSensitive, regex: next, incremental: true })
+                }}
+              >
+                .*
+              </button>
+              <button
+                type="button"
+                className="app-control terminal-search-button"
+                aria-label="上一个匹配"
+                title="上一个匹配 (Shift+Enter)"
+                disabled={!searchQuery || searchRegexError}
+                onClick={() => runSearch('previous', searchQuery, { caseSensitive, regex })}
+              >
+                <ChevronUp size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="app-control terminal-search-button"
+                aria-label="下一个匹配"
+                title="下一个匹配 (Enter)"
+                disabled={!searchQuery || searchRegexError}
+                onClick={() => runSearch('next', searchQuery, { caseSensitive, regex })}
+              >
+                <ChevronDown size={14} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className="app-control terminal-search-button"
+                aria-label="关闭查找"
+                title="关闭查找 (Esc)"
+                onClick={closeSearch}
+              >
+                <X size={14} aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        )}
+        {hoveredLink && (
+          <div className="terminal-link-hint" aria-hidden="true">
+            <span>按住 {primaryKeyLabel} 并点击打开：</span>
+            <code>{hoveredLink}</code>
+          </div>
+        )}
       </div>
       <footer className="app-statusbar terminal-status">
         <span role="status"><i aria-hidden="true" />{connectionLabels[status]}</span>
         <div className="terminal-status-actions">
-          {size && <span aria-label={`${size.cols} 列，${size.rows} 行`}>{size.cols} × {size.rows}</span>}
+          <button
+            className="app-control terminal-status-button"
+            type="button"
+            aria-label="查找终端输出"
+            aria-pressed={searchOpen}
+            title={`查找输出 (${primaryKeyLabel}+Shift+F)`}
+            onClick={() => {
+              if (searchOpen) closeSearch()
+              else openSearch()
+            }}
+          >
+            <Search size={14} aria-hidden="true" />
+          </button>
+          <div className="terminal-zoom-group" role="group" aria-label="终端字号">
+            <button
+              type="button"
+              className="app-control terminal-status-button"
+              aria-label="减小字号"
+              title={`减小字号 (${primaryKeyLabel}+-)`}
+              disabled={fontSize <= minTerminalFontSize}
+              onClick={() => adjustTerminalFontSize(-1)}
+            >
+              <Minus size={13} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="app-control terminal-status-button terminal-font-size"
+              aria-label={`当前字号 ${fontSize}px，点击重置为 ${defaultTerminalFontSize}px`}
+              title={fontSize === defaultTerminalFontSize
+                ? `终端字号 ${fontSize}px (${primaryKeyLabel}+0 重置)`
+                : `点击重置为 ${defaultTerminalFontSize}px (${primaryKeyLabel}+0)`}
+              onClick={resetTerminalFontSize}
+            >
+              {fontSize}px
+            </button>
+            <button
+              type="button"
+              className="app-control terminal-status-button"
+              aria-label="增大字号"
+              title={`增大字号 (${primaryKeyLabel}+=)`}
+              disabled={fontSize >= maxTerminalFontSize}
+              onClick={() => adjustTerminalFontSize(1)}
+            >
+              <Plus size={13} aria-hidden="true" />
+            </button>
+          </div>
+          {size && <span className="terminal-status-size" aria-label={`${size.cols} 列，${size.rows} 行`}>{size.cols} × {size.rows}</span>}
           {status === 'controller' && !closing && <TerminalSudoSetup />}
         </div>
       </footer>

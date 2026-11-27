@@ -2,7 +2,7 @@ import {
   useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState,
   type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent,
 } from 'react'
-import { ArrowLeft, ArrowUpDown, Check, CircleHelp, RefreshCw, Search } from 'lucide-react'
+import { ArrowLeft, ArrowUpDown, Check, CircleHelp, RefreshCw, RotateCcw, Search } from 'lucide-react'
 import { useSplitLayout } from './useSplitLayout'
 import { ServiceList } from './ServiceList'
 import { ServiceDetailPane } from './ServiceDetail'
@@ -88,6 +88,19 @@ function actionErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败'
 }
 
+function daemonReloadErrorMessage(error: unknown) {
+  if (error instanceof ServiceError) {
+    switch (error.code) {
+      case 'permission': return '权限不足：goDesk 运行账号不能执行 daemon-reload'
+      case 'unsupported': return '当前服务后端不支持重新加载配置'
+      case 'timeout': return '重载配置超时，systemd 任务可能仍在运行'
+      case 'operation_failed': return error.message || '重载配置失败'
+      default: return error.message
+    }
+  }
+  return error instanceof Error ? error.message : '重载配置失败'
+}
+
 function isConfirmAction(action: ServiceAction): action is ConfirmAction {
   return action === 'stop' || action === 'restart' || action === 'disable'
 }
@@ -139,10 +152,16 @@ function SortMenu({ anomaliesFirst, onChange }: {
   )
 }
 
-export function Services({ active = true }: { active?: boolean }) {
+export function Services({ active = true, onOpenText }: {
+  active?: boolean
+  onOpenText?: (path: string, elevated: boolean, readOnly: boolean) => void
+}) {
   const [snapshot, setSnapshot] = useState<ServicesSnapshot>()
   const [listError, setListError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
+  const [daemonReloadPending, setDaemonReloadPending] = useState(false)
+  const [daemonReloadStatus, setDaemonReloadStatus] = useState('')
+  const [daemonReloadError, setDaemonReloadError] = useState('')
   const [lastUpdated, setLastUpdated] = useState<Date>()
   const [query, setQuery] = useState('')
   const [needle, setNeedle] = useState('')
@@ -169,10 +188,13 @@ export function Services({ active = true }: { active?: boolean }) {
   const panes = useRef<HTMLDivElement>(null)
   const detailPane = useRef<HTMLElement>(null)
   const dragState = useRef<{ pointerId: number; startX: number; startWidth: number } | null>(null)
+  const daemonStatusTimer = useRef<number | undefined>(undefined)
   const listScrollTop = useRef(0)
   const nextFocus = useRef<'detail' | 'list' | null>(null)
   const titleId = useId()
   const descriptionId = useId()
+
+  useEffect(() => () => window.clearTimeout(daemonStatusTimer.current), [])
 
   useEffect(() => {
     const timer = window.setTimeout(() => setNeedle(query), SEARCH_DEBOUNCE)
@@ -265,6 +287,7 @@ export function Services({ active = true }: { active?: boolean }) {
 
   const selected = services.find(service => service.name === selectedName)
   const logsAvailable = snapshot?.capabilities.logs === true
+  const daemonReloadAvailable = snapshot?.capabilities.daemonReload === true
   const activeTab: DetailTab = logsAvailable ? tab : 'detail'
   const excluded = selected !== undefined && !visible.includes(selected)
   const selectedPending = pending?.unit === selected?.name ? pending : undefined
@@ -306,9 +329,32 @@ export function Services({ active = true }: { active?: boolean }) {
 
   async function refreshNow() {
     setRefreshing(true)
+    setDaemonReloadError('')
     await load()
     setLogsVersion(value => value + 1)
     setRefreshing(false)
+  }
+
+  async function runDaemonReload() {
+    if (daemonReloadPending) return
+    setDaemonReloadPending(true)
+    setDaemonReloadError('')
+    setDaemonReloadStatus('')
+    window.clearTimeout(daemonStatusTimer.current)
+    try {
+      await servicesApi.daemonReload()
+      await load()
+      setDaemonReloadStatus('已重新加载 systemd 配置')
+      daemonStatusTimer.current = window.setTimeout(() => setDaemonReloadStatus(''), 4000)
+    } catch (error) {
+      if (unauthorized(error)) {
+        window.location.reload()
+        return
+      }
+      setDaemonReloadError(daemonReloadErrorMessage(error))
+    } finally {
+      setDaemonReloadPending(false)
+    }
   }
 
   async function runAction(service: ManagedService, action: ServiceAction) {
@@ -467,6 +513,16 @@ export function Services({ active = true }: { active?: boolean }) {
                       onChange={event => setQuery(event.target.value)}
                       placeholder="搜索服务名或描述" aria-label="搜索服务" />
                   </label>
+                  {daemonReloadAvailable && (
+                    <button type="button" className="app-control services-toolbar-button"
+                      onClick={() => { void runDaemonReload() }}
+                      disabled={daemonReloadPending}
+                      title="systemctl daemon-reload"
+                      aria-label="重载配置（systemctl daemon-reload）">
+                      <RotateCcw size={14} aria-hidden="true" />
+                      <span>{daemonReloadPending ? '重载中…' : '重载配置'}</span>
+                    </button>
+                  )}
                   <SortMenu anomaliesFirst={anomaliesFirst} onChange={setAnomaliesFirst} />
                   <button type="button" className="app-control services-icon-button"
                     onClick={() => { void refreshNow() }} disabled={refreshing}
@@ -485,6 +541,19 @@ export function Services({ active = true }: { active?: boolean }) {
                     ))}
                   </div>
                 </div>
+                {(daemonReloadPending || daemonReloadStatus || daemonReloadError) && (
+                  <div className="services-toolbar-feedback">
+                    {daemonReloadPending && (
+                      <p className="system-caption services-toolbar-status" role="status">正在重新加载 systemd 配置…</p>
+                    )}
+                    {!daemonReloadPending && daemonReloadStatus && (
+                      <p className="system-caption services-toolbar-status" role="status">{daemonReloadStatus}</p>
+                    )}
+                    {daemonReloadError && (
+                      <p className="service-alert services-toolbar-error" role="alert">{daemonReloadError}</p>
+                    )}
+                  </div>
+                )}
               </div>
               <ServiceList
                 services={visible}
@@ -531,9 +600,11 @@ export function Services({ active = true }: { active?: boolean }) {
                     tab={activeTab}
                     onTabChange={setTab}
                     onAction={requestAction}
+                    onOpenText={onOpenText}
                     logsPanel={logsAvailable
                       ? <ServiceLogs key={selected.name} unit={selected.name}
-                          active={activeTab === 'logs'} version={logsVersion} />
+                          active={active && activeTab === 'logs'} version={logsVersion}
+                          logsAvailable={logsAvailable} />
                       : undefined}
                     headingRef={heading} />
                 ) : null

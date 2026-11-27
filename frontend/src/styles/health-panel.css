@@ -106,7 +106,8 @@
 }
 .health-metric {
   display: grid;
-  gap: 5px;
+  align-content: start;
+  gap: 4px;
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid var(--godesk-divider);
@@ -130,6 +131,17 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.health-metric-detail,
+.health-metric-meta {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.health-metric-meta {
+  opacity: 0.9;
+}
 .health-metric[data-health='healthy'] :is(.health-metric-head svg, .health-metric-value) {
   color: var(--godesk-success);
 }
@@ -140,8 +152,103 @@
   color: var(--godesk-danger);
 }
 .health-metric[data-health='unknown'] :is(.health-metric-head svg, .health-metric-value),
-.health-metric[data-health='unavailable'] :is(.health-metric-head svg, .health-metric-value) {
+.health-metric[data-health='unavailable'] :is(.health-metric-head svg, .health-metric-value),
+.health-metric[data-health='not-applicable'] :is(.health-metric-head svg, .health-metric-value) {
   color: var(--godesk-muted);
+}
+
+.health-temp-list {
+  display: grid;
+  gap: 6px;
+  max-height: 196px;
+  margin: 0;
+  padding: 0;
+  padding-inline-end: 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  list-style: none;
+}
+.health-temp-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+}
+.health-temp-item[data-health='warning'] {
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--godesk-warning);
+}
+.health-temp-item[data-health='critical'] {
+  border-inline-start-width: 3px;
+  border-inline-start-color: var(--godesk-danger);
+}
+.health-temp-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+.health-temp-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 6px;
+  min-width: 0;
+}
+.health-temp-name strong {
+  font-size: var(--text-godesk-compact);
+  font-weight: 600;
+  line-height: var(--text-godesk-compact--line-height);
+  overflow-wrap: anywhere;
+}
+.health-temp-chip {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+.health-temp-reading {
+  display: flex;
+  flex: none;
+  align-items: baseline;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.health-temp-reading strong {
+  font-size: var(--text-godesk-compact);
+  font-weight: 650;
+}
+.health-temp-badge {
+  font-size: var(--text-godesk-caption);
+  font-weight: 600;
+}
+.health-temp-item[data-health='healthy'] .health-temp-reading strong { color: var(--godesk-success); }
+.health-temp-item[data-health='warning'] :is(.health-temp-reading strong, .health-temp-badge) {
+  color: var(--godesk-warning);
+}
+.health-temp-item[data-health='critical'] :is(.health-temp-reading strong, .health-temp-badge) {
+  color: var(--godesk-danger);
+}
+.health-temp-item[data-health='info'] .health-temp-reading strong { color: var(--godesk-fg); }
+.health-temp-item[data-health='unknown'] .health-temp-reading strong,
+.health-temp-item[data-health='not-applicable'] .health-temp-reading strong {
+  color: var(--godesk-muted);
+}
+.health-temp-meta,
+.health-temp-empty {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.health-temp-empty {
+  padding: 8px 10px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
 }
 
 .health-host-line {
@@ -175,7 +282,7 @@
   overflow-wrap: anywhere;
 }
 
-.taskbar-popover .health-metric {
+.taskbar-popover :is(.health-metric, .health-temp-item, .health-temp-empty) {
   background: color-mix(in srgb, var(--godesk-raised) 52%, transparent);
 }
 
@@ -185,7 +292,7 @@
 }
 
 @media (forced-colors: active) {
-  .taskbar-popover :is(.health-metric, .health-issue, .health-note, .health-open-monitor) {
+  .taskbar-popover :is(.health-metric, .health-issue, .health-note, .health-open-monitor, .health-temp-item, .health-temp-empty) {
     border-color: CanvasText;
   }
 }

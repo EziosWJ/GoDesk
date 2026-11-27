@@ -1,11 +1,14 @@
 import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import {
-  ExternalLink, MonitorUp, MonitorX, PackagePlus, Play, Power, PowerOff, Puzzle, RefreshCw, Settings2, Square, Trash2,
+  CircleArrowUp, ExternalLink, MonitorUp, MonitorX, PackagePlus, Play, Power, PowerOff,
+  Puzzle, RefreshCw, ScrollText, Settings2, Square, Trash2,
 } from 'lucide-react'
 import {
-  ExtensionError, extensionsApi,
+  ExtensionError, extensionErrorMessage, extensionsApi,
   type ExtensionConfigField, type ExtensionPlugin, type ExtensionStatus,
 } from './api'
+import { ExtensionLogsDialog } from './ExtensionLogsDialog'
+import { UpgradeDialog, type UpgradeSource } from './UpgradeDialog'
 import './styles.css'
 
 const statusLabels: Record<ExtensionStatus, string> = {
@@ -16,12 +19,19 @@ const statusLabels: Record<ExtensionStatus, string> = {
   failed: '启动失败',
 }
 
-function unauthorized(error: unknown) {
-  return error instanceof ExtensionError && error.status === 401
+type Notice = {
+  tone: 'success' | 'warning'
+  text: string
 }
 
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : '操作失败'
+type PendingUpgrade = {
+  plugin: ExtensionPlugin
+  file: File
+  source: UpgradeSource
+}
+
+function unauthorized(error: unknown) {
+  return error instanceof ExtensionError && error.status === 401
 }
 
 function statusLabel(plugin: ExtensionPlugin) {
@@ -109,7 +119,7 @@ function ConfigDialog({ plugin, onClose, onSaved }: {
         window.location.reload()
         return
       }
-      setError(errorMessage(cause))
+      setError(extensionErrorMessage(cause))
     } finally {
       setPending(false)
     }
@@ -201,7 +211,7 @@ function UninstallDialog({ plugin, onClose, onDone }: {
         window.location.reload()
         return
       }
-      setError(errorMessage(cause))
+      setError(extensionErrorMessage(cause))
     } finally {
       setPending(false)
     }
@@ -239,14 +249,20 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
   onOpen: (plugin: ExtensionPlugin) => void
 }) {
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState<Notice>()
   const [pending, setPending] = useState('')
   const [configPlugin, setConfigPlugin] = useState<ExtensionPlugin>()
+  const [logsPlugin, setLogsPlugin] = useState<ExtensionPlugin>()
   const [uninstallPlugin, setUninstallPlugin] = useState<ExtensionPlugin>()
+  const [upgradeTarget, setUpgradeTarget] = useState<PendingUpgrade>()
   const fileInput = useRef<HTMLInputElement>(null)
+  const upgradeFileInput = useRef<HTMLInputElement>(null)
+  const upgradeRowPlugin = useRef<ExtensionPlugin | undefined>(undefined)
 
   async function run(plugin: ExtensionPlugin, name: string, task: () => Promise<unknown>) {
     setPending(`${plugin.id}:${name}`)
     setError('')
+    setNotice(undefined)
     try {
       await task()
       await load()
@@ -255,7 +271,7 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
         window.location.reload()
         return
       }
-      setError(errorMessage(cause))
+      setError(extensionErrorMessage(cause))
     } finally {
       setPending('')
     }
@@ -267,18 +283,51 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
     if (!file) return
     setPending('install')
     setError('')
+    setNotice(undefined)
     try {
-      await extensionsApi.install(file)
+      const installed = await extensionsApi.install(file)
       await load()
+      setNotice({ tone: 'success', text: `已安装 ${installed.name}（${installed.version}）。` })
     } catch (cause) {
       if (unauthorized(cause)) {
         window.location.reload()
         return
       }
-      setError(errorMessage(cause))
+      if (cause instanceof ExtensionError && cause.status === 409 && cause.code === 'already_installed' && cause.pluginId) {
+        let existing = plugins?.find(item => item.id === cause.pluginId)
+        if (!existing) {
+          try {
+            const latest = await extensionsApi.list()
+            existing = latest.find(item => item.id === cause.pluginId)
+          } catch {
+            // Fall through to showing error if we cannot resolve the installed plugin.
+          }
+        }
+        if (existing) {
+          setUpgradeTarget({ plugin: existing, file, source: 'install' })
+          return
+        }
+      }
+      setError(extensionErrorMessage(cause))
     } finally {
       setPending('')
     }
+  }
+
+  function pickUpgradeFile(plugin: ExtensionPlugin) {
+    setError('')
+    setNotice(undefined)
+    upgradeRowPlugin.current = plugin
+    upgradeFileInput.current?.click()
+  }
+
+  function onUpgradeFileSelected(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+    const plugin = upgradeRowPlugin.current
+    upgradeRowPlugin.current = undefined
+    if (!file || !plugin) return
+    setUpgradeTarget({ plugin, file, source: 'row' })
   }
 
   return (
@@ -295,14 +344,24 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
             {pending === 'install' ? '正在安装…' : '安装 ZIP'}
           </button>
           <button type="button" className="app-control extensions-icon-button"
-            aria-label="刷新扩展列表" title="刷新" onClick={() => { setError(''); void load() }}>
+            aria-label="刷新扩展列表" title="刷新" onClick={() => { setError(''); setNotice(undefined); void load() }}>
             <RefreshCw size={15} aria-hidden="true" />
           </button>
           <input ref={fileInput} type="file" accept=".zip,application/zip" hidden onChange={event => void install(event)} />
+          <input ref={upgradeFileInput} type="file" accept=".zip,application/zip" hidden onChange={onUpgradeFileSelected} />
         </div>
       </header>
 
       {(error || loadError) && <p className="extensions-error extensions-banner" role="alert">{error || loadError}</p>}
+      {notice && !error && !loadError && (
+        <p
+          className={`extensions-notice extensions-banner`}
+          data-tone={notice.tone}
+          role={notice.tone === 'warning' ? 'alert' : 'status'}
+        >
+          {notice.text}
+        </p>
+      )}
 
       <div className="extensions-list">
         {plugins === undefined && !loadError && <p className="extension-hint" role="status">正在加载扩展…</p>}
@@ -362,6 +421,14 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
                   onClick={() => setConfigPlugin(plugin)}>
                   <Settings2 size={14} aria-hidden="true" />配置
                 </button>
+                <button type="button" className="app-control" disabled={busy}
+                  onClick={() => setLogsPlugin(plugin)}>
+                  <ScrollText size={14} aria-hidden="true" />日志
+                </button>
+                <button type="button" className="app-control" disabled={busy}
+                  onClick={() => pickUpgradeFile(plugin)}>
+                  <CircleArrowUp size={14} aria-hidden="true" />升级
+                </button>
                 <button type="button" className="app-control" disabled={busy || plugin.status !== 'running' || !plugin.hasWeb}
                   title={plugin.hasWeb ? undefined : '该插件没有 Web 入口'}
                   onClick={() => onOpen(plugin)}>
@@ -388,6 +455,33 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
         <ConfigDialog key={configPlugin.id} plugin={configPlugin}
           onClose={() => setConfigPlugin(undefined)}
           onSaved={async () => { setConfigPlugin(undefined); await load() }} />
+      )}
+      {logsPlugin && (
+        <ExtensionLogsDialog key={logsPlugin.id} plugin={logsPlugin}
+          onClose={() => setLogsPlugin(undefined)} />
+      )}
+      {upgradeTarget && (
+        <UpgradeDialog
+          key={`${upgradeTarget.plugin.id}:${upgradeTarget.file.name}:${upgradeTarget.file.lastModified}`}
+          plugin={upgradeTarget.plugin}
+          file={upgradeTarget.file}
+          source={upgradeTarget.source}
+          onClose={() => setUpgradeTarget(undefined)}
+          onUpgraded={async (updated, previousVersion) => {
+            setUpgradeTarget(undefined)
+            await load()
+            if (updated.enabled && updated.status === 'failed') {
+              setNotice({
+                tone: 'warning',
+                text: `已将 ${updated.name} 更新至 ${updated.version}，但重启失败：${updated.error || '请查看日志并重试'}`,
+              })
+            } else if (updated.version === previousVersion) {
+              setNotice({ tone: 'success', text: `已覆盖更新 ${updated.name}（${updated.version}）。` })
+            } else {
+              setNotice({ tone: 'success', text: `已将 ${updated.name} 从 ${previousVersion} 升级至 ${updated.version}。` })
+            }
+          }}
+        />
       )}
       {uninstallPlugin && (
         <UninstallDialog key={uninstallPlugin.id} plugin={uninstallPlugin}

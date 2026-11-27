@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -40,8 +42,10 @@ func Register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler
 	}
 	mux.Handle("GET /api/v1/services", requireSession(http.HandlerFunc(h.list)))
 	mux.Handle("GET /api/v1/services/{unit}", requireSession(http.HandlerFunc(h.detail)))
+	mux.Handle("POST /api/v1/services/daemon-reload", requireSession(http.HandlerFunc(h.daemonReload)))
 	mux.Handle("POST /api/v1/services/{unit}/{action}", requireSession(http.HandlerFunc(h.action)))
 	mux.Handle("GET /api/v1/services/{unit}/logs", requireSession(http.HandlerFunc(h.logs)))
+	mux.Handle("GET /api/v1/services/{unit}/logs/stream", requireSession(http.HandlerFunc(h.streamLogs)))
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +116,8 @@ func (h *handler) action(w http.ResponseWriter, r *http.Request) {
 		err = h.backend.Stop(ctx, unit)
 	case ActionRestart:
 		err = h.backend.Restart(ctx, unit)
+	case ActionReload:
+		err = h.backend.Reload(ctx, unit)
 	case ActionEnable:
 		err = h.backend.Enable(ctx, unit)
 	case ActionDisable:
@@ -160,6 +166,92 @@ func (h *handler) logs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string][]string{"lines": entries})
 }
 
+// daemonReload asks systemd to re-read unit files. It is a backend-wide
+// operation, so it has no unit path parameter.
+func (h *handler) daemonReload(w http.ResponseWriter, r *http.Request) {
+	if !h.backend.Capabilities().DaemonReload {
+		writeError(w, http.StatusConflict, "unsupported", "当前服务后端不支持重新加载 systemd 配置")
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), h.actionTimeout)
+	defer cancel()
+	if err := h.backend.DaemonReload(ctx); err != nil {
+		failed(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// streamLogs follows journal output over Server-Sent Events.
+//
+// The SSE response is committed as soon as the request is validated because a
+// service with no historical lines leaves `journalctl -f` silent until new
+// output arrives; clients must see an open stream immediately instead of a
+// hung HTTP request. Every log line is therefore an unnamed (message) event:
+//
+//	data: {"line":"..."}
+//
+// and failures after the stream is open are reported in-band as:
+//
+//	event: error
+//	data: {"code":"permission","message":"..."}
+//
+// A leading `: connected` comment opens the stream before the first line.
+func (h *handler) streamLogs(w http.ResponseWriter, r *http.Request) {
+	unit := r.PathValue("unit")
+	if !ValidUnit(unit) {
+		writeError(w, http.StatusBadRequest, "invalid_unit", "服务单元名无效")
+		return
+	}
+	lines := 200
+	if raw := r.URL.Query().Get("lines"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 || value > 1000 {
+			writeError(w, http.StatusBadRequest, "invalid_lines", "日志行数必须在 0 到 1000 之间")
+			return
+		}
+		lines = value
+	}
+	if _, ok, err := h.find(r.Context(), unit); err != nil {
+		failed(w, err)
+		return
+	} else if !ok {
+		writeError(w, http.StatusNotFound, "not_found", "服务不存在")
+		return
+	}
+	if !h.backend.Capabilities().Logs {
+		writeError(w, http.StatusConflict, "logs_unavailable", "journal 日志不可用")
+		return
+	}
+
+	rc := http.NewResponseController(w)
+	// Long-lived streams must not inherit http.Server.WriteTimeout.
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+		slog.Warn("cannot clear service log stream write deadline", "error", err)
+	}
+	headers := w.Header()
+	headers.Set("Content-Type", "text/event-stream; charset=utf-8")
+	headers.Set("Cache-Control", "no-store")
+	headers.Set("Connection", "keep-alive")
+	headers.Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+	if _, err := io.WriteString(w, ": connected\n\n"); err != nil {
+		return
+	}
+	if err := rc.Flush(); err != nil {
+		return
+	}
+
+	err := h.backend.StreamLogs(r.Context(), unit, lines, func(line string) error {
+		return writeSSE(w, rc, "", streamLine{Line: line})
+	})
+	if err == nil || r.Context().Err() != nil {
+		return
+	}
+	// Headers are already committed, so the failure can only go in-band.
+	_ = writeSSE(w, rc, "error", streamError(err))
+}
+
 func (h *handler) find(parent context.Context, unit string) (Service, bool, error) {
 	ctx, cancel := context.WithTimeout(parent, h.listTimeout)
 	defer cancel()
@@ -187,7 +279,7 @@ func failed(w http.ResponseWriter, err error) {
 			writeError(w, http.StatusForbidden, serviceErr.Code, serviceErr.Message)
 		case "not_found":
 			writeError(w, http.StatusNotFound, serviceErr.Code, serviceErr.Message)
-		case "logs_unavailable", "action_not_allowed":
+		case "logs_unavailable", "action_not_allowed", "unsupported":
 			writeError(w, http.StatusConflict, serviceErr.Code, serviceErr.Message)
 		default:
 			slog.Error("service request failed", "error", err)
@@ -197,6 +289,46 @@ func failed(w http.ResponseWriter, err error) {
 	}
 	slog.Error("service request failed", "error", err)
 	writeError(w, http.StatusUnprocessableEntity, "operation_failed", err.Error())
+}
+
+// streamLine is one SSE message event payload. JSON encoding keeps newlines
+// and other control characters out of the event framing.
+type streamLine struct {
+	Line string `json:"line"`
+}
+
+// streamError maps a backend failure to the in-band SSE error payload.
+func streamError(err error) errorBody {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+		return errorBody{Code: "timeout", Message: "操作超时"}
+	}
+	var serviceErr *Error
+	if errors.As(err, &serviceErr) {
+		return errorBody{Code: serviceErr.Code, Message: serviceErr.Message}
+	}
+	return errorBody{Code: "operation_failed", Message: err.Error()}
+}
+
+// writeSSE serializes one event and flushes it to the client. An empty event
+// name produces a default ("message") event.
+func writeSSE(w http.ResponseWriter, rc *http.ResponseController, event string, value any) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	var builder strings.Builder
+	if event != "" {
+		builder.WriteString("event: ")
+		builder.WriteString(event)
+		builder.WriteByte('\n')
+	}
+	builder.WriteString("data: ")
+	builder.Write(data)
+	builder.WriteString("\n\n")
+	if _, err := io.WriteString(w, builder.String()); err != nil {
+		return err
+	}
+	return rc.Flush()
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

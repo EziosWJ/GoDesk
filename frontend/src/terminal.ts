@@ -17,6 +17,17 @@ function sessionPath(id: string) {
   return `${sessionsPath}/${encodeURIComponent(id)}`
 }
 
+export class TerminalError extends Error {
+  readonly status: number
+  readonly code?: string
+
+  constructor(status: number, code?: string, message?: string) {
+    super(message || `Terminal request failed (${status})`)
+    this.status = status
+    this.code = code
+  }
+}
+
 async function request<T>(path: string, method = 'GET', body?: object, signal?: AbortSignal): Promise<T> {
   const response = await fetch(path, {
     method,
@@ -24,13 +35,17 @@ async function request<T>(path: string, method = 'GET', body?: object, signal?: 
     body: body === undefined ? undefined : JSON.stringify(body),
     signal,
   })
-  if (!response.ok) throw new Error(`Terminal request failed (${response.status})`)
+  if (!response.ok) {
+    const data = await response.json().catch(() => undefined) as { code?: string; message?: string } | undefined
+    throw new TerminalError(response.status, data?.code, data?.message)
+  }
   return response.status === 204 ? undefined as T : response.json()
 }
 
 export const terminalApi = {
   list: (signal?: AbortSignal) => request<TerminalSession[]>(sessionsPath, 'GET', undefined, signal),
-  create: () => request<TerminalSession>(sessionsPath, 'POST', {}),
+  create: (options?: { cwd?: string }) =>
+    request<TerminalSession>(sessionsPath, 'POST', options?.cwd ? { cwd: options.cwd } : {}),
   rename: (id: string, name: string) => request<TerminalSession>(sessionPath(id), 'PATCH', { name }),
   end: (id: string) => request<void>(sessionPath(id), 'DELETE'),
   sudoStatus: (signal?: AbortSignal) => request<{ setupCommand?: string }>('/api/v1/terminal/sudo', 'GET', undefined, signal),

@@ -66,13 +66,14 @@ jobs:
             local suffix="$2"
             local goarm="${3:-}"
             local stage="$RUNNER_TEMP/stage/$suffix"
+            local ldflags="-s -w -X godesk/internal/buildinfo.Version=${TAG} -X godesk/internal/buildinfo.Commit=$(git rev-parse --short HEAD) -X godesk/internal/buildinfo.Date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
             mkdir -p "$stage"
             if [ -n "$goarm" ]; then
               GOOS=linux GOARCH="$goarch" GOARM="$goarm" CGO_ENABLED=0 \
-                go -C backend build -tags web -trimpath -ldflags="-s -w" -o "$stage/godesk" ./cmd/godesk
+                go -C backend build -tags web -trimpath -ldflags="$ldflags" -o "$stage/godesk" ./cmd/godesk
             else
               GOOS=linux GOARCH="$goarch" CGO_ENABLED=0 \
-                go -C backend build -tags web -trimpath -ldflags="-s -w" -o "$stage/godesk" ./cmd/godesk
+                go -C backend build -tags web -trimpath -ldflags="$ldflags" -o "$stage/godesk" ./cmd/godesk
             fi
             tar -C "$stage" -czf "$out/godesk_${TAG}_linux_${suffix}.tar.gz" godesk
           }

@@ -107,6 +107,7 @@
 .settings-jump svg:last-child { color: var(--godesk-muted); }
 
 /* Appearance gallery */
+.system-title + .settings-section { margin-block-start: 14px; }
 .settings-section + .settings-section { margin-block-start: 22px; }
 .settings-section-head {
   display: flex;
@@ -373,6 +374,265 @@
     min-width: var(--godesk-control-touch);
     min-height: var(--godesk-control-touch);
   }
+  .host-timezone-option { min-height: var(--godesk-control-touch); }
+}
+
+/* Host & General settings */
+.host-refresh-button {
+  padding-inline: 10px;
+  border: 1px solid var(--godesk-border);
+  background: var(--godesk-surface);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+}
+.host-spin { animation: host-spin 0.9s linear infinite; }
+@keyframes host-spin { to { transform: rotate(360deg); } }
+
+.host-load-error {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+.host-inline-feedback {
+  margin-top: 6px;
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+}
+.host-success-feedback {
+  margin-top: 6px;
+  color: var(--godesk-success);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+}
+.host-mono { font-family: var(--godesk-font-mono); }
+
+.host-info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+}
+.host-info-item {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-subtle);
+}
+.host-info-item dt {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+.host-info-item dd {
+  min-width: 0;
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  overflow-wrap: anywhere;
+}
+.host-version-value {
+  display: grid;
+  gap: 2px;
+}
+.host-account-value {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.host-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  border: 1px solid var(--godesk-border);
+  border-radius: 999px;
+  background: var(--godesk-panel);
+  color: var(--godesk-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+}
+.host-badge-root {
+  border-color: color-mix(in srgb, var(--godesk-warning) 42%, transparent);
+  background: color-mix(in srgb, var(--godesk-warning) 12%, transparent);
+  color: var(--godesk-warning);
+  font-family: var(--godesk-font-mono);
+}
+.host-badge-pending {
+  border-color: color-mix(in srgb, var(--godesk-accent) 42%, transparent);
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+}
+
+.host-config-stack {
+  display: grid;
+  gap: 10px;
+}
+.host-config-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-subtle);
+}
+.host-config-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.host-config-label {
+  font-size: var(--text-godesk-body);
+  line-height: var(--text-godesk-body--line-height);
+  font-weight: 500;
+}
+
+.host-input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--godesk-control);
+  padding-inline: 10px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+  color: var(--godesk-fg);
+}
+.host-input:disabled {
+  color: var(--godesk-muted);
+  background: var(--godesk-panel);
+}
+
+.host-inline-form { display: grid; gap: 4px; }
+.host-inline-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.host-inline-row .host-input {
+  flex: 1 1 220px;
+  max-width: 360px;
+}
+
+.host-readonly-value {
+  font-size: var(--text-godesk-body);
+  line-height: var(--text-godesk-body--line-height);
+  color: var(--godesk-fg);
+}
+.host-readonly-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+.host-readonly-note svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.host-timezone-form {
+  display: grid;
+  gap: 8px;
+}
+.host-timezone-current {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.host-timezone-selected {
+  padding: 2px 8px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+}
+.host-timezone-search-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.host-timezone-search-icon {
+  position: absolute;
+  inset-inline-start: 10px;
+  color: var(--godesk-muted);
+  pointer-events: none;
+}
+.host-timezone-search {
+  padding-inline-start: 30px;
+}
+.host-timezone-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.host-timezone-list {
+  display: grid;
+  align-content: start;
+  max-height: 204px;
+  padding: 4px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+}
+.host-timezone-empty {
+  padding: 14px 10px;
+  text-align: center;
+}
+.host-timezone-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--godesk-row-compact);
+  padding: 4px 8px;
+  border-radius: calc(var(--godesk-radius-control) * 0.75);
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+  text-align: start;
+}
+.host-timezone-option:hover,
+.host-timezone-option[data-highlighted="true"] {
+  background: var(--godesk-hover);
+}
+.host-timezone-option[aria-selected="true"] {
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+  font-weight: 600;
+}
+.host-timezone-tag {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--godesk-panel);
+  color: var(--godesk-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+  font-weight: 500;
+}
+.host-timezone-check {
+  margin-inline-start: auto;
+  flex: none;
+  color: var(--godesk-accent);
+}
+.host-timezone-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-spin { animation: none; }
 }
 
 @media (forced-colors: active) {
@@ -386,4 +646,6 @@
   .wallpaper-thumb { background-image: none !important; background-color: Canvas; }
   .theme-card-check, .wallpaper-check { forced-color-adjust: none; }
   .settings-accent-chip { forced-color-adjust: none; }
+  .host-info-item, .host-config-card, .host-timezone-list { border-color: CanvasText; }
+  .host-timezone-option[aria-selected="true"] { outline: 1px solid Highlight; }
 }

@@ -3,6 +3,7 @@
 .editor-toolbar {
   display: flex;
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   min-height: var(--godesk-toolbar);
@@ -70,10 +71,16 @@
   text-align: center;
 }
 
-.editor-status > [role='status'] { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.editor-status > [role='status'] { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .editor-status > [data-warning='true'] { padding-block: 4px; color: var(--godesk-warning); white-space: normal; overflow-wrap: anywhere; }
-.editor-status > span + span { flex: none; }
+.editor-status-controls { display: flex; flex: none; align-items: center; gap: 6px; }
+.editor-zoom-group { display: inline-flex; align-items: center; gap: 2px; }
+.editor-status-btn.app-control { min-height: 22px; padding-inline: 6px; gap: 4px; font-size: inherit; color: var(--godesk-muted); }
+.editor-status-btn.app-control[aria-pressed='true'] { background: var(--godesk-selected); color: var(--godesk-fg); }
+.editor-font-size { min-width: 40px; font-variant-numeric: tabular-nums; }
+.editor-status-lang { flex: none; padding-inline-start: 4px; border-inline-start: 1px solid var(--godesk-divider); }
 .editor-dialog-message { margin-top: 8px; }
+.editor-dialog-error { margin-top: 8px; color: var(--godesk-danger); }
 
 @media (forced-colors: active) {
   .editor-tab[data-selected='true'] { outline: 1px solid Highlight; outline-offset: -1px; }

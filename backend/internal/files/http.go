@@ -36,6 +36,9 @@ func (s *server) operations() *http.ServeMux {
 	mux.HandleFunc("PUT /permissions", s.permissions)
 	mux.HandleFunc("POST /upload", s.upload)
 	mux.HandleFunc("GET /download", download)
+	mux.HandleFunc("GET /archive/download", downloadArchive)
+	mux.HandleFunc("POST /archive/compress", s.compressArchive)
+	mux.HandleFunc("POST /archive/extract", s.extractArchive)
 	mux.HandleFunc("GET /image", getImage)
 	mux.HandleFunc("GET /text", getText)
 	mux.HandleFunc("PUT /text", s.putText)
@@ -64,6 +67,10 @@ func failure(w http.ResponseWriter, err error) {
 		status, code = http.StatusBadRequest, "invalid_request"
 	case errors.Is(err, errType):
 		status, code = http.StatusUnsupportedMediaType, "unsupported_type"
+	case errors.Is(err, errTraversal):
+		status, code = http.StatusBadRequest, "path_traversal"
+	case errors.Is(err, errArchive):
+		status, code = http.StatusBadRequest, "invalid_archive"
 	case errors.Is(err, errBinary):
 		status, code = http.StatusUnsupportedMediaType, "binary_file"
 	case errors.Is(err, errEncoding):

@@ -2,7 +2,10 @@
 
 「终端」和「会话管理」各有独立的桌面和开始菜单入口，打开后在任务栏按各自应用显示。它们共用 goDesk 管理的 Shell 会话，Shell 以 goDesk 的运行账号在被管理主机上运行。
 
-- 每次启动「终端」都新建一个会话并打开终端窗口。创建失败时在桌面显示错误，可以再次启动重试。终端窗口显示 Shell 和底部状态栏。
+- 每次启动「终端」都新建一个会话并打开终端窗口。也支持从文件管理器的目录或空白处右键菜单选择「在此打开终端」，以指定目录作为初始工作目录启动会话。创建失败时显示错误（如工作目录对运行账号无权限），可以再次启动重试。终端窗口显示 Shell 和底部状态栏。
+- 终端输出支持查找：在终端内按 `Ctrl+Shift+F`（macOS 为 `⌘+Shift+F`）或点击状态栏查找按钮可打开右上角浮层查找栏。支持 `Enter` / `Shift+Enter` 跳转下一个或上一个匹配项、`Esc` 关闭并清除高亮，以及区分大小写（`Aa`）和正则表达式（`.*`）切换。
+- 终端输出中的 `http://` 与 `https://` 链接支持按住 `Ctrl`（macOS 为 `⌘`）并点击在新标签页打开；普通点击仅用于选中文本，避免误触打开链接。
+- 终端支持调整字号（`11–24px`，默认 `13px`）：可通过状态栏 `-` / 字号重置 / `+` 按钮、终端快捷键 `Ctrl+=` / `Ctrl++`（放大）、`Ctrl+-`（缩小）、`Ctrl+0`（重置，macOS 均支持 `⌘`），或在「系统设置 → 终端」中调整。字号保存在当前浏览器本地（`localStorage`），修改后会立即同步到所有已打开的终端窗口，并由控制窗口按新字号重新计算并同步会话行列数。
 - 可输入的终端窗口会在状态栏显示盾牌图标「配置免密 sudo（可选）」。点击后可在只读弹窗查看权限状态。需要配置时，可复制命令并在 Shell 中执行。首次配置要求运行账号已有 sudo 授权。重新打开终端可刷新权限状态。详见[主机权限](privileges.md)。
 - 「会话管理」只有一个窗口。列表显示会话名称、创建时间、最近接入时间及状态，可以刷新、新建、打开、改名、取得控制权和结束会话。在这里新建也会立即打开终端窗口。
 - 打开已有会话时，同一桌面已有终端窗口就聚焦或恢复它。其他桌面可以打开同一会话并实时查看输出。
@@ -26,7 +29,7 @@
 | 方法与路径 | 请求 | 成功响应 |
 | --- | --- | --- |
 | `GET /api/v1/terminal/sessions` | | `200` 会话数组 |
-| `POST /api/v1/terminal/sessions` | `{}` | `201` 新会话 |
+| `POST /api/v1/terminal/sessions` | `{}` 或 `{"cwd":"/abs/dir"}` | `201` 新会话 |
 | `PATCH /api/v1/terminal/sessions/{id}` | `{"name":"构建"}` | `200` 更新后的会话 |
 | `DELETE /api/v1/terminal/sessions/{id}` | | `204` |
 | `GET /api/v1/terminal/sudo` | | `200` 免密 sudo 可用时为 `{}`，否则返回含 `setupCommand` 的对象 |
@@ -34,6 +37,8 @@
 | `PUT /api/v1/settings/terminal` | `{"scrollbackLines":5000}` | `200` 更新后的终端配置 |
 
 会话字段为 `id`、`name`、`createdAt`、`lastAttachedAt`、`attached`、`controllerClientId` 和 `scrollbackLines`。`attached` 表示至少有一个连接。`controllerClientId` 为控制窗口的连接标识，无控制窗口时为 `null`。时间戳采用 RFC 3339，尚未接入时 `lastAttachedAt` 为 `null`。窗口是否最小化由各自桌面决定。无效输入返回 `400`，不存在的会话返回 `404`，未登录返回 `401`。
+
+`POST /api/v1/terminal/sessions` 接受可选的 `cwd` 字段（Linux 绝对路径）指定初始工作目录。终端始终以 goDesk 运行账号启动，不会隐式提权为 root；服务端使用运行账号校验 `cwd`，失败时返回 JSON `{code, message}`：无效路径返回 `400`（`invalid_cwd`）、非目录返回 `400`（`cwd_not_directory`）、目录不存在返回 `404`（`cwd_not_found`）、运行账号无权限访问返回 `403`（`cwd_permission_denied`）。
 
 ## WebSocket
 

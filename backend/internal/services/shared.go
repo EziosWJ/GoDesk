@@ -35,8 +35,13 @@ const (
 	ActionStart   = shared.ActionStart
 	ActionStop    = shared.ActionStop
 	ActionRestart = shared.ActionRestart
+	ActionReload  = shared.ActionReload
 	ActionEnable  = shared.ActionEnable
 	ActionDisable = shared.ActionDisable
+
+	// MaxLogLines is the maximum number of historical journal lines a stream
+	// request may replay before following new output.
+	MaxLogLines = shared.MaxLogLines
 )
 
 // Open selects a service backend for GoDesk's native service management. It is

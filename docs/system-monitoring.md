@@ -14,10 +14,11 @@
 
 ### 当前已实现的系统监控
 
-- 后端每秒采集 CPU、内存、磁盘用量与 inode、网卡收发速率、链路状态和默认路由信息，在内存中保留最近 60 个样本。服务重启后历史清空。
-- 「概览」每 1 秒轮询指标接口。
+- 后端每秒采集 CPU、负载、内存与 Swap、磁盘用量与 inode、磁盘 I/O、网卡收发速率、链路状态和默认路由信息，在内存中保留最近 60 个样本。服务重启后历史清空。
+- 「概览」每 1 秒轮询指标接口，展示 CPU 与平均负载、内存与 Swap、磁盘容量与磁盘 I/O，以及网卡速率。
+- 「进程」标签页打开且页面可见时按需请求进程列表，默认每 5 秒刷新，支持手动暂停/继续与手动刷新；页面不可见或离开标签页后停止轮询。后端不在后台常驻扫描 `/proc` 进程，只有该接口被调用时才读取进程信息。
 - 「端口」打开时立即以管理员身份读取监听，随后每 5 秒轮询。离开标签页后停止轮询。
-- 主机健康引擎消费同一份采集快照，每秒评估 CPU、内存、磁盘和默认路由接口，并维护持续判定与恢复迟滞；底栏每 5 秒轮询健康状态接口。
+- 主机健康引擎消费同一份采集快照，每秒评估 CPU、内存、磁盘、默认路由、负载和 Swap；温度由健康引擎约每 5 秒只读采样 sysfs。所有检查共享持续判定与恢复迟滞状态机；底栏每 5 秒轮询健康状态接口。
 - 当前系统监控不提供历史落盘、告警通知或阈值配置。
 
 ### 主机健康状态中心行为
@@ -36,6 +37,9 @@
 | 方法与路径 | 状态 | 成功响应 | 失败 |
 | --- | --- | --- | --- |
 | `GET /api/v1/system/metrics` | 已实现 | `200` 指标快照 | `503` 采集尚未就绪；`401` 未登录 |
+| `GET /api/v1/system/processes` | 已实现 | `200` 进程列表 | `400` 查询参数无效；`500` 读取失败；`401` 未登录 |
+| `GET /api/v1/system/processes/{pid}` | 已实现 | `200` 进程详情与进程树 | `400` 参数无效；`403` 权限不足；`404` 进程不存在；`409` 进程已变化；`401` 未登录 |
+| `POST /api/v1/system/processes/signal` | 已实现 | `204` 信号已发送 | `400` 请求或信号无效；`403` PID 1、权限不足或 sudo 不可用；`404` 进程不存在；`409` 进程已变化；`504` 超时；`401` 未登录 |
 | `GET /api/v1/system/ports` | 已实现 | `200` 端口数组 | `403` 管理员权限不可用；`500` 读取失败 |
 | `GET /api/v1/system/ports/detail` | 已实现 | `200` 进程树、归属服务与关联监听 | `403` 管理员权限不可用；`409` 监听目标已变化 |
 | `GET /api/v1/system/ports/logs` | 已实现 | `200` `{"lines":[...]}` | `409` 监听目标已变化；`500` journal 不可用 |
@@ -51,10 +55,26 @@
   "sampledAt": "2026-11-23T12:00:00Z",
   "platform": "Linux (WSL2)",
   "cpu": { "percent": 12.3, "perCore": [8.1, 16.5] },
+  "load": { "load1": 1.20, "load5": 0.85, "load15": 0.60, "logicalCores": 8 },
   "memory": { "total": 8589934592, "used": 4294967296, "available": 3274912390, "percent": 50 },
+  "swap": {
+    "totalBytes": 2147483648,
+    "usedBytes": 268435456,
+    "usedPercent": 12.5,
+    "configured": true,
+    "swapInPerSec": 0,
+    "swapOutPerSec": 4096
+  },
   "disks": [
     { "mountpoint": "/", "total": 1081101176832, "used": 118516396032, "percent": 11.6, "inodeUsedPercent": 12.0 }
   ],
+  "diskIO": {
+    "readBytesPerSec": 1048576,
+    "writeBytesPerSec": 524288,
+    "devices": [
+      { "name": "nvme0n1", "readBytesPerSec": 1048576, "writeBytesPerSec": 524288 }
+    ]
+  },
   "network": [
     {
       "name": "eth0",
@@ -77,9 +97,12 @@
 
 - `sampledAt` 为最近一次采样的 RFC 3339 时间；`platform` 标注运行环境，WSL 显示 `Linux (WSL2)`。
 - 速率为字节/秒，容量为字节。
+- `load` 来自 `/proc/loadavg`；`logicalCores` 供解释负载，健康中心 V2 可直接复用。读取失败时为 `null`。
+- `swap` 的 `totalBytes`、`usedBytes`、`usedPercent` 来自 `/proc/meminfo`；Swap 总量为 0 时 `configured=false` 且 `usedPercent=0`。`swapInPerSec`、`swapOutPerSec` 为 `/proc/vmstat` 的 `pswpin`/`pswpout` 计数增量换算的字节/秒，首份样本为 0，供健康中心 V2 复用。读取失败时为 `null`。
+- `diskIO` 来自 `/proc/diskstats`，只统计物理整盘（`sd*`、`nvme*n*`、`vd*`、`hd*`、`xvd*`、`mmcblk*`），过滤 `loop*`、`ram*`、`zram*`、`dm-*`、`md*` 和分区，避免重复计数。首份样本速率为 0；系统没有 `/proc/diskstats` 时返回空 `devices` 和 0 速率。
 - `cpu`、`memory` 采集失败时为 `null`；`disks`、`network` 失败时为空数组。
 - `series` 按时间从旧到新排列，最多 60 个点，长度与当前保留的采样数一致。某指标采集失败时，对应序列沿用上一个有效值，当前字段仍为 `null` 或空数组。
-- 当前磁盘采集代码仅明确排除 `iso9660`、`squashfs` 和 `udf`。健康中心实现前必须补齐伪文件系统、临时文件系统、容器叠加层和只读镜像的过滤，并通过挂载点测试验证；不得把未过滤的虚拟挂载误判为真实磁盘空间告警。
+- 磁盘采集过滤伪文件系统、临时文件系统、容器叠加层和只读镜像，并按设备去重；loop 设备按只读镜像处理。
 - 网卡排除回环和未启用接口；只包含至少有一个地址的接口。
 
 #### 健康中心指标扩展
@@ -127,6 +150,82 @@
 - 停止使用 JSON 提交与详情相同的目标字段。若详情返回 `unit`，停止请求也要带上 `unit`。后端重新验证监听关系、进程实例和服务归属。系统服务复用服务管理的停止命令。普通进程通过 Linux pidfd 发送一次 `SIGTERM`。PID 1 只提供查看。
 - 停止后立即刷新。仍由其他进程或 socket 激活单元持有的端口会继续显示。API 在认证失败时返回 `401`，目标参数无效时返回 `400`，操作超时时返回 `504`。
 
+### 进程
+
+进程数据只在请求 `/api/v1/system/processes` 时读取，采集器后台 ticker 不扫描 `/proc` 进程。列表单次只读取每个数字 PID 的 `/proc/<pid>/stat` 和 `/proc/<pid>` 目录 UID，不读取 `cmdline`、`environ`、`fd`、`io` 或 `status`。
+
+`GET /api/v1/system/processes` 支持以下查询参数：
+
+| 参数 | 取值 | 默认 |
+| --- | --- | --- |
+| `q` | 按进程名、PID 或用户名做不区分大小写的包含匹配 | 空 |
+| `sort` | `cpu`、`memory`、`pid`、`name` | `cpu` |
+| `order` | `asc`、`desc` | `cpu`/`memory` 为 `desc`，`pid`/`name` 为 `asc` |
+
+```json
+{
+  "collectedAt": "2026-11-27T12:00:00Z",
+  "selfPid": 1234,
+  "protectedPids": [1, 987, 1234],
+  "total": 150,
+  "processes": [
+    {
+      "pid": 1234,
+      "ppid": 1,
+      "startTicks": 123456,
+      "name": "godesk",
+      "state": "S",
+      "user": "root",
+      "cpuPercent": 1.2,
+      "rssBytes": 12345678
+    }
+  ]
+}
+```
+
+- `total` 为应用 `q` 过滤后返回的进程数，等于 `processes` 数组长度。
+- `protectedPids` 始终包含 PID 1、GoDesk 自身 PID 及其父进程链，供界面在结束操作前提示。
+- `cpuPercent` 以相邻两次列表请求之间的进程 CPU tick 增量除以墙钟时间与逻辑核心数计算；首次请求、缓存超过 60 秒或 PID 被复用时为 `0`。
+- `state` 为 `/proc/<pid>/stat` 的单字母状态（如 `R`、`S`、`Z`）；`rssBytes` 由 RSS 页数乘以页大小得到。
+- `sort` 或 `order` 无效时返回 `400 invalid_sort` / `400 invalid_order`。
+
+`GET /api/v1/system/processes/{pid}` 按需读取完整详情。可选查询参数 `startTicks` 用于拒绝已退出的旧进程实例：进程不存在返回 `404 process_not_found`，存在但 `startTicks` 不匹配返回 `409 process_changed`。
+
+```json
+{
+  "pid": 1234,
+  "ppid": 1,
+  "startTicks": 123456,
+  "name": "godesk",
+  "state": "S",
+  "user": "root",
+  "rssBytes": 12345678,
+  "cmdline": ["/usr/local/bin/godesk", "-listen", "0.0.0.0:5000"],
+  "cwd": "/home/operator",
+  "startedAt": "2026-11-27T09:00:00Z",
+  "threads": 12,
+  "tree": { "pid": 1, "process": "systemd", "startTicks": 1, "user": "root", "children": [] },
+  "isProtected": false,
+  "isSelfOrAncestor": true
+}
+```
+
+- `cmdline` 为 NUL 分隔参数组成的数组，无法读取时为空数组；`cwd` 无法读取时为空字符串。
+- `startedAt` 由开机时间与 `startTicks / CLK_TCK` 计算，使用 RFC 3339。
+- `tree` 复用端口详情的进程树结构，包含父级链和后代。
+- `isProtected` 在 PID 为 1 时为 `true`；`isSelfOrAncestor` 在目标为 GoDesk 自身或其父进程链成员时为 `true`。
+
+`POST /api/v1/system/processes/signal` 结束进程，请求体为 `application/json`：
+
+```json
+{ "pid": 1234, "startTicks": 123456, "signal": "SIGTERM" }
+```
+
+- 只接受 `SIGTERM` 和 `SIGKILL`；其他值返回 `400 invalid_signal`。
+- `pid <= 1` 返回 `403 forbidden_pid`。目标进程不存在返回 `404 process_not_found`；`startTicks` 不匹配返回 `409 process_changed`。
+- 后端先以运行账号通过 pidfd（不可用时回退到校验 `startTicks` 后的 `kill`）发送信号。遇到 `EPERM` 时复用 [GoDesk 免密 sudo](privileges.md) 的管理员子进程；免密 sudo 不可用返回 `403 sudo_unavailable`，管理员子进程仍无权限返回 `403 permission_denied`。
+- 成功返回 `204 No Content`。操作超时返回 `504 timeout`。
+
 ## 主机健康状态接口
 
 > 本节定义 `GET /api/v1/system/status` 的契约，V1 已实现。产品范围、状态语义与阈值规则见 [Host Health Center Spec](specs/host-health-center.md)。
@@ -135,7 +234,7 @@
 
 ### 响应结构
 
-以下为 V1 示例，包含 CPU、内存、一个挂载点和一个默认路由接口。V1 不返回温度检查；温度、Swap、Load Average 等可选检查在 V2 实现后按相同结构追加。
+以下为 V1 示例，包含 CPU、内存、一个挂载点和一个默认路由接口。V2 在同一结构上追加 `load`、`swap` 和 `temperature` 检查，字段约定见下文。
 
 ```json
 {
@@ -271,7 +370,7 @@ V2 可选检查沿用相同结构。例如传感器可读但没有可信阈值�
 | 字段 | 类型 | 约定 |
 | --- | --- | --- |
 | `id` | string | 稳定、不透明的检查项 ID；客户端不得解析其内部结构。 |
-| `category` | enum | `cpu`、`memory`、`storage`、`network`、`temperature`；`service` 为 V3 预留。 |
+| `category` | enum | `cpu`、`load`、`memory`、`swap`、`storage`、`network`、`temperature`；`service` 为 V3 预留。 |
 | `label` | string | 面向操作者的展示名称；可调整，不用于逻辑。 |
 | `status` | enum | `healthy`、`warning`、`critical`、`unknown`。 |
 | `applicable` | boolean | 当前平台、配置或拓扑是否适用该检查；为 `false` 时不参与整体状态聚合。 |
@@ -307,16 +406,18 @@ V2 可选检查沿用相同结构。例如传感器可读但没有可信阈值�
 
 | `category` | 版本 | `id` | `value` / `unit` | `details` |
 | --- | --- | --- | --- | --- |
-| `cpu` | V1 | `cpu` | 总体使用率 / `percent` | `logicalCores`；V2 可选 `loadAverage`。 |
-| `memory` | V1 | `memory` | 已用比例 `100 - available/total` / `percent` | `totalBytes`、`usedBytes`、`availableBytes`、`availablePercent`；V2 可选 `swapTotalBytes`、`swapUsedBytes`。 |
+| `cpu` | V1 | `cpu` | 总体使用率 / `percent` | `logicalCores`。 |
+| `load` | V2 | `load` | `load5 / logicalCores` / `null` | `load1`、`load5`、`load15`、`logicalCores`、`load5PerCore`。 |
+| `memory` | V1 | `memory` | 已用比例 `100 - available/total` / `percent` | `totalBytes`、`usedBytes`、`availableBytes`、`availablePercent`。 |
+| `swap` | V2 | `swap` | 已用比例 / `percent` | `totalBytes`、`usedBytes`、`usedPercent`、`swapInPerSec`、`swapOutPerSec`。 |
 | `storage` | V1 | `disk:<mountpoint>`；磁盘枚举失败时为 `disk` | 触发维度的使用率 / `percent` | `mountpoint`、`dimension`（`capacity` 或 `inode`）、`capacityUsedPercent`、`inodeUsedPercent`、`totalBytes`、`usedBytes`、`availableBytes`。 |
 | `network` | V1 | `network:<interface>`；无默认路由时为 `network:default` | `null` / `null` | `interface`、`linkUp`、`isDefaultRoute`、`ipv4`、`ipv6`、`rxBytesPerSecond`、`txBytesPerSecond`。 |
-| `temperature` | V2 | `temperature:<sensor>`；无传感器时为 `temperature` | 摄氏度 / `celsius` | `sensor`、`chip`。 |
+| `temperature` | V2 | `temperature:<chip>/<sensor>`；无传感器时为 `temperature` | 摄氏度 / `celsius` | `sensor`、`chip`、`celsius`、`warning`、`critical`（缺失阈值为 `null`）。 |
 | `service` | V3 | `service:<unit>` | 在 V3 契约中定义 | 在 V3 契约中定义。 |
 
 V1 不返回 `system` 类别。未来若增加主机级检查，应先在本文补充类别和 `details` 契约。动态 ID 必须稳定：磁盘使用 `disk:<mountpoint>`，网卡使用 `network:<interface>`，温度传感器使用驱动与传感器组成的稳定键；不得使用数组下标或采样序号作为 ID。
 
-检查项按类别顺序 `cpu`、`memory`、`storage`、`network`、`temperature`、`service` 排列，同一类别内按 `id` 升序排列。
+检查项按类别顺序 `cpu`、`load`、`memory`、`swap`、`storage`、`network`、`temperature`、`service` 排列，同一类别内按 `id` 升序排列。动态生成的类别（磁盘、温度）在所属类别内按 `id` 升序排列；温度无传感器时只有单个 `temperature` 检查。
 
 ### 统计口径
 
@@ -362,11 +463,21 @@ V1 不返回 `system` 类别。未来若增加主机级检查，应先在本文�
 
 ### 温度契约
 
-- 温度检查在 V2 实现。`value` 使用摄氏度；传感器存在时按传感器分别返回 `temperature:<sensor>`。
+- 温度检查在 V2 实现。`value` 使用摄氏度；传感器存在时按传感器分别返回 `temperature:<chip>/<sensor>`，`details` 包含 `sensor`、`chip`、当前 `celsius` 以及内核暴露的 `warning`/`critical` 阈值（缺失为 `null`）。hwmon 使用驱动名与标签，thermal 使用 `thermal/<type>` 作为稳定键。
 - 优先使用 `hwmon` 或 thermal 子系统暴露的传感器及其阈值。传感器提供警告阈值时作为 `thresholds.warning`，提供 critical 阈值时作为 `thresholds.critical`；缺失的阈值字段为 `null`。
+- 采集层约每 5 秒读取一次 sysfs；采样失败或没有可用传感器时返回单个 `temperature` 检查，`applicable=false`、`reason=not_supported`。温度 `observedAt` 为最近一次 sysfs 采样时间，超过约 15 秒未更新时 `stale=true`、`reason=stale`。
 - 传感器可读但没有可信阈值时，返回 `applicable=false`、`reason=no_threshold`，保留 `value` 供展示，但不生成 `warning`/`critical`，也不参与整体状态。
-- 平台没有可用传感器时返回单个 `temperature` 检查，`applicable=false`、`reason=not_supported`。
+- 有阈值的传感器使用与 CPU/内存相同的持续判定与迟滞状态机：默认持续 2 分钟进入、60 秒恢复，恢复阈值比各自阈值低 5°C。持续窗口和恢复阈值只由后端使用，不通过 API 暴露。
 - 不得伪造温度，也不得对所有芯片统一套用固定温度线。
+
+### 负载与 Swap 契约
+
+- `load` 复用 metrics 的 `load` 数据，使用 `load5 / logicalCores` 作为 `value`；`details` 同时返回 `load1`、`load5`、`load15`、`logicalCores`、`load5PerCore`。`load` 缺失、`logicalCores <= 0` 或读数过期时按 `collect_failed` / `stale` / `initializing` 返回 `unknown`。
+- `load` 默认阈值：警告 `1.5`、严重 `3.0`，持续 5 分钟进入；恢复窗口 60 秒，恢复阈值分别为 `2.5`（严重→警告）和 `1.0`（警告→正常）。
+- `swap` 复用 metrics 的 Swap 数据。`value` 为已用比例，`unit=percent`；`thresholds.warning` 固定为 `80`，`thresholds.critical` 为 `null`，因为 V2 只产生警告级问题。`details` 同时返回换入/换出速率。
+- 未配置 Swap（`configured=false` 或 `totalBytes == 0`）时返回 `applicable=false`、`reason=not_supported`，不参与整体状态。
+- 仅当已用比例 `>= 80%` **且** `swapInPerSec > 0` 或 `swapOutPerSec > 0` 持续 2 分钟时才进入 `warning`；仅高占用但无换页活动，或仅有换页活动但占用不高，都保持 `healthy`，避免静置冷数据误报。恢复需要条件消失并持续 60 秒。
+- Swap 读数缺失或过期时按 `collect_failed` / `stale` / `initializing` 返回 `unknown`。
 
 ### 错误与连接语义
 
@@ -382,4 +493,4 @@ V1 不返回 `system` 类别。未来若增加主机级检查，应先在本文�
 - 现有 CPU、内存、磁盘和网络指标使用 `github.com/shirou/gopsutil/v4`。
 - 端口使用 `gopsutil/net.Connections("all")`，过滤 `AF_INET` 与 `AF_INET6`；进程名读取 `/proc/<pid>/comm`。
 - 健康检查优先复用现有采集结果；默认路由和链路状态通过 procfs、sysfs 或 netlink 只读查询获取，不调用 shell；温度等能力只读 Linux sysfs/procfs。
-- 不隐式提升权限，不提供进程操作。权限不足或平台不支持时按检查项语义返回 `unknown` 或 `applicable=false`。
+- 健康检查不隐式提升权限，健康接口不提供进程操作。进程列表和结束操作由「进程」接口按需提供，权限不足时返回结构化错误。

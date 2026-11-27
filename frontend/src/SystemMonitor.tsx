@@ -1,29 +1,24 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react'
 import { Activity, ArrowDown, ArrowUp, HardDrive, MemoryStick, Network } from 'lucide-react'
-import { monitorApi, MonitorError, type DiskStat, type Metrics, type NetworkSeries, type NetworkStat } from './monitor'
+import {
+  formatBytes,
+  formatLoad,
+  formatPercent,
+  formatRate,
+  monitorApi,
+  MonitorError,
+  type DiskIOStat,
+  type DiskStat,
+  type LoadStat,
+  type Metrics,
+  type NetworkSeries,
+  type NetworkStat,
+  type SwapStat,
+} from './monitor'
 import { PortsPanel } from './PortsPanel'
+import { ProcessesPanel } from './ProcessesPanel'
 
 const numberFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 1 })
-
-function formatPercent(value: number | null | undefined) {
-  return value === null || value === undefined || !Number.isFinite(value) ? '—' : `${numberFormat.format(value)}%`
-}
-
-function formatBytes(value: number, suffix = '') {
-  if (!Number.isFinite(value) || value < 0) return '—'
-  const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB', 'PiB']
-  let scaled = value
-  let unit = 0
-  while (scaled >= 1024 && unit < units.length - 1) {
-    scaled /= 1024
-    unit += 1
-  }
-  return `${numberFormat.format(scaled)} ${units[unit]}${suffix}`
-}
-
-function formatRate(value: number) {
-  return formatBytes(value, '/s')
-}
 
 function TrendChart({ name, samples, kind }: { name: string; samples: number[]; kind: 'cpu' | 'memory' }) {
   const values = samples.length > 0 ? samples : [0]
@@ -116,7 +111,51 @@ function TrendCard({ name, value, detail, samples, Icon, kind, footer }: {
   )
 }
 
-function DiskSection({ disks }: { disks: DiskStat[] }) {
+function LoadSummary({ load }: { load?: LoadStat | null }) {
+  return (
+    <div className="monitor-resource-meta system-caption">
+      <span>平均负载（1 / 5 / 15 分钟）</span>
+      <strong>
+        {load
+          ? `${formatLoad(load.load1)} / ${formatLoad(load.load5)} / ${formatLoad(load.load15)}${load.logicalCores > 0 ? ` · ${load.logicalCores} 核` : ''}`
+          : '—'}
+      </strong>
+    </div>
+  )
+}
+
+function SwapSummary({ swap }: { swap?: SwapStat | null }) {
+  if (!swap) {
+    return (
+      <div className="monitor-resource-meta system-caption">
+        <span>Swap</span>
+        <strong>—</strong>
+      </div>
+    )
+  }
+  if (!swap.configured) {
+    return (
+      <div className="monitor-resource-meta system-caption">
+        <span>Swap</span>
+        <strong>未配置</strong>
+      </div>
+    )
+  }
+  const percent = Math.max(0, Math.min(100, swap.usedPercent))
+  return (
+    <div className="monitor-swap system-caption">
+      <div className="monitor-swap-row">
+        <span>Swap</span>
+        <strong>
+          {formatBytes(swap.usedBytes)} / {formatBytes(swap.totalBytes)} · {formatPercent(swap.usedPercent)}
+        </strong>
+      </div>
+      <meter min={0} max={100} value={percent} aria-label={`Swap 使用率 ${formatPercent(swap.usedPercent)}`} />
+    </div>
+  )
+}
+
+function DiskSection({ disks, diskIO }: { disks: DiskStat[]; diskIO?: DiskIOStat | null }) {
   return (
     <section className="monitor-section" aria-labelledby="monitor-disks-title">
       <header className="monitor-resource-title">
@@ -139,6 +178,35 @@ function DiskSection({ disks }: { disks: DiskStat[] }) {
             ))}
           </div>
         )}
+      {diskIO && (
+        <div className="monitor-disk monitor-disk-io">
+          <div className="monitor-disk-io-header">
+            <strong>磁盘 I/O</strong>
+            <div
+              className="monitor-network-rates"
+              aria-label={`总读取 ${formatRate(diskIO.readBytesPerSec)}，总写入 ${formatRate(diskIO.writeBytesPerSec)}`}
+            >
+              <span><ArrowDown size={14} aria-hidden="true" />读 {formatRate(diskIO.readBytesPerSec)}</span>
+              <span><ArrowUp size={14} aria-hidden="true" />写 {formatRate(diskIO.writeBytesPerSec)}</span>
+            </div>
+          </div>
+          {diskIO.devices.length > 0 ? (
+            <ul className="monitor-disk-io-devices system-caption">
+              {diskIO.devices.map(device => (
+                <li key={device.name}>
+                  <code className="monitor-disk-io-name">{device.name}</code>
+                  <span className="monitor-disk-io-device-rates">
+                    <span>读 {formatRate(device.readBytesPerSec)}</span>
+                    <span>写 {formatRate(device.writeBytesPerSec)}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="monitor-disk-io-empty system-caption">暂无物理块设备 I/O 统计</p>
+          )}
+        </div>
+      )}
     </section>
   )
 }
@@ -199,6 +267,7 @@ function NetworkSection({ network, series }: { network: NetworkStat[]; series: N
 }
 
 function Overview({ metrics, error }: { metrics?: Metrics; error: string }) {
+  const coreCount = metrics?.cpu?.perCore.length || metrics?.load?.logicalCores
   return (
     <div className="monitor-overview" role="tabpanel" id="monitor-overview-panel" aria-labelledby="monitor-overview-tab">
       <header className="monitor-heading">
@@ -211,12 +280,18 @@ function Overview({ metrics, error }: { metrics?: Metrics; error: string }) {
         <>
           <div className="monitor-trends">
             <TrendCard name="CPU" value={metrics.cpu?.percent} samples={metrics.series?.cpu ?? []} Icon={Activity} kind="cpu"
-              detail={metrics.cpu ? `${metrics.cpu.perCore.length} 核` : '—'}
-              footer={metrics.cpu && metrics.cpu.perCore.length > 1 ? <CoreBars values={metrics.cpu.perCore} /> : undefined} />
+              detail={coreCount ? `${coreCount} 核` : '—'}
+              footer={(
+                <>
+                  {metrics.cpu && metrics.cpu.perCore.length > 1 && <CoreBars values={metrics.cpu.perCore} />}
+                  <LoadSummary load={metrics.load} />
+                </>
+              )} />
             <TrendCard name="内存" value={metrics.memory?.percent} samples={metrics.series?.memory ?? []} Icon={MemoryStick} kind="memory"
-              detail={metrics.memory ? `${formatBytes(metrics.memory.used)} / ${formatBytes(metrics.memory.total)}` : '—'} />
+              detail={metrics.memory ? `${formatBytes(metrics.memory.used)} / ${formatBytes(metrics.memory.total)}` : '—'}
+              footer={<SwapSummary swap={metrics.swap} />} />
           </div>
-          <DiskSection disks={metrics.disks ?? []} />
+          <DiskSection disks={metrics.disks ?? []} diskIO={metrics.diskIO} />
           <NetworkSection network={metrics.network ?? []} series={metrics.series?.network ?? []} />
         </>
       )}
@@ -224,7 +299,8 @@ function Overview({ metrics, error }: { metrics?: Metrics; error: string }) {
   )
 }
 
-type Tab = 'overview' | 'ports'
+type Tab = 'overview' | 'processes' | 'ports'
+const TABS: Tab[] = ['overview', 'processes', 'ports']
 
 export function SystemMonitor() {
   const [tab, setTab] = useState<Tab>('overview')
@@ -271,7 +347,15 @@ export function SystemMonitor() {
   function handleTabKey(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return
     event.preventDefault()
-    const next: Tab = event.key === 'ArrowLeft' || event.key === 'Home' ? 'overview' : 'ports'
+    const currentIndex = TABS.indexOf(tab)
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? TABS.length - 1
+        : event.key === 'ArrowLeft'
+          ? (currentIndex - 1 + TABS.length) % TABS.length
+          : (currentIndex + 1) % TABS.length
+    const next = TABS[nextIndex]
     setTab(next)
     document.getElementById(`monitor-${next}-tab`)?.focus()
   }
@@ -282,11 +366,16 @@ export function SystemMonitor() {
         <button id="monitor-overview-tab" type="button" role="tab" aria-selected={tab === 'overview'}
           aria-controls="monitor-overview-panel" tabIndex={tab === 'overview' ? 0 : -1}
           onClick={() => setTab('overview')}>概览</button>
+        <button id="monitor-processes-tab" type="button" role="tab" aria-selected={tab === 'processes'}
+          aria-controls="monitor-processes-panel" tabIndex={tab === 'processes' ? 0 : -1}
+          onClick={() => setTab('processes')}>进程</button>
         <button id="monitor-ports-tab" type="button" role="tab" aria-selected={tab === 'ports'}
           aria-controls="monitor-ports-panel" tabIndex={tab === 'ports' ? 0 : -1}
           onClick={() => setTab('ports')}>端口</button>
       </div>
-      {tab === 'overview' ? <Overview metrics={metrics} error={error} /> : <PortsPanel />}
+      {tab === 'overview' && <Overview metrics={metrics} error={error} />}
+      {tab === 'processes' && <ProcessesPanel />}
+      {tab === 'ports' && <PortsPanel />}
     </div>
   )
 }

@@ -8,10 +8,23 @@ import 'monaco-editor/editor/contrib/gotoError/browser/gotoError'
 import 'monaco-editor/editor/contrib/hover/browser/hoverContribution'
 import 'monaco-editor/editor/contrib/tokenization/browser/tokenization'
 import 'monaco-editor/languages/definitions/markdown/register'
+import 'monaco-editor/languages/definitions/yaml/register'
+import 'monaco-editor/languages/definitions/ini/register'
+import 'monaco-editor/languages/definitions/shell/register'
+import 'monaco-editor/languages/definitions/xml/register'
+import 'monaco-editor/languages/definitions/html/register'
+import 'monaco-editor/languages/definitions/css/register'
+import 'monaco-editor/languages/definitions/sql/register'
+import 'monaco-editor/languages/definitions/dockerfile/register'
+import 'monaco-editor/languages/definitions/python/register'
+import 'monaco-editor/languages/definitions/go/register'
+import 'monaco-editor/languages/definitions/javascript/register'
+import 'monaco-editor/languages/definitions/typescript/register'
 import 'monaco-editor/languages/features/json/register'
 import EditorWorker from 'monaco-editor/editor/editor.worker?worker'
 import JsonWorker from 'monaco-editor/languages/features/json/json.worker?worker'
 import type { TextEditorProps } from './index'
+import { registerTomlLanguage } from './toml'
 import { getAccentPreference, subscribeAppearance } from '../theme'
 
 // Register the services used by lazy JSON contributions before the first editor initializes.
@@ -19,6 +32,8 @@ import 'monaco-editor/editor/common/services/treeViewsDndService'
 import 'monaco-editor/editor/contrib/codelens/browser/codeLensCache'
 import 'monaco-editor/editor/contrib/documentSymbols/browser/outlineModel'
 import 'monaco-editor/editor/contrib/suggest/browser/suggestMemory'
+
+registerTomlLanguage()
 
 globalThis.MonacoEnvironment = {
   getWorker: (_, label) => label === 'json' ? new JsonWorker() : new EditorWorker(),
@@ -66,12 +81,12 @@ export default function MonacoEditor(props: TextEditorProps) {
   }, [props.theme, accent])
 
   useLayoutEffect(() => {
-    if (!host.current) return
-    const { value, language, readOnly } = latest.current
-    const fontFamily = getComputedStyle(host.current).getPropertyValue('--godesk-font-mono').trim()
-    const fontSize = 14
+    const container = host.current
+    if (!container) return
+    const { value, language, readOnly, wordWrap, fontSize } = latest.current
+    const fontFamily = getComputedStyle(container).getPropertyValue('--godesk-font-mono').trim()
     const model = editor.createModel(value, language)
-    const view = editor.create(host.current, {
+    const view = editor.create(container, {
       model,
       readOnly,
       ariaLabel: '正文',
@@ -82,7 +97,7 @@ export default function MonacoEditor(props: TextEditorProps) {
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
       accessibilitySupport: 'auto',
-      wordWrap: 'on',
+      wordWrap,
     })
     instance.current = view
     void document.fonts.load(`${fontSize}px ${fontFamily}`).then(() => {
@@ -93,7 +108,15 @@ export default function MonacoEditor(props: TextEditorProps) {
     const changes = model.onDidChangeContent(() => {
       if (!applyingValue.current) latest.current.onChange(model.getValue(undefined, true))
     })
+    function handleWheel(event: WheelEvent) {
+      if (!event.ctrlKey || event.deltaY === 0) return
+      event.preventDefault()
+      event.stopPropagation()
+      latest.current.onFontSizeChange?.(event.deltaY < 0 ? 1 : -1)
+    }
+    container.addEventListener('wheel', handleWheel, { passive: false, capture: true })
     return () => {
+      container.removeEventListener('wheel', handleWheel, { capture: true })
       changes.dispose()
       view.dispose()
       model.dispose()
@@ -120,6 +143,14 @@ export default function MonacoEditor(props: TextEditorProps) {
   useLayoutEffect(() => {
     instance.current?.updateOptions({ readOnly: props.readOnly ?? false })
   }, [props.readOnly])
+
+  useLayoutEffect(() => {
+    instance.current?.updateOptions({ wordWrap: props.wordWrap })
+  }, [props.wordWrap])
+
+  useLayoutEffect(() => {
+    instance.current?.updateOptions({ fontSize: props.fontSize })
+  }, [props.fontSize])
 
   return <div ref={host} style={{ width: '100%', height: '100%' }} />
 }

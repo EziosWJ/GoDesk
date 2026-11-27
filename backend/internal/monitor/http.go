@@ -17,11 +17,14 @@ type errorBody struct {
 }
 
 func (c *Collector) Register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler) {
-	c.register(mux, requireSession, executePortOperation)
+	c.register(mux, requireSession, executePortOperation, executeProcessSignal)
 }
 
-func (c *Collector) register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler, execute portExecutor) {
+func (c *Collector) register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler, execute portExecutor, signal processSignalExecutor) {
 	mux.Handle("GET /api/v1/system/metrics", requireSession(http.HandlerFunc(c.metricsHTTP)))
+	mux.Handle("GET /api/v1/system/processes", requireSession(http.HandlerFunc(c.processListHTTP)))
+	mux.Handle("GET /api/v1/system/processes/{pid}", requireSession(http.HandlerFunc(c.processDetailHTTP)))
+	mux.Handle("POST /api/v1/system/processes/signal", requireSession(processSignalHTTP(signal)))
 	mux.Handle("GET /api/v1/system/ports", requireSession(portHandler(execute, "list", 5*time.Second)))
 	mux.Handle("GET /api/v1/system/ports/detail", requireSession(portHandler(execute, "detail", 10*time.Second)))
 	mux.Handle("GET /api/v1/system/ports/logs", requireSession(portHandler(execute, "logs", 10*time.Second)))

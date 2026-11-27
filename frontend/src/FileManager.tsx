@@ -1,8 +1,8 @@
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState } from 'react'
 import type { DragEvent, FormEvent, KeyboardEvent, MouseEvent } from 'react'
 import {
-  ArrowLeft, ArrowRight, ArrowUp, ChevronDown, ChevronRight, ClipboardPaste, Copy, Download, Eye, EyeOff, HardDrive,
-  Folder, FolderOpen, FolderPlus, Grid2X2, House, Image as ImageIcon, Info, LayoutList, List, MapPin, MoreHorizontal, Pencil, RefreshCw, Scissors, Search, Shield, Trash2, Upload, UsersRound, X,
+  ArrowDown, ArrowLeft, ArrowRight, ArrowUp, ArrowUpDown, ChevronDown, ChevronRight, ClipboardPaste, Copy, Download, Eye, EyeOff, FileArchive, HardDrive,
+  Folder, FolderOpen, FolderOutput, FolderPlus, Grid2X2, House, Image as ImageIcon, Info, LayoutList, List, MapPin, MoreHorizontal, PackageOpen, Pencil, RefreshCw, Scissors, Search, Shield, Terminal, Trash2, Upload, UsersRound, X,
 } from 'lucide-react'
 
 import { CommandMenu, type MenuAnchor, type MenuCommand, type MenuGroup } from './CommandMenu'
@@ -11,13 +11,14 @@ import { FileImagePreview } from './FileImagePreview'
 import { FileIcon } from './fileIcons'
 
 import {
-  announceFileChange, canTransfer, downloadFile, errorMessage,
+  announceFileChange, archiveErrorMessage, archiveFile, canTransfer, childPath, compressArchive, downloadArchive, downloadFile, errorMessage, extractArchive,
   FileError, fileAction, filename, imageFile, managedFile, parentPath, pathCrumbs, readDirectory, readFileIdentity,
-  regularFile, subscribeToFileChanges, uploadFile, writeOwnership, writePermissions, type Conflict, type HostFile,
+  regularFile, subscribeToFileChanges, uploadFile, writeOwnership, writePermissions, type Conflict, type ExtractMode, type HostFile,
 } from './hostFiles'
+import { TerminalError } from './terminal'
 
 type Command = MenuCommand & { group: 'open' | 'edit' | 'organize' | 'transfer' | 'delete' }
-type Popup = MenuAnchor & { groups: MenuGroup[]; kind: 'context' | 'actions' | 'layout'; layer: HTMLElement; zIndex: number }
+type Popup = MenuAnchor & { groups: MenuGroup[]; kind: 'context' | 'actions' | 'layout' | 'sort'; layer: HTMLElement; zIndex: number }
 type Transfer = { kind: 'move' | 'copy'; ids: string[]; target: string }
 type Job = { elevated: boolean } & (
   | { kind: 'copy' | 'move' | 'delete'; path: string; target?: string }
@@ -27,6 +28,8 @@ type Modal =
   | { kind: 'destination'; operation: Transfer['kind']; ids: string[] }
   | { kind: 'image'; file: HostFile; elevated: boolean }
   | { kind: 'delete'; jobs: Job[] }
+  | { kind: 'compress'; paths: string[]; name: string; elevated: boolean; conflict?: boolean; error?: string }
+  | { kind: 'extract-conflict'; path: string; mode: ExtractMode; elevated: boolean }
   | { kind: 'conflict' }
   | { kind: 'results' }
 
@@ -45,7 +48,14 @@ const layouts = {
 type FileLayout = keyof typeof layouts
 const layoutPreference = 'godesk-file-layout'
 const layoutKeys = Object.keys(layouts) as FileLayout[]
-const popupLabels = { context: '文件上下文菜单', actions: '更多操作', layout: '文件布局' }
+const sortPreference = 'godesk-files-sort'
+type SortField = 'name' | 'type' | 'modTime' | 'size'
+type SortDirection = 'asc' | 'desc'
+type SortSpec = { field: SortField; direction: SortDirection }
+const sortFields: SortField[] = ['name', 'type', 'modTime', 'size']
+const sortLabels: Record<SortField, string> = { name: '名称', type: '类型', modTime: '修改时间', size: '大小' }
+const defaultSort: SortSpec = { field: 'name', direction: 'asc' }
+const popupLabels = { context: '文件上下文菜单', actions: '更多操作', layout: '文件布局', sort: '排序方式' }
 const clipboardActions = [
   { label: '剪切', Icon: Scissors },
   { label: '复制', Icon: Copy },
@@ -63,6 +73,70 @@ function readLayout(): FileLayout {
   } catch {
     return 'list'
   }
+}
+
+function readSort(): SortSpec {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(sortPreference) ?? 'null') as Partial<SortSpec> | null
+    if (parsed && sortFields.includes(parsed.field as SortField)
+      && (parsed.direction === 'asc' || parsed.direction === 'desc')) {
+      return { field: parsed.field as SortField, direction: parsed.direction }
+    }
+  } catch {
+    // Use default sort when storage is unavailable or malformed.
+  }
+  return defaultSort
+}
+
+function extensionKey(file: HostFile) {
+  if (file.directory) return ''
+  const lower = file.name.toLowerCase()
+  if (lower.endsWith('.tar.gz')) return 'tar.gz'
+  const dot = lower.lastIndexOf('.')
+  return dot > 0 ? lower.slice(dot + 1) : ''
+}
+
+function modTimeStamp(iso?: string) {
+  if (!iso) return 0
+  const parsed = Date.parse(iso)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
+function sortEntries(items: HostFile[], sort: SortSpec) {
+  const direction = sort.direction === 'asc' ? 1 : -1
+  return [...items].sort((a, b) => {
+    const dirDiff = Number(!!b.directory) - Number(!!a.directory)
+    if (dirDiff !== 0) return dirDiff
+    let diff = 0
+    if (sort.field === 'name') {
+      diff = a.name.localeCompare(b.name, 'zh-CN', { numeric: true })
+    } else if (sort.field === 'size') {
+      diff = a.sizeBytes - b.sizeBytes
+    } else if (sort.field === 'modTime') {
+      diff = modTimeStamp(a.modTime) - modTimeStamp(b.modTime)
+    } else if (sort.field === 'type') {
+      diff = a.type.localeCompare(b.type, 'zh-CN', { numeric: true })
+        || extensionKey(a).localeCompare(extensionKey(b), 'zh-CN', { numeric: true })
+    }
+    if (diff !== 0) return diff * direction
+    return a.name.localeCompare(b.name, 'zh-CN', { numeric: true })
+  })
+}
+
+function formatModTime(iso?: string) {
+  if (!iso) return { text: '—', title: '' }
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return { text: '—', title: '' }
+  const pad = (value: number) => String(value).padStart(2, '0')
+  const text = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
+  const title = `${date.toLocaleString('zh-CN', { hour12: false })} (${iso})`
+  return { text, title }
+}
+
+function canDownloadItems(items: HostFile[]) {
+  if (!items.length) return false
+  if (items.length === 1) return regularFile(items[0]) || !!items[0].directory
+  return items.every(managedFile)
 }
 
 function isHiddenEntry(file: HostFile) {
@@ -175,7 +249,10 @@ function FilePropertyActions({ file, open, elevated }: { file: HostFile; open: (
   </div>
 }
 
-export function FileManager({ onOpenText }: { onOpenText: (path: string, elevated: boolean, readOnly: boolean) => void }) {
+export function FileManager({ onOpenText, onOpenTerminal }: {
+  onOpenText: (path: string, elevated: boolean, readOnly: boolean) => void
+  onOpenTerminal: (cwd: string) => Promise<void>
+}) {
   const [history, setHistory] = useState({ locations: [] as string[], index: -1 })
   const [directory, setDirectory] = useState<Awaited<ReturnType<typeof readDirectory>>>()
   const [runningAsRoot, setRunningAsRoot] = useState<boolean>()
@@ -197,6 +274,7 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
   const [query, setQuery] = useState('')
   const [selection, setSelection] = useState<string[]>([])
   const [layout, setLayout] = useState(readLayout)
+  const [sort, setSort] = useState(readSort)
   const [showHidden, setShowHidden] = useState(false)
   const layoutScrollTarget = useRef<string>(undefined)
   const [clipboard, setClipboard] = useState<{ kind: 'move' | 'copy'; ids: string[] }>()
@@ -204,6 +282,7 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
   const [rename, setRename] = useState<{ id: string; name: string }>()
   const [popup, setPopup] = useState<Popup>()
   const popupId = useId()
+  const compressFormId = useId()
   const [modal, setModal] = useState<Modal>()
   const canUpload = !!path && !loading && !directoryError && !operation && !modal
   const [dropTarget, setDropTarget] = useState<string>()
@@ -276,8 +355,11 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
 
   const directoryEntries = directory?.entries ?? []
   const filter = query.trim().toLocaleLowerCase()
-  const entries = directoryEntries.filter(file =>
-    (showHidden || !isHiddenEntry(file)) && (!filter || file.name.toLocaleLowerCase().includes(filter)),
+  const entries = sortEntries(
+    directoryEntries.filter(file =>
+      (showHidden || !isHiddenEntry(file)) && (!filter || file.name.toLocaleLowerCase().includes(filter)),
+    ),
+    sort,
   )
   const selectedItems = entries.filter(file => selection.includes(file.id))
   const selected = selectedItems.length === 1 ? selectedItems[0] : undefined
@@ -317,6 +399,21 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
     }
   }
 
+  function changeSort(next: SortSpec) {
+    setSort(next)
+    try {
+      localStorage.setItem(sortPreference, JSON.stringify(next))
+    } catch {
+      // The sort still applies for this window.
+    }
+  }
+
+  function toggleSort(field: SortField) {
+    changeSort(sort.field === field
+      ? { field, direction: sort.direction === 'asc' ? 'desc' : 'asc' }
+      : { field, direction: 'asc' })
+  }
+
   useLayoutEffect(() => {
     const view = views.current.get(path)
     if (pendingView.current === path) {
@@ -337,12 +434,20 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
     else list.current?.focus({ preventScroll: true })
   })
 
+  const modalKind = modal?.kind
   useLayoutEffect(() => {
     const element = dialog.current
-    if (!modal || !element) return
+    if (!modalKind || !element) return
     if (!element.open) element.showModal()
-    element.querySelector<HTMLElement>('select, button')?.focus()
-  }, [modal])
+    const input = element.querySelector<HTMLInputElement>('input')
+    if (input) {
+      input.focus()
+      const end = input.value.toLowerCase().endsWith('.zip') ? input.value.length - 4 : input.value.length
+      input.setSelectionRange(0, Math.max(0, end))
+    } else {
+      element.querySelector<HTMLElement>('select, button')?.focus()
+    }
+  }, [modalKind])
 
   async function loadDirectory(next: string, navigation?: (target: string) => void, asRoot = elevated) {
     if (!navigation && navigating.current) return
@@ -468,8 +573,102 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
     })
   }
 
-  function download(path: string) {
-    void downloadFile(path, elevated).catch(error => setFeedback(errorMessage(error)))
+  function downloadSelection(items: HostFile[]) {
+    if (!canDownloadItems(items)) return
+    if (items.length === 1 && regularFile(items[0])) {
+      void downloadFile(items[0].id, elevated).catch(error => setFeedback(errorMessage(error)))
+      return
+    }
+    setFeedback('正在准备打包下载…')
+    void downloadArchive(items.map(item => item.id), elevated).then(() => {
+      setFeedback('已开始打包下载')
+    }).catch(error => setFeedback(archiveErrorMessage(error, elevated)))
+  }
+
+  function openCompressModal(ids: string[]) {
+    if (!path || directoryError || operationLock.current || !ids.length) return
+    const defaultName = ids.length === 1
+      ? `${filename(ids[0])}.zip`
+      : `${path === '/' ? 'archive' : filename(path)}.zip`
+    showModal({ kind: 'compress', paths: ids, name: defaultName, elevated })
+  }
+
+  async function submitCompress(conflict?: Conflict) {
+    if (modal?.kind !== 'compress' || operationLock.current) return
+    const raw = modal.name.trim()
+    if (!raw || raw === '.' || raw === '..' || raw.includes('/')) {
+      setModal({ ...modal, error: '请输入有效名称，名称中不能包含斜杠' })
+      return
+    }
+    const finalName = /\.zip$/i.test(raw) ? raw : `${raw}.zip`
+    const targetPath = childPath(path, finalName)
+    operationLock.current = true
+    setOperation(`正在压缩 ${finalName}…`)
+    try {
+      const result = await compressArchive(modal.paths, targetPath, conflict, modal.elevated)
+      closeModal()
+      if (currentPath.current === path) setSelection([result.path])
+      setFeedback(`已创建压缩包「${filename(result.path)}」`)
+      announceFileChange()
+    } catch (error) {
+      if (error instanceof FileError && error.code === 'exists') {
+        setModal(current => current?.kind === 'compress'
+          ? { ...current, conflict: true, error: '目标位置已存在同名项，可修改名称或保留两者。' }
+          : current)
+      } else {
+        setModal(current => current?.kind === 'compress'
+          ? { ...current, error: archiveErrorMessage(error, current.elevated) }
+          : current)
+      }
+    } finally {
+      operationLock.current = false
+      setOperation('')
+    }
+  }
+
+  async function runExtract(archivePath: string, mode: ExtractMode, conflict?: Conflict, asRoot = elevated) {
+    if (!path || directoryError || operationLock.current) return
+    operationLock.current = true
+    setOperation(`正在解压 ${filename(archivePath)}…`)
+    try {
+      const result = await extractArchive(archivePath, mode, { destination: path, conflict }, asRoot)
+      announceFileChange()
+      if (mode === 'folder' && parentPath(result.destination) === currentPath.current) {
+        setSelection([result.destination])
+      }
+      setFeedback(`已解压 ${result.extracted} 项${result.skipped ? `，跳过 ${result.skipped} 项` : ''} · ${filename(result.destination)}`)
+    } catch (error) {
+      if (error instanceof FileError && error.code === 'exists') {
+        showModal({ kind: 'extract-conflict', path: archivePath, mode, elevated: asRoot })
+      } else {
+        setFeedback(archiveErrorMessage(error, asRoot))
+      }
+    } finally {
+      operationLock.current = false
+      setOperation('')
+    }
+  }
+
+  async function openTerminalHere(cwd: string) {
+    try {
+      await onOpenTerminal(cwd)
+    } catch (error) {
+      if (error instanceof TerminalError) {
+        if (error.code === 'cwd_permission_denied' || error.status === 403) {
+          setFeedback('终端始终以 goDesk 运行账号启动，当前账号没有权限进入该目录')
+        } else if (error.code === 'cwd_not_found') {
+          setFeedback('无法打开终端：目标目录不存在')
+        } else if (error.code === 'cwd_not_directory') {
+          setFeedback('无法打开终端：目标路径不是文件夹')
+        } else if (error.code === 'invalid_cwd') {
+          setFeedback('无法打开终端：工作目录路径无效')
+        } else {
+          setFeedback(error.message || '无法在此目录打开终端，请重试')
+        }
+      } else {
+        setFeedback('无法在此目录打开终端，请重试')
+      }
+    }
   }
 
   function openEntry(file: HostFile, readOnly = false) {
@@ -588,19 +787,29 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
   }
 
   function commandsFor(ids: string[], contextEntry?: HostFile): Command[] {
-    const entry = ids.length === 1 ? entries.find(file => file.id === ids[0]) : undefined
+    const items = ids.map(id => entries.find(file => file.id === id)).filter((file): file is HostFile => !!file)
+    const entry = items.length === 1 ? items[0] : undefined
     const pasteTarget = contextEntry?.directory ?? path
     const canEdit = !!path && !directoryError && !operation
-    const actionable = ids.length > 0 && ids.every(id => entries.some(file => file.id === id && managedFile(file)))
+    const actionable = items.length > 0 && items.length === ids.length && items.every(managedFile)
     const result: Command[] = []
     if (entry && (entry.directory || regularFile(entry) || entry.targetError)) result.push({
       label: entry.directory ? '打开' : imageFile(entry) ? '打开图片' : regularFile(entry) ? '在文本编辑器中打开' : '打开链接',
       icon: imageFile(entry) ? ImageIcon : regularFile(entry) ? Pencil : FolderOpen,
       group: 'open', shortcut: 'Enter', run: () => openEntry(entry),
     })
+    if (entry?.directory) {
+      const target = entry.directory
+      result.push({ label: '在此打开终端', icon: Terminal, group: 'open', run: () => void openTerminalHere(target) })
+    } else if (ids.length === 0 && path && !directoryError) {
+      result.push({ label: '在此打开终端', icon: Terminal, group: 'open', run: () => void openTerminalHere(path) })
+    }
     if (entry && regularFile(entry)) result.push(
       { label: '预览', icon: Eye, group: 'open', run: () => openEntry(entry, true) },
-      { label: '下载', icon: Download, group: 'open', run: () => download(entry.id) },
+      { label: '下载', icon: Download, group: 'open', run: () => downloadSelection([entry]) },
+    )
+    else if (canDownloadItems(items)) result.push(
+      { label: '打包下载 (.zip)', icon: Download, group: 'open', run: () => downloadSelection(items) },
     )
     if (canEdit && actionable) {
       if (entry) result.push({ label: '重命名', icon: Pencil, group: 'edit', shortcut: 'F2', run: () => setRename({ id: entry.id, name: entry.name }) })
@@ -620,6 +829,11 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
           group: 'transfer', run: () => showModal({ kind: 'destination', operation, ids }),
         })
       }
+      result.push({ label: '压缩为 ZIP…', icon: FileArchive, group: 'organize', run: () => openCompressModal(ids) })
+      if (entry && archiveFile(entry)) result.push(
+        { label: '解压到同名文件夹', icon: FolderOutput, group: 'organize', run: () => void runExtract(entry.id, 'folder') },
+        { label: '解压到当前目录', icon: PackageOpen, group: 'organize', run: () => void runExtract(entry.id, 'here') },
+      )
       result.push({ label: '永久删除', icon: Trash2, group: 'delete', danger: true, shortcut: 'Delete',
         run: () => showModal({ kind: 'delete', jobs: ids.map(path => ({ kind: 'delete', path, elevated })) }) })
     }
@@ -651,6 +865,21 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
     showPopup(source, [layoutKeys.map(key => ({
       ...layouts[key], checked: layout === key, run: () => changeLayout(key),
     }))], 'layout')
+  }
+
+  function openSort(source: HTMLElement) {
+    showPopup(source, [
+      sortFields.map(field => ({
+        label: sortLabels[field],
+        icon: ArrowUpDown,
+        checked: sort.field === field,
+        run: () => changeSort({ ...sort, field }),
+      })),
+      [
+        { label: '升序', icon: ArrowUp, checked: sort.direction === 'asc', run: () => changeSort({ ...sort, direction: 'asc' }) },
+        { label: '降序', icon: ArrowDown, checked: sort.direction === 'desc', run: () => changeSort({ ...sort, direction: 'desc' }) },
+      ],
+    ], 'sort')
   }
 
   function contextMenu(event: MouseEvent<HTMLElement>, entry?: HostFile) {
@@ -851,15 +1080,34 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
 
   function toolbarAction({ label, Icon }: { label: string; Icon: typeof Copy }) {
     const manageable = selectedItems.length > 0 && selectedItems.every(managedFile)
-    const disabled = label === '下载' ? !regularFile(selected)
+    const isDownload = label === '下载'
+    const downloadTitle = isDownload && selectedItems.length > 0 && !(selectedItems.length === 1 && regularFile(selectedItems[0]))
+      ? '打包下载 (.zip)' : label
+    const disabled = isDownload ? !canDownloadItems(selectedItems) || !!operation || !!directoryError
       : !!operation || !!directoryError || (label === '粘贴'
         ? !clipboard || !canTransfer(clipboardIds, path, clipboard.kind === 'move')
         : !manageable)
     return (
-      <button key={label} className="app-control file-tool file-extra-action" aria-label={label} title={label}
-        disabled={disabled} onClick={() => commandsFor(selectedIds).find(item => item.label === label)?.run()}>
+      <button key={label} className="app-control file-tool file-extra-action" aria-label={downloadTitle} title={downloadTitle}
+        disabled={disabled} onClick={() => isDownload ? downloadSelection(selectedItems)
+          : commandsFor(selectedIds).find(item => item.label === label)?.run()}>
         <Icon size={16} aria-hidden="true" />
       </button>
+    )
+  }
+
+  function renderSortHeader(field: SortField, label: string) {
+    const active = sort.field === field
+    const ariaSort = active ? (sort.direction === 'asc' ? 'ascending' : 'descending') : 'none'
+    const SortIcon = sort.direction === 'asc' ? ArrowUp : ArrowDown
+    return (
+      <th scope="col" aria-sort={ariaSort}>
+        <button type="button" className="file-sort-button" data-active={active || undefined}
+          onClick={() => toggleSort(field)}>
+          <span>{label}</span>
+          {active && <SortIcon size={13} aria-hidden="true" />}
+        </button>
+      </th>
     )
   }
 
@@ -921,10 +1169,16 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
         </span>
       </button>
     )
+    const modTime = formatModTime(file.modTime)
     if (layout === 'list') return (
       <tr key={file.id} {...itemProps}>
-        <td>{name}</td><td>{file.type}</td><td>{file.owner}</td><td>{file.group}</td>
-        <td><code>{file.permissions}</code></td><td>{file.size ?? '—'}</td>
+        <td>{name}</td>
+        <td>{file.type}</td>
+        <td className="file-mod-time" title={modTime.title}>{modTime.text}</td>
+        <td>{file.owner}</td>
+        <td>{file.group}</td>
+        <td><code>{file.permissions}</code></td>
+        <td>{file.size ?? '—'}</td>
       </tr>
     )
     return <li className="file-grid-entry" key={file.id} {...itemProps}>{name}</li>
@@ -1039,6 +1293,19 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
         </button>}
         <span className="file-action-spacer" />
         <span className="file-toolbar-divider" aria-hidden="true" />
+        <button className="app-control file-sort-menu-button" aria-label="排序"
+          title={`排序：${sortLabels[sort.field]}（${sort.direction === 'asc' ? '升序' : '降序'}）`}
+          aria-haspopup="menu" aria-expanded={popup?.kind === 'sort'}
+          aria-controls={popup?.kind === 'sort' ? popupId : undefined}
+          onKeyDown={event => {
+            if (event.key !== 'ArrowDown' || event.nativeEvent.isComposing) return
+            event.preventDefault()
+            if (popup?.kind !== 'sort') openSort(event.currentTarget)
+          }}
+          onClick={event => popup?.kind === 'sort' ? setPopup(undefined) : openSort(event.currentTarget)}>
+          <ArrowUpDown size={15} aria-hidden="true" /><span className="file-sort-label">排序</span>
+          <ChevronDown className="file-sort-label" size={12} aria-hidden="true" />
+        </button>
         <button className="app-control file-layout-button" aria-label="布局" title={`布局：${layouts[layout].label}`}
           aria-haspopup="menu" aria-expanded={popup?.kind === 'layout'}
           aria-controls={popup?.kind === 'layout' ? popupId : undefined}
@@ -1082,11 +1349,18 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
           }}>
           {layout === 'list' ? (
             <table className="data-table file-table" aria-label={pathText}>
-              <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">所有者</th>
-                <th scope="col">所属组</th><th scope="col">权限</th><th scope="col">大小</th></tr></thead>
+              <thead><tr>
+                {renderSortHeader('name', '名称')}
+                {renderSortHeader('type', '类型')}
+                {renderSortHeader('modTime', '修改时间')}
+                <th scope="col">所有者</th>
+                <th scope="col">所属组</th>
+                <th scope="col">权限</th>
+                {renderSortHeader('size', '大小')}
+              </tr></thead>
               <tbody>
                 {entries.map(renderEntry)}
-                {!entries.length && <tr><td colSpan={6} className="muted">{emptyMessage}</td></tr>}
+                {!entries.length && <tr><td colSpan={7} className="muted">{emptyMessage}</td></tr>}
               </tbody>
             </table>
           ) : (
@@ -1109,6 +1383,7 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
               <div><dt>类型</dt><dd>{selected.type}</dd></div>
               <div><dt>位置</dt><dd>{pathText}</dd></div>
               {selected.size && <div><dt>大小</dt><dd>{selected.size}</dd></div>}
+              <div><dt>修改时间</dt><dd className="file-mod-time" title={formatModTime(selected.modTime).title}>{formatModTime(selected.modTime).text}</dd></div>
               <div><dt>所有者</dt><dd>{selected.owner}</dd></div>
               <div><dt>所属组</dt><dd>{selected.group}</dd></div>
               <div><dt>权限</dt><dd className="file-permission-values"><code>{selected.permissions}</code><code>{selected.mode}</code></dd></div>
@@ -1129,7 +1404,7 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
       {popup && <CommandMenu key={popup.kind} id={popupId} label={popupLabels[popup.kind]}
         variant={popup.kind === 'layout' ? 'choice' : undefined}
         anchor={popup} groups={popup.groups} layer={popup.layer}
-        boundary={popup.kind === 'layout' ? popup.source.closest<HTMLElement>('[data-app-window]') ?? popup.layer : popup.layer}
+        boundary={popup.kind === 'layout' || popup.kind === 'sort' ? popup.source.closest<HTMLElement>('[data-app-window]') ?? popup.layer : popup.layer}
         zIndex={popup.zIndex}
         onClose={() => setPopup(undefined)} restoreFocus={() => restorePopupFocus(popup.source)} />}
       {modal?.kind === 'destination' && <FileLocationDialog mode="folder" initialDirectory={path} elevated={elevated}
@@ -1140,11 +1415,26 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
       {modal?.kind === 'image' && <FileImagePreview key={modal.file.id} ref={dialog} file={modal.file}
         elevated={modal.elevated} onClose={() => closeModal()} />}
       {modal && modal.kind !== 'destination' && modal.kind !== 'image' && <dialog className="service-dialog file-dialog" ref={dialog} aria-labelledby="file-dialog-title"
-        onCancel={event => { event.preventDefault(); event.stopPropagation(); closeModal() }}>
+        onCancel={event => { event.preventDefault(); event.stopPropagation(); if (!operation) closeModal() }}>
         <div className="service-dialog-body">
           <h2 id="file-dialog-title">{modal.kind === 'delete' ? `永久删除 ${modal.jobs.length} 项？`
-            : modal.kind === 'conflict' ? '目标位置有同名项' : '操作结果'}</h2>
+            : modal.kind === 'compress' ? '压缩为 ZIP'
+            : modal.kind === 'conflict' || modal.kind === 'extract-conflict' ? '目标位置有同名项' : '操作结果'}</h2>
           {modal.kind === 'delete' ? <ul className="file-dialog-list">{modal.jobs.map(job => <li key={jobName(job)}>{jobName(job)}</li>)}</ul>
+            : modal.kind === 'compress' ? <form id={compressFormId} className="file-compress-form" onSubmit={event => {
+              event.preventDefault()
+              void submitCompress()
+            }}>
+              <p className="muted">将压缩 {modal.paths.length} 项到当前目录。</p>
+              <label>压缩包名称
+                <input value={modal.name} disabled={!!operation} onChange={event =>
+                  setModal({ ...modal, name: event.target.value, conflict: false, error: undefined })} />
+              </label>
+              {modal.error && <p className="file-dialog-error" role="alert">{modal.error}</p>}
+            </form>
+            : modal.kind === 'extract-conflict' ? <p className="file-dialog-message">
+              解压「{filename(modal.path)}」时目标位置存在同名项，请选择处理方式。
+            </p>
             : <ul className="file-dialog-list">{outcomes.map((item, index) => (
               <li key={index}>
                 <strong>{jobName(item.job)}</strong> · {item.message}
@@ -1156,11 +1446,22 @@ export function FileManager({ onOpenText }: { onOpenText: (path: string, elevate
             ))}</ul>}
         </div>
         <div className="service-dialog-actions">
-          <button className="app-control" onClick={() => closeModal()}>{modal.kind === 'results' ? '关闭' : '取消'}</button>
+          <button className="app-control" disabled={!!operation} onClick={() => closeModal()}>{modal.kind === 'results' ? '关闭' : '取消'}</button>
           {modal.kind === 'delete' && <button className="app-control" onClick={() => {
             closeModal()
             void runJobs(modal.jobs)
           }}>永久删除</button>}
+          {modal.kind === 'compress' && <>
+            {modal.conflict && <button className="app-control" type="button" disabled={!!operation}
+              onClick={() => void submitCompress('keep')}>保留两者</button>}
+            <button className="app-control primary-control" type="submit" form={compressFormId} disabled={!!operation}>压缩</button>
+          </>}
+          {modal.kind === 'extract-conflict' && ([['skip', '跳过同名项'], ['keep', '保留两者']] as const).map(([choice, label]) =>
+            <button key={choice} className="app-control" disabled={!!operation} onClick={() => {
+              const { path: archivePath, mode, elevated: asRoot } = modal
+              closeModal()
+              void runExtract(archivePath, mode, choice, asRoot)
+            }}>{label}</button>)}
           {modal.kind === 'conflict' && ([['skip', '跳过同名项'], ['keep', '保留两者']] as const).map(([choice, label]) =>
             <button key={choice} className="app-control" onClick={() => {
               closeModal()

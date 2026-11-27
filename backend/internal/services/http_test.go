@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -11,22 +12,32 @@ import (
 )
 
 func allCapabilities() Capabilities {
-	return Capabilities{Start: true, Stop: true, Restart: true, Enable: true, Disable: true, Logs: true, StateReliable: true}
+	return Capabilities{
+		Start: true, Stop: true, Restart: true, Reload: true, DaemonReload: true,
+		Enable: true, Disable: true, Logs: true, StateReliable: true,
+	}
 }
 
 type fakeBackend struct {
-	name      string
-	caps      Capabilities
-	services  []Service
-	listErr   error
-	detail    ServiceDetail
-	detailErr error
-	actionErr error
-	logs      []string
-	logsErr   error
-	calls     []string
-	lineCount int
-	listCalls int
+	name            string
+	caps            Capabilities
+	services        []Service
+	listErr         error
+	detail          ServiceDetail
+	detailErr       error
+	actionErr       error
+	daemonReloadErr error
+	logs            []string
+	logsErr         error
+	stream          []string
+	streamErr       error
+	streamBlock     bool
+	streamStarted   chan struct{}
+	streamDone      chan struct{}
+	streamResult    error
+	calls           []string
+	lineCount       int
+	listCalls       int
 }
 
 func (f *fakeBackend) Name() string {
@@ -65,6 +76,15 @@ func (f *fakeBackend) Restart(_ context.Context, unit string) error {
 	return f.record(ActionRestart, unit)
 }
 
+func (f *fakeBackend) Reload(_ context.Context, unit string) error {
+	return f.record(ActionReload, unit)
+}
+
+func (f *fakeBackend) DaemonReload(context.Context) error {
+	f.calls = append(f.calls, "daemon-reload")
+	return f.daemonReloadErr
+}
+
 func (f *fakeBackend) Enable(_ context.Context, unit string) error {
 	return f.record(ActionEnable, unit)
 }
@@ -77,6 +97,36 @@ func (f *fakeBackend) Logs(_ context.Context, unit string, lines int) ([]string,
 	f.calls = append(f.calls, "logs "+unit)
 	f.lineCount = lines
 	return f.logs, f.logsErr
+}
+
+func (f *fakeBackend) StreamLogs(ctx context.Context, unit string, initialLines int, emit func(string) error) error {
+	f.calls = append(f.calls, "stream "+unit)
+	f.lineCount = initialLines
+	if f.streamStarted != nil {
+		close(f.streamStarted)
+	}
+	if f.streamDone != nil {
+		defer close(f.streamDone)
+	}
+	err := f.streamOnce(ctx, emit)
+	f.streamResult = err
+	return err
+}
+
+func (f *fakeBackend) streamOnce(ctx context.Context, emit func(string) error) error {
+	for _, line := range f.stream {
+		if err := emit(line); err != nil {
+			return err
+		}
+	}
+	if f.streamErr != nil {
+		return f.streamErr
+	}
+	if f.streamBlock {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
 }
 
 func testMux(backend Backend) *http.ServeMux {
@@ -151,6 +201,17 @@ func TestActionSuccess(t *testing.T) {
 	}
 }
 
+func TestReloadSuccess(t *testing.T) {
+	backend := &fakeBackend{services: []Service{{Name: "ssh.service", Actions: []Action{ActionReload}}}}
+	recorder := request(testMux(backend), http.MethodPost, "/api/v1/services/ssh.service/reload")
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusNoContent, recorder.Body.String())
+	}
+	if len(backend.calls) != 1 || backend.calls[0] != "reload ssh.service" {
+		t.Fatalf("calls = %v", backend.calls)
+	}
+}
+
 func TestActionRejected(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -164,7 +225,9 @@ func TestActionRejected(t *testing.T) {
 		{"action not allowed", http.MethodPost, "/api/v1/services/ssh.service/start", []Action{ActionStop}, nil, http.StatusConflict, "action_not_allowed"},
 		{"unit not found", http.MethodPost, "/api/v1/services/cron.service/stop", []Action{ActionStop}, nil, http.StatusNotFound, "not_found"},
 		{"invalid unit", http.MethodPost, "/api/v1/services/ssh.socket/stop", []Action{ActionStop}, nil, http.StatusBadRequest, "invalid_unit"},
-		{"invalid action", http.MethodPost, "/api/v1/services/ssh.service/reload", []Action{ActionStop}, nil, http.StatusBadRequest, "invalid_action"},
+		{"invalid action", http.MethodPost, "/api/v1/services/ssh.service/explode", []Action{ActionStop}, nil, http.StatusBadRequest, "invalid_action"},
+		{"reload not allowed", http.MethodPost, "/api/v1/services/ssh.service/reload", []Action{ActionStop}, nil, http.StatusConflict, "action_not_allowed"},
+		{"reload permission", http.MethodPost, "/api/v1/services/ssh.service/reload", []Action{ActionReload}, &Error{Code: "permission", Message: "Access denied"}, http.StatusForbidden, "permission"},
 		{"permission", http.MethodPost, "/api/v1/services/ssh.service/stop", []Action{ActionStop}, &Error{Code: "permission", Message: "Access denied"}, http.StatusForbidden, "permission"},
 		{"operation failed", http.MethodPost, "/api/v1/services/ssh.service/stop", []Action{ActionStop}, &Error{Code: "operation_failed", Message: "boom"}, http.StatusUnprocessableEntity, "operation_failed"},
 	}
@@ -217,6 +280,263 @@ func TestActionTimeout(t *testing.T) {
 	}
 	if body.Code != "timeout" {
 		t.Errorf("code = %q, want timeout", body.Code)
+	}
+}
+
+func TestDaemonReload(t *testing.T) {
+	backend := &fakeBackend{caps: allCapabilities()}
+	recorder := request(testMux(backend), http.MethodPost, "/api/v1/services/daemon-reload")
+	if recorder.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusNoContent, recorder.Body.String())
+	}
+	if len(backend.calls) != 1 || backend.calls[0] != "daemon-reload" {
+		t.Fatalf("calls = %v", backend.calls)
+	}
+}
+
+func TestDaemonReloadRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		caps   Capabilities
+		err    error
+		status int
+		code   string
+	}{
+		{"unsupported", Capabilities{}, nil, http.StatusConflict, "unsupported"},
+		{"permission", allCapabilities(), &Error{Code: "permission", Message: "Access denied"}, http.StatusForbidden, "permission"},
+		{"operation failed", allCapabilities(), &Error{Code: "operation_failed", Message: "boom"}, http.StatusUnprocessableEntity, "operation_failed"},
+		{"timeout", allCapabilities(), context.DeadlineExceeded, http.StatusGatewayTimeout, "timeout"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeBackend{caps: tc.caps, daemonReloadErr: tc.err}
+			recorder := request(testMux(backend), http.MethodPost, "/api/v1/services/daemon-reload")
+			if recorder.Code != tc.status {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, tc.status, recorder.Body.String())
+			}
+			var body errorBody
+			if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Code != tc.code {
+				t.Errorf("code = %q, want %q", body.Code, tc.code)
+			}
+			if tc.name == "unsupported" && len(backend.calls) != 0 {
+				t.Errorf("calls = %v, want none", backend.calls)
+			}
+		})
+	}
+}
+
+func TestDaemonReloadNoneBackend(t *testing.T) {
+	recorder := request(testMux(None()), http.MethodPost, "/api/v1/services/daemon-reload")
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusConflict, recorder.Body.String())
+	}
+	var body errorBody
+	if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+		t.Fatal(err)
+	}
+	if body.Code != "unsupported" {
+		t.Errorf("code = %q, want unsupported", body.Code)
+	}
+}
+
+func TestStreamLogs(t *testing.T) {
+	backend := &fakeBackend{
+		caps:     allCapabilities(),
+		services: []Service{{Name: "ssh.service"}},
+		stream:   []string{"line one", "line two"},
+	}
+	recorder := request(testMux(backend), http.MethodGet, "/api/v1/services/ssh.service/logs/stream?lines=250")
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusOK, recorder.Body.String())
+	}
+	for header, want := range map[string]string{
+		"Content-Type":      "text/event-stream; charset=utf-8",
+		"Cache-Control":     "no-store",
+		"Connection":        "keep-alive",
+		"X-Accel-Buffering": "no",
+	} {
+		if got := recorder.Header().Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+	want := ": connected\n\n" +
+		"data: {\"line\":\"line one\"}\n\n" +
+		"data: {\"line\":\"line two\"}\n\n"
+	if got := recorder.Body.String(); got != want {
+		t.Errorf("body = %q, want %q", got, want)
+	}
+	if backend.lineCount != 250 {
+		t.Errorf("lines param = %d, want 250", backend.lineCount)
+	}
+	if len(backend.calls) != 1 || backend.calls[0] != "stream ssh.service" {
+		t.Errorf("calls = %v", backend.calls)
+	}
+}
+
+func TestStreamLogsLineCounts(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{"default", "", 200},
+		{"zero follows new entries", "?lines=0", 0},
+		{"upper bound", "?lines=1000", 1000},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeBackend{
+				caps:     allCapabilities(),
+				services: []Service{{Name: "ssh.service"}},
+			}
+			recorder := request(testMux(backend), http.MethodGet, "/api/v1/services/ssh.service/logs/stream"+tc.query)
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if backend.lineCount != tc.want {
+				t.Errorf("lines param = %d, want %d", backend.lineCount, tc.want)
+			}
+		})
+	}
+}
+
+func TestStreamLogsRejected(t *testing.T) {
+	tests := []struct {
+		name   string
+		path   string
+		caps   Capabilities
+		status int
+		code   string
+	}{
+		{"invalid unit", "/api/v1/services/ssh.socket/logs/stream", allCapabilities(), http.StatusBadRequest, "invalid_unit"},
+		{"negative lines", "/api/v1/services/ssh.service/logs/stream?lines=-1", allCapabilities(), http.StatusBadRequest, "invalid_lines"},
+		{"too many lines", "/api/v1/services/ssh.service/logs/stream?lines=1001", allCapabilities(), http.StatusBadRequest, "invalid_lines"},
+		{"non numeric lines", "/api/v1/services/ssh.service/logs/stream?lines=abc", allCapabilities(), http.StatusBadRequest, "invalid_lines"},
+		{"unit not found", "/api/v1/services/cron.service/logs/stream", allCapabilities(), http.StatusNotFound, "not_found"},
+		{"logs unavailable", "/api/v1/services/ssh.service/logs/stream", Capabilities{}, http.StatusConflict, "logs_unavailable"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeBackend{
+				caps:     tc.caps,
+				services: []Service{{Name: "ssh.service"}},
+			}
+			recorder := request(testMux(backend), http.MethodGet, tc.path)
+			if recorder.Code != tc.status {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, tc.status, recorder.Body.String())
+			}
+			if got := recorder.Header().Get("Content-Type"); got != "application/json" {
+				t.Errorf("Content-Type = %q, want application/json", got)
+			}
+			var body errorBody
+			if err := json.NewDecoder(recorder.Body).Decode(&body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Code != tc.code {
+				t.Errorf("code = %q, want %q", body.Code, tc.code)
+			}
+			if len(backend.calls) != 0 {
+				t.Errorf("calls = %v, want none", backend.calls)
+			}
+		})
+	}
+}
+
+func TestStreamLogsErrorEvent(t *testing.T) {
+	tests := []struct {
+		name   string
+		stream []string
+		err    error
+		want   string
+	}{
+		{
+			name:   "error after lines",
+			stream: []string{"line one"},
+			err:    &Error{Code: "permission", Message: "Access denied"},
+			want: ": connected\n\n" +
+				"data: {\"line\":\"line one\"}\n\n" +
+				"event: error\ndata: {\"code\":\"permission\",\"message\":\"Access denied\"}\n\n",
+		},
+		{
+			name: "error before first line",
+			err:  &Error{Code: "logs_unavailable", Message: "journalctl 不可用"},
+			want: ": connected\n\n" +
+				"event: error\ndata: {\"code\":\"logs_unavailable\",\"message\":\"journalctl 不可用\"}\n\n",
+		},
+		{
+			name: "unknown error",
+			err:  errors.New("boom"),
+			want: ": connected\n\n" +
+				"event: error\ndata: {\"code\":\"operation_failed\",\"message\":\"boom\"}\n\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			backend := &fakeBackend{
+				caps:      allCapabilities(),
+				services:  []Service{{Name: "ssh.service"}},
+				stream:    tc.stream,
+				streamErr: tc.err,
+			}
+			recorder := request(testMux(backend), http.MethodGet, "/api/v1/services/ssh.service/logs/stream")
+			if recorder.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d (body %s)", recorder.Code, http.StatusOK, recorder.Body.String())
+			}
+			if got := recorder.Body.String(); got != tc.want {
+				t.Errorf("body = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestStreamLogsClientCancel(t *testing.T) {
+	started := make(chan struct{})
+	done := make(chan struct{})
+	backend := &fakeBackend{
+		caps:          allCapabilities(),
+		services:      []Service{{Name: "ssh.service"}},
+		streamBlock:   true,
+		streamStarted: started,
+		streamDone:    done,
+	}
+	server := httptest.NewServer(testMux(backend))
+	defer server.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, server.URL+"/api/v1/services/ssh.service/logs/stream", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+	if got := resp.Header.Get("Content-Type"); got != "text/event-stream; charset=utf-8" {
+		t.Errorf("Content-Type = %q", got)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StreamLogs was not called")
+	}
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("StreamLogs was not stopped by client cancellation")
+	}
+	if !errors.Is(backend.streamResult, context.Canceled) {
+		t.Errorf("StreamLogs result = %v, want context.Canceled", backend.streamResult)
 	}
 }
 
@@ -383,6 +703,7 @@ func TestFailedMapping(t *testing.T) {
 		{"not found", &Error{Code: "not_found", Message: "missing"}, http.StatusNotFound, "not_found"},
 		{"logs unavailable", &Error{Code: "logs_unavailable", Message: "missing"}, http.StatusConflict, "logs_unavailable"},
 		{"action not allowed", &Error{Code: "action_not_allowed", Message: "no"}, http.StatusConflict, "action_not_allowed"},
+		{"unsupported", &Error{Code: "unsupported", Message: "no"}, http.StatusConflict, "unsupported"},
 		{"operation failed", &Error{Code: "operation_failed", Message: "boom"}, http.StatusUnprocessableEntity, "operation_failed"},
 		{"unknown service error", &Error{Code: "other", Message: "boom"}, http.StatusUnprocessableEntity, "operation_failed"},
 	}

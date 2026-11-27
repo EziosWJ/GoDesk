@@ -28,7 +28,7 @@ func TestSessionSurvivesDetachAndSharesOutputAcrossTakeover(t *testing.T) {
 	if err != nil || defaults.ScrollbackLines != 5000 {
 		t.Fatalf("defaults = %v, %v", defaults, err)
 	}
-	summary, err := manager.start(defaults)
+	summary, err := manager.start(defaults, "")
 	if err != nil {
 		t.Fatal(err)
 	}

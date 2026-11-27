@@ -371,6 +371,10 @@ export default function App({ onLogout, onSession }: {
     }
   }
 
+  async function openTerminalAt(cwd: string) {
+    openSession(await terminalApi.create({ cwd }))
+  }
+
   function openTextFile(path: string, elevated: boolean, readOnly: boolean) {
     setEditorRequest({ path, elevated, readOnly })
     openApp('editor')
@@ -382,7 +386,7 @@ export default function App({ onLogout, onSession }: {
   }
 
   function renderApp(id: AppId, win: DesktopWindow, closing: boolean) {
-    if (id === 'files') return <FileManager onOpenText={openTextFile} />
+    if (id === 'files') return <FileManager onOpenText={openTextFile} onOpenTerminal={openTerminalAt} />
     if (id === 'editor') return (
       <TextEditorApp ref={closing ? null : editor}
         openRequest={editorRequest} onClose={closeEditor} />
@@ -400,7 +404,7 @@ export default function App({ onLogout, onSession }: {
       </Suspense>
     )
     if (id === 'services') return (
-      <apps.services.Content active={!closing && win.stage !== 'minimized'} />
+      <apps.services.Content active={!closing && win.stage !== 'minimized'} onOpenText={openTextFile} />
     )
     if (id === 'settings') return <apps.settings.Content onSession={onSession} />
     if (id === 'icons') return <IconManager {...webShortcuts} />

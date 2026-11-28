@@ -56,6 +56,7 @@ jobs:
       - name: Build and archive binaries
         env:
           TAG: ${{ inputs.tag || github.ref_name }}
+          GOWORK: 'off'
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/release"

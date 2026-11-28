@@ -1,8 +1,55 @@
 export type HealthStatus = 'healthy' | 'warning' | 'critical' | 'unknown'
 
+export type HealthCategory = 'cpu' | 'load' | 'memory' | 'swap' | 'storage' | 'network' | 'temperature'
+
 export type HealthThresholds = {
   warning: number | null
   critical: number | null
+}
+
+export type CPUHealthDetails = {
+  logicalCores?: number
+}
+
+export type LoadHealthDetails = {
+  load1?: number
+  load5?: number
+  load15?: number
+  logicalCores?: number
+  load5PerCore?: number
+}
+
+export type MemoryHealthDetails = {
+  totalBytes?: number
+  usedBytes?: number
+  availableBytes?: number
+  availablePercent?: number
+}
+
+export type SwapHealthDetails = {
+  totalBytes?: number
+  usedBytes?: number
+  usedPercent?: number
+  swapInPerSec?: number
+  swapOutPerSec?: number
+}
+
+export type NetworkHealthDetails = {
+  interface?: string
+  linkUp?: boolean
+  isDefaultRoute?: boolean
+  ipv4?: string[]
+  ipv6?: string[]
+  rxBytesPerSecond?: number
+  txBytesPerSecond?: number
+}
+
+export type TemperatureHealthDetails = {
+  sensor?: string
+  chip?: string
+  celsius?: number
+  warning?: number | null
+  critical?: number | null
 }
 
 export type HealthCheck = {
@@ -19,7 +66,7 @@ export type HealthCheck = {
   value: number | null
   unit: string | null
   thresholds: HealthThresholds | null
-  details: Record<string, unknown>
+  details: Record<string, unknown> | null
 }
 
 export type HealthSummary = {

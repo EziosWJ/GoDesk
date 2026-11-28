@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Play, RotateCw, Square } from 'lucide-react'
+import { Eye, Pencil, Play, RefreshCw, RotateCw, Square } from 'lucide-react'
 import {
   ServiceError, servicesApi,
   type ManagedService, type ServiceAction, type ServiceBootState, type ServiceDetail as ServiceDetailData,
@@ -21,6 +21,7 @@ type ServiceDetailProps = {
   tab: Tab
   onTabChange: (tab: Tab) => void
   onAction: (action: ServiceAction) => void
+  onOpenText?: (path: string, elevated: boolean, readOnly: boolean) => void
   logsPanel?: ReactNode
   headingRef: RefObject<HTMLHeadingElement | null>
 }
@@ -78,7 +79,7 @@ function detailErrorMessage(error: unknown) {
 
 export function ServiceDetailPane({
   service, refreshToken, pendingAction, actionError,
-  excluded, logsAvailable, tab, onTabChange, onAction, logsPanel, headingRef,
+  excluded, logsAvailable, tab, onTabChange, onAction, onOpenText, logsPanel, headingRef,
 }: ServiceDetailProps) {
   const [detail, setDetail] = useState<ServiceDetailData>()
   const [detailError, setDetailError] = useState('')
@@ -89,6 +90,7 @@ export function ServiceDetailPane({
   const canStop = actions.has('stop')
   const primaryAction: ServiceAction = canStop ? 'stop' : 'start'
   const restartEnabled = actions.has('restart')
+  const canReload = actions.has('reload')
   const bootOn = service.bootState === 'enabled'
   const bootAction: ServiceAction = bootOn ? 'disable' : 'enable'
   const bootAvailable = actions.has(bootAction)
@@ -156,6 +158,14 @@ export function ServiceDetailPane({
             onClick={() => { if (!busy && restartEnabled) onAction('restart') }}>
             <RotateCw size={14} aria-hidden="true" />{actionLabels.restart}
           </button>
+          {canReload && (
+            <button type="button" className="app-control service-action"
+              aria-disabled={busy ? 'true' : undefined}
+              title="热重载服务配置（systemctl reload）"
+              onClick={() => { if (!busy) onAction('reload') }}>
+              <RefreshCw size={14} aria-hidden="true" />{actionLabels.reload}
+            </button>
+          )}
           <button type="button" role="switch" aria-checked={bootOn}
             className="app-control service-switch"
             aria-disabled={busy || !bootAvailable ? 'true' : undefined}
@@ -214,7 +224,26 @@ export function ServiceDetailPane({
           <section className="service-group" aria-labelledby="service-group-files">
             <h4 id="service-group-files">文件</h4>
             <dl className="service-field-grid">
-              <div><dt>单元文件</dt><dd className="service-mono">{detail?.fragmentPath || '—'}</dd></div>
+              <div>
+                <dt>单元文件</dt>
+                <dd className="service-file-field">
+                  <span className="service-mono service-file-path">{detail?.fragmentPath || '—'}</span>
+                  {detail?.fragmentPath && onOpenText && (
+                    <span className="service-file-actions">
+                      <button type="button" className="app-control service-inline-action"
+                        title="在文本编辑器中以只读模式查看单元文件"
+                        onClick={() => onOpenText(detail.fragmentPath, false, true)}>
+                        <Eye size={13} aria-hidden="true" />查看
+                      </button>
+                      <button type="button" className="app-control service-inline-action"
+                        title="在文本编辑器中以管理员权限编辑单元文件"
+                        onClick={() => onOpenText(detail.fragmentPath, true, false)}>
+                        <Pencil size={13} aria-hidden="true" />编辑
+                      </button>
+                    </span>
+                  )}
+                </dd>
+              </div>
             </dl>
           </section>
           {excluded && <p className="system-caption" role="status">此服务已移出当前筛选结果。</p>}

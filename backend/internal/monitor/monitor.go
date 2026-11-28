@@ -79,6 +79,9 @@ type Collection struct {
 	MemoryFailed      bool
 	DisksFailed       bool
 	NetworkFailed     bool
+	LoadFailed        bool
+	SwapFailed        bool
+	DiskIOFailed      bool
 	FailedMountpoints []string
 }
 
@@ -86,8 +89,11 @@ type Snapshot struct {
 	SampledAt  time.Time     `json:"sampledAt"`
 	Platform   string        `json:"platform"`
 	CPU        *CPUStat      `json:"cpu"`
+	Load       *LoadStat     `json:"load"`
 	Memory     *MemoryStat   `json:"memory"`
+	Swap       *SwapStat     `json:"swap"`
 	Disks      []DiskStat    `json:"disks"`
+	DiskIO     *DiskIOStat   `json:"diskIO"`
 	Network    []NetworkStat `json:"network"`
 	Series     Series        `json:"series"`
 	Collection Collection    `json:"-"`
@@ -96,8 +102,11 @@ type Snapshot struct {
 type sample struct {
 	takenAt    time.Time
 	cpu        *CPUStat
+	load       *LoadStat
 	memory     *MemoryStat
+	swap       *SwapStat
 	disks      []DiskStat
+	diskIO     *DiskIOStat
 	network    []NetworkStat
 	collection Collection
 }
@@ -116,6 +125,16 @@ type Collector struct {
 
 	previous     map[string]counters
 	previousTime time.Time
+
+	swapPrevious swapCounters
+	swapTime     time.Time
+
+	diskIOPrevious map[string]diskIOCounters
+	diskIOTime     time.Time
+
+	processMu    sync.Mutex
+	processTicks map[processKey]uint64
+	processAt    time.Time
 
 	cancel    context.CancelFunc
 	done      chan struct{}
@@ -202,9 +221,22 @@ func (c *Collector) Snapshot() (Snapshot, bool) {
 		value.PerCore = append([]float64{}, value.PerCore...)
 		snapshot.CPU = &value
 	}
+	if last.load != nil {
+		value := *last.load
+		snapshot.Load = &value
+	}
 	if last.memory != nil {
 		value := *last.memory
 		snapshot.Memory = &value
+	}
+	if last.swap != nil {
+		value := *last.swap
+		snapshot.Swap = &value
+	}
+	if last.diskIO != nil {
+		value := *last.diskIO
+		value.Devices = append([]DiskIODevice{}, value.Devices...)
+		snapshot.DiskIO = &value
 	}
 
 	var lastCPU, lastMemory float64
@@ -249,10 +281,21 @@ func (c *Collector) collect(ctx context.Context) {
 	} else {
 		current.collection.CPUFailed = true
 	}
+	if stat, err := collectLoad(); err == nil {
+		current.load = stat
+	} else {
+		current.collection.LoadFailed = true
+	}
 	if stat, err := collectMemory(ctx); err == nil {
 		current.memory = stat
 	} else {
 		current.collection.MemoryFailed = true
+	}
+	if stat, previous, previousTime, err := collectSwap(current.takenAt, c.swapPrevious, c.swapTime); err == nil {
+		current.swap = stat
+		c.swapPrevious, c.swapTime = previous, previousTime
+	} else {
+		current.collection.SwapFailed = true
 	}
 
 	disks, failedMounts, err := collectDisks(ctx)
@@ -261,6 +304,13 @@ func (c *Collector) collect(ctx context.Context) {
 	} else {
 		current.disks = disks
 		current.collection.FailedMountpoints = failedMounts
+	}
+
+	if stat, previous, previousTime, err := collectDiskIO(current.takenAt, c.diskIOPrevious, c.diskIOTime); err == nil {
+		current.diskIO = stat
+		c.diskIOPrevious, c.diskIOTime = previous, previousTime
+	} else {
+		current.collection.DiskIOFailed = true
 	}
 
 	network, previous, previousTime, networkFailed := collectNetwork(ctx, c.previous, c.previousTime, current.takenAt)

@@ -98,7 +98,7 @@ func TestMetricsEndpoint(t *testing.T) {
 	waitForSnapshot(t, collector)
 
 	mux := http.NewServeMux()
-	collector.register(mux, func(next http.Handler) http.Handler { return next }, runPortOperation)
+	collector.register(mux, func(next http.Handler) http.Handler { return next }, runPortOperation, runProcessSignalOperation)
 
 	recorder := httptest.NewRecorder()
 	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/system/metrics", nil))
@@ -258,6 +258,31 @@ func TestCollectorSnapshotExtensions(t *testing.T) {
 	snapshot := waitForSnapshot(t, collector)
 	if snapshot.Memory == nil {
 		t.Fatal("memory is nil")
+	}
+	if snapshot.Load == nil {
+		t.Error("load is nil")
+	} else if snapshot.Load.LogicalCores == 0 {
+		t.Error("load.logicalCores is zero")
+	}
+	if snapshot.Swap == nil {
+		t.Error("swap is nil")
+	} else if snapshot.Swap.Configured && snapshot.Swap.TotalBytes == 0 {
+		t.Error("configured swap has zero total")
+	}
+	if snapshot.DiskIO == nil {
+		t.Error("diskIO is nil")
+	} else {
+		if snapshot.DiskIO.ReadBytesPerSec < 0 || snapshot.DiskIO.WriteBytesPerSec < 0 {
+			t.Errorf("negative disk rates: %+v", snapshot.DiskIO)
+		}
+		for _, device := range snapshot.DiskIO.Devices {
+			if device.ReadBytesPerSec < 0 || device.WriteBytesPerSec < 0 {
+				t.Errorf("negative device rates: %+v", device)
+			}
+			if !physicalBlockDevice(device.Name) {
+				t.Errorf("unexpected disk device %q", device.Name)
+			}
+		}
 	}
 	if snapshot.Memory.Available == 0 || snapshot.Memory.Available > snapshot.Memory.Total {
 		t.Errorf("available = %d, total = %d", snapshot.Memory.Available, snapshot.Memory.Total)

@@ -48,12 +48,21 @@ func TestFileRoutesAndDesktopCoexist(t *testing.T) {
 		"/api/v1/system/ports/detail": http.StatusUnauthorized,
 		"/api/v1/system/ports/logs":   http.StatusUnauthorized,
 		"/api/v1/system/status":       http.StatusUnauthorized,
+		"/api/v1/system/host":         http.StatusUnauthorized,
+		"/api/v1/system/timezones":    http.StatusUnauthorized,
 		"/api/v1/services":            http.StatusUnauthorized,
 	} {
 		w := httptest.NewRecorder()
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != code {
 			t.Errorf("%s returned %d, want %d", path, w.Code, code)
+		}
+	}
+	for _, path := range []string{"/api/v1/system/host/hostname", "/api/v1/system/host/timezone"} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodPut, path, nil))
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("%s returned %d, want %d", path, w.Code, http.StatusUnauthorized)
 		}
 	}
 	w := httptest.NewRecorder()

@@ -24,7 +24,10 @@ const (
 	maxSize     = 1000
 )
 
-var errShuttingDown = errors.New("terminal manager is shutting down")
+var (
+	errShuttingDown  = errors.New("terminal manager is shutting down")
+	errCwdPermission = errors.New("working directory permission denied")
+)
 
 type Summary struct {
 	ID                 string     `json:"id"`
@@ -115,7 +118,7 @@ func (m *Manager) session(id string) *session {
 	return m.sessions[id]
 }
 
-func (m *Manager) start(settings Settings) (Summary, error) {
+func (m *Manager) start(settings Settings, dir string) (Summary, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.closed {
@@ -128,14 +131,28 @@ func (m *Manager) start(settings Settings) (Summary, error) {
 	}
 	cmd := exec.Command(shell, "-i")
 	cmd.Env = append(os.Environ(), "TERM=xterm-256color")
-	if home, err := os.UserHomeDir(); err == nil {
-		if info, err := os.Stat(home); err == nil && info.IsDir() {
-			cmd.Dir = home
+	explicitCwd := dir != ""
+	if dir == "" {
+		if home, err := os.UserHomeDir(); err == nil {
+			if info, err := os.Stat(home); err == nil && info.IsDir() {
+				dir = home
+			}
 		}
+	}
+	if dir != "" {
+		cmd.Dir = dir
 	}
 	cmd.SysProcAttr = &syscall.SysProcAttr{Pdeathsig: syscall.SIGKILL}
 	master, err := pty.StartWithSize(cmd, &pty.Winsize{Cols: initialCols, Rows: initialRows})
 	if err != nil {
+		// chdir failures surface as permission errors from the child; report
+		// them like sessionDir so the caller sees a stable 403 contract. Only
+		// an explicitly requested cwd can be the cause: a default-home session
+		// keeps the raw error so an unrelated shell or PTY permission failure
+		// is not mislabeled as cwd_permission_denied.
+		if explicitCwd && errors.Is(err, os.ErrPermission) {
+			return Summary{}, errCwdPermission
+		}
 		return Summary{}, err
 	}
 	file, control, err := pollablePTY(master)

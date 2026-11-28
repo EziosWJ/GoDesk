@@ -22,6 +22,7 @@ export const actionLabels: Record<ServiceAction, string> = {
   start: '启动',
   stop: '停止',
   restart: '重启',
+  reload: '重载',
   enable: '启用开机自启',
   disable: '禁用开机自启',
 }
@@ -30,6 +31,7 @@ export const actionProgress: Record<ServiceAction, string> = {
   start: '正在启动服务…',
   stop: '正在停止服务…',
   restart: '正在重启服务…',
+  reload: '正在重载服务配置…',
   enable: '正在启用开机自启…',
   disable: '正在禁用开机自启…',
 }

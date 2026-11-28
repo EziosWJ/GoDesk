@@ -5,13 +5,107 @@
   background: var(--godesk-surface);
   color: var(--godesk-fg);
 }
-.terminal-screen { flex: 1; min-height: 0; padding: 12px 8px 8px 14px; }
+.terminal-screen { position: relative; flex: 1; min-height: 0; padding: 12px 8px 8px 14px; }
 .terminal-host { width: 100%; height: 100%; }
 .terminal-screen[data-read-only] { overflow: auto; }
 .terminal-screen[data-read-only] .xterm { width: max-content; height: auto; }
 .terminal-host .xterm { height: 100%; }
 /* xterm only paints whole text rows. Match the background in the space below them. */
 .terminal-host .xterm .xterm-viewport { background-color: var(--godesk-surface); }
+
+.terminal-search {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  z-index: 10;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 24px);
+  padding: 5px 6px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-overlay);
+  background: var(--godesk-acrylic-strong);
+  backdrop-filter: var(--godesk-acrylic-blur);
+  box-shadow: var(--godesk-shadow-overlay);
+  color: var(--godesk-fg);
+}
+.terminal-search-input {
+  width: 180px;
+  min-width: 110px;
+  flex: 1 1 130px;
+  height: 26px;
+  padding-inline: 8px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+  color: var(--godesk-fg);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+}
+.terminal-search-input:focus-visible {
+  outline: 2px solid var(--godesk-focus);
+  outline-offset: -1px;
+}
+.terminal-search-input[aria-invalid='true'] {
+  border-color: var(--godesk-danger);
+}
+.terminal-search-count {
+  min-width: 44px;
+  padding-inline: 4px;
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+.terminal-search-count[data-error='true'] { color: var(--godesk-danger); }
+.terminal-search-actions { display: inline-flex; align-items: center; gap: 2px; }
+.terminal-search-button.app-control {
+  min-width: 26px;
+  min-height: 26px;
+  padding-inline: 5px;
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  color: var(--godesk-muted);
+}
+.terminal-search-button.app-control:not(:disabled):hover { color: var(--godesk-fg); }
+.terminal-search-button.app-control[aria-pressed='true'] {
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+  font-weight: 600;
+}
+.terminal-search-toggle { font-family: var(--godesk-font-mono); }
+
+.terminal-link-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  z-index: 9;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 24px);
+  padding: 3px 8px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-raised);
+  box-shadow: var(--godesk-shadow-overlay);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  pointer-events: none;
+}
+.terminal-link-hint span { flex: none; }
+.terminal-link-hint code {
+  overflow: hidden;
+  color: var(--godesk-fg);
+  font-family: var(--godesk-font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .terminal-toolbar {
   display: flex;
   gap: 6px;
@@ -160,12 +254,21 @@
 .terminal-status { justify-content: space-between; }
 .terminal-status > span { display: inline-flex; align-items: center; gap: 6px; }
 .terminal-status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.terminal-status-actions { display: flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+.terminal-status-actions { display: flex; align-items: center; gap: 6px; font-variant-numeric: tabular-nums; }
+.terminal-zoom-group { display: inline-flex; align-items: center; gap: 2px; }
+.terminal-status-button.app-control,
 .terminal-sudo-button.app-control {
   min-height: 24px;
   padding-inline: 5px;
+  font-size: inherit;
   color: var(--godesk-muted);
 }
+.terminal-status-button.app-control[aria-pressed='true'] {
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+}
+.terminal-font-size { min-width: 38px; font-variant-numeric: tabular-nums; }
+.terminal-status-size { padding-inline-start: 4px; border-inline-start: 1px solid var(--godesk-divider); }
 .terminal-sudo-note pre {
   margin: 0;
   padding: 10px 12px;
@@ -176,4 +279,35 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: all;
+}
+
+.terminal-settings-font {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-block: 6px 8px;
+}
+.terminal-settings-font input[type='range'] {
+  width: 160px;
+  accent-color: var(--godesk-accent);
+}
+.terminal-settings-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.terminal-settings-font-value {
+  min-width: 44px;
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-compact);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (forced-colors: active) {
+  .terminal-search { border-color: CanvasText; background: Canvas; }
+  .terminal-search-button.app-control[aria-pressed='true'],
+  .terminal-status-button.app-control[aria-pressed='true'] { outline: 1px solid Highlight; outline-offset: -1px; }
+  .terminal-link-hint { border-color: CanvasText; background: Canvas; }
 }

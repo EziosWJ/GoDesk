@@ -20,6 +20,10 @@ const SchemaVersion = 1
 
 const responseStaleAfter = 15 * time.Second
 
+// swapUsageWarningPercent is the usage gate for the swap warning. It only
+// applies together with sustained paging activity.
+const swapUsageWarningPercent = 80
+
 type Status string
 
 const (
@@ -73,8 +77,8 @@ type Summary struct {
 }
 
 type Thresholds struct {
-	Warning  float64 `json:"warning"`
-	Critical float64 `json:"critical"`
+	Warning  *float64 `json:"warning"`
+	Critical *float64 `json:"critical"`
 }
 
 type Check struct {
@@ -125,6 +129,30 @@ type NetworkDetails struct {
 	TxBytesPerSecond float64  `json:"txBytesPerSecond"`
 }
 
+type LoadDetails struct {
+	Load1        float64 `json:"load1"`
+	Load5        float64 `json:"load5"`
+	Load15       float64 `json:"load15"`
+	LogicalCores int     `json:"logicalCores"`
+	Load5PerCore float64 `json:"load5PerCore"`
+}
+
+type SwapDetails struct {
+	TotalBytes    uint64  `json:"totalBytes"`
+	UsedBytes     uint64  `json:"usedBytes"`
+	UsedPercent   float64 `json:"usedPercent"`
+	SwapInPerSec  float64 `json:"swapInPerSec"`
+	SwapOutPerSec float64 `json:"swapOutPerSec"`
+}
+
+type TemperatureDetails struct {
+	Sensor   string   `json:"sensor"`
+	Chip     string   `json:"chip"`
+	Celsius  float64  `json:"celsius"`
+	Warning  *float64 `json:"warning"`
+	Critical *float64 `json:"critical"`
+}
+
 type rule struct {
 	warning        float64
 	critical       float64
@@ -140,6 +168,9 @@ var defaultRules = map[string]rule{
 	"cpu":    {warning: 85, critical: 95, recoverHealthy: 80, recoverWarning: 90, enterAfter: 5 * time.Minute, recoverAfter: time.Minute},
 	"memory": {warning: 85, critical: 95, recoverHealthy: 80, recoverWarning: 90, enterAfter: 2 * time.Minute, recoverAfter: time.Minute},
 	"disk":   {warning: 85, critical: 95, recoverHealthy: 80, recoverWarning: 90, enterSamples: 2, recoverSamples: 2},
+	"load":   {warning: 1.5, critical: 3.0, recoverHealthy: 1.0, recoverWarning: 2.5, enterAfter: 5 * time.Minute, recoverAfter: time.Minute},
+	// Swap evaluates a synthetic triggered/not-triggered value, not a percent.
+	"swap": {warning: 1, critical: unreachableThreshold, recoverHealthy: 0.5, recoverWarning: unreachableThreshold, enterAfter: 2 * time.Minute, recoverAfter: time.Minute},
 }
 
 type source interface {
@@ -162,6 +193,8 @@ type thresholdState struct {
 	unknownSince time.Time
 	lastDisk     monitor.DiskStat
 	lastMemory   monitor.MemoryStat
+	lastLoad     monitor.LoadStat
+	lastSwap     monitor.SwapStat
 }
 
 type networkState struct {
@@ -185,6 +218,11 @@ type Engine struct {
 	lastSampledAt time.Time
 	thresholds    map[string]*thresholdState
 	network       networkState
+
+	temperature          temperatureSampler
+	temperatureInterval  time.Duration
+	temperatureSampledAt time.Time
+	temperatureSensors   []temperatureSensor
 }
 
 func newEngine(source source, interval time.Duration, now func() time.Time) *Engine {
@@ -197,18 +235,22 @@ func newEngine(source source, interval time.Duration, now func() time.Time) *Eng
 		rules[category] = value
 	}
 	return &Engine{
-		source:     source,
-		interval:   interval,
-		now:        now,
-		rules:      rules,
-		host:       Host{Hostname: hostname, Architecture: runtime.GOARCH},
-		thresholds: make(map[string]*thresholdState),
+		source:              source,
+		interval:            interval,
+		now:                 now,
+		rules:               rules,
+		host:                Host{Hostname: hostname, Architecture: runtime.GOARCH},
+		thresholds:          make(map[string]*thresholdState),
+		temperatureInterval: defaultTemperatureInterval,
 	}
 }
 
 // Start evaluates the current collector snapshot and then follows new samples.
 func Start(ctx context.Context, source source, interval time.Duration) *Engine {
 	engine := newEngine(source, interval, time.Now)
+	// The system temperature is sampled from sysfs by the health engine itself;
+	// monitor.Collector does not collect it.
+	engine.temperature = newSysfsTemperatureSampler()
 	if sample, ok := source.Snapshot(); ok {
 		engine.evaluateAt(sample, engine.now())
 	}
@@ -240,6 +282,7 @@ func (e *Engine) poll() {
 	if !e.hasSample || sample.SampledAt.After(e.lastSampledAt) {
 		e.applySampleLocked(sample)
 	}
+	e.sampleTemperatureLocked(now)
 	e.rebuildLocked(now)
 }
 
@@ -247,7 +290,17 @@ func (e *Engine) evaluateAt(sample monitor.Snapshot, now time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.applySampleLocked(sample)
+	e.sampleTemperatureLocked(now)
 	e.rebuildLocked(now)
+}
+
+// evaluateTemperatureAt applies an explicit temperature sample. It exists so
+// tests can drive the temperature state machine without sysfs or wall clock.
+func (e *Engine) evaluateTemperatureAt(sensors []temperatureSensor, at time.Time) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.applyTemperatureLocked(sensors, at)
+	e.rebuildLocked(at)
 }
 
 // refreshAt regenerates the snapshot from the latest sample without applying a
@@ -294,10 +347,32 @@ func (e *Engine) applySampleLocked(sample monitor.Snapshot) {
 		state := e.state("cpu")
 		e.advanceThreshold(state, clampPercent(sample.CPU.Percent), sample.SampledAt, e.rules["cpu"])
 	}
+	if !sample.Collection.LoadFailed && sample.Load != nil && sample.Load.LogicalCores > 0 {
+		state := e.state("load")
+		state.lastLoad = *sample.Load
+		e.advanceThreshold(state, load5PerCore(*sample.Load), sample.SampledAt, e.rules["load"])
+	}
 	if !sample.Collection.MemoryFailed && sample.Memory != nil {
 		state := e.state("memory")
 		state.lastMemory = *sample.Memory
 		e.advanceThreshold(state, memoryUsedPercent(*sample.Memory), sample.SampledAt, e.rules["memory"])
+	}
+	if !sample.Collection.SwapFailed && sample.Swap != nil {
+		if sample.Swap.Configured && sample.Swap.TotalBytes > 0 {
+			state := e.state("swap")
+			state.lastSwap = *sample.Swap
+			if sample.Swap.PagingAvailable {
+				e.advanceThreshold(state, swapTriggerValue(*sample.Swap), sample.SampledAt, e.rules["swap"])
+			} else {
+				// Paging counters are unavailable: hold the threshold state so
+				// an unknown paging activity is never evaluated as healthy or
+				// recovered. Recording the sample time keeps the check from
+				// aging into "stale" while capacity data keeps arriving.
+				state.observedAt = sample.SampledAt
+			}
+		} else {
+			delete(e.thresholds, "swap")
+		}
 	}
 	if !sample.Collection.DisksFailed {
 		if state, ok := e.thresholds["disk"]; ok {
@@ -352,7 +427,47 @@ func (e *Engine) state(id string) *thresholdState {
 	return state
 }
 
+// sampleTemperatureLocked samples sysfs at most once per temperature interval.
+// The caller must hold e.mu.
+func (e *Engine) sampleTemperatureLocked(now time.Time) {
+	if e.temperature == nil {
+		return
+	}
+	if !e.temperatureSampledAt.IsZero() && now.Sub(e.temperatureSampledAt) < e.temperatureInterval {
+		return
+	}
+	e.applyTemperatureLocked(e.temperature.Sample(), now)
+}
+
+func (e *Engine) applyTemperatureLocked(sensors []temperatureSensor, at time.Time) {
+	e.temperatureSensors = sensors
+	e.temperatureSampledAt = at
+
+	seen := make(map[string]bool, len(sensors))
+	for _, sensor := range sensors {
+		r, ok := temperatureRule(sensor)
+		if !ok {
+			continue
+		}
+		state := e.state(sensor.ID)
+		e.advanceThresholdWithin(state, sensor.Celsius, at, r, e.temperatureInterval, e.temperatureStaleWindow())
+		seen[sensor.ID] = true
+	}
+	for id := range e.thresholds {
+		if strings.HasPrefix(id, "temperature:") && !seen[id] {
+			delete(e.thresholds, id)
+		}
+	}
+}
+
 func (e *Engine) advanceThreshold(state *thresholdState, value float64, at time.Time, r rule) {
+	e.advanceThresholdWithin(state, value, at, r, e.interval, e.staleWindow())
+}
+
+// advanceThresholdWithin lets a check use its own sampling cadence and
+// freshness window. Temperature, for example, is sampled every 5 seconds while
+// the engine loop runs every second.
+func (e *Engine) advanceThresholdWithin(state *thresholdState, value float64, at time.Time, r rule, sampleInterval, staleAfter time.Duration) {
 	if !state.initialized {
 		state.initialized = true
 		state.status = StatusHealthy
@@ -372,7 +487,7 @@ func (e *Engine) advanceThreshold(state *thresholdState, value float64, at time.
 	}
 
 	gap := at.Sub(state.lastAdvance)
-	if gap > e.staleWindow() {
+	if gap > staleAfter {
 		// The data gap exceeded the freshness window: previous accumulation is
 		// discarded and evaluation starts again from a healthy baseline.
 		state.status = StatusHealthy
@@ -387,8 +502,8 @@ func (e *Engine) advanceThreshold(state *thresholdState, value float64, at time.
 	if credit < 0 {
 		credit = 0
 	}
-	if credit > e.interval {
-		credit = e.interval
+	if credit > sampleInterval {
+		credit = sampleInterval
 	}
 
 	state.value = value
@@ -498,11 +613,14 @@ func (e *Engine) rebuildLocked(now time.Time) {
 	if !e.hasSample {
 		return
 	}
-	checks := make([]Check, 0, 4+len(e.lastSample.Disks))
+	checks := make([]Check, 0, 6+len(e.lastSample.Disks)+len(e.temperatureSensors))
 	checks = append(checks, e.cpuCheckLocked(now))
+	checks = append(checks, e.loadCheckLocked(now))
 	checks = append(checks, e.memoryCheckLocked(now))
+	checks = append(checks, e.swapCheckLocked(now))
 	checks = append(checks, e.diskChecksLocked(now)...)
 	checks = append(checks, e.networkCheckLocked(now))
+	checks = append(checks, e.temperatureChecksLocked(now)...)
 
 	host := e.hostFacts()
 
@@ -567,6 +685,65 @@ func (e *Engine) cpuCheckLocked(now time.Time) Check {
 	return check
 }
 
+func (e *Engine) loadCheckLocked(now time.Time) Check {
+	state := e.state("load")
+	details := LoadDetails{}
+	if state.initialized {
+		details = loadDetails(state.lastLoad)
+	}
+	check := Check{
+		ID:         "load",
+		Category:   "load",
+		Label:      "系统负载",
+		Applicable: true,
+		Thresholds: thresholdValues(e.rules["load"]),
+		Details:    details,
+	}
+
+	load := e.lastSample.Load
+	// A missing logical core count makes the per-core value meaningless.
+	unavailable := e.lastSample.Collection.LoadFailed || (load != nil && load.LogicalCores <= 0)
+	if !state.initialized {
+		if unavailable {
+			since := ensureUnknownSince(state, now)
+			check.ObservedAt = since.UTC()
+			if now.Sub(since) > e.staleWindow() {
+				check.Stale = true
+				return unknownCheck(check, ReasonStale, "系统负载数据已过期", since)
+			}
+			return unknownCheck(check, ReasonCollectFailed, "系统负载采集失败", since)
+		}
+		check.ObservedAt = now.UTC()
+		return unknownCheck(check, ReasonInitializing, "正在等待系统负载数据", ensureUnknownSince(state, now))
+	}
+
+	check.Value = numberPointer(state.value)
+	check.ObservedAt = state.observedAt.UTC()
+	if now.Sub(state.observedAt) > e.staleWindow() {
+		check.Stale = true
+		return unknownCheck(check, ReasonStale, "系统负载数据已过期", ensureUnknownSince(state, state.observedAt.Add(e.staleWindow())))
+	}
+	if unavailable {
+		return unknownCheck(check, ReasonCollectFailed, "系统负载采集失败", ensureUnknownSince(state, now))
+	}
+	state.unknownSince = time.Time{}
+	check.Status = state.status
+	switch state.status {
+	case StatusWarning:
+		check.Reason = ReasonThresholdWarning
+		check.Message = "系统负载持续偏高"
+		check.Since = timePointer(state.since)
+	case StatusCritical:
+		check.Reason = ReasonThresholdCritical
+		check.Message = "系统负载持续过高"
+		check.Since = timePointer(state.since)
+	default:
+		check.Reason = ReasonOK
+		check.Message = "系统负载正常"
+	}
+	return check
+}
+
 func (e *Engine) memoryCheckLocked(now time.Time) Check {
 	state := e.state("memory")
 	details := MemoryDetails{}
@@ -624,6 +801,82 @@ func (e *Engine) memoryCheckLocked(now time.Time) Check {
 	default:
 		check.Reason = ReasonOK
 		check.Message = "可用内存充足"
+	}
+	return check
+}
+
+func (e *Engine) swapCheckLocked(now time.Time) Check {
+	if e.lastSample.Swap != nil && (!e.lastSample.Swap.Configured || e.lastSample.Swap.TotalBytes == 0) {
+		// An unconfigured swap is not an issue; idle cold pages must never alert.
+		return Check{
+			ID:         "swap",
+			Category:   "swap",
+			Label:      "Swap",
+			Status:     StatusUnknown,
+			Applicable: false,
+			Reason:     ReasonNotSupported,
+			Message:    "未配置 Swap",
+			ObservedAt: now.UTC(),
+			Details:    swapDetails(*e.lastSample.Swap),
+		}
+	}
+
+	state := e.state("swap")
+	check := Check{
+		ID:         "swap",
+		Category:   "swap",
+		Label:      "Swap",
+		Applicable: true,
+		Unit:       stringPointer("percent"),
+		Thresholds: &Thresholds{Warning: numberPointer(swapUsageWarningPercent)},
+		Details:    swapDetails(state.lastSwap),
+	}
+	// Capacity and paging are collected separately. Without the paging
+	// counters the swap warning condition cannot be evaluated, so the check is
+	// unknown rather than healthy. Capacity stays visible in the details.
+	pagingUnavailable := e.lastSample.Swap != nil && !e.lastSample.Swap.PagingAvailable
+	if !state.initialized {
+		if e.lastSample.Collection.SwapFailed {
+			since := ensureUnknownSince(state, now)
+			check.ObservedAt = since.UTC()
+			if now.Sub(since) > e.staleWindow() {
+				check.Stale = true
+				return unknownCheck(check, ReasonStale, "Swap 数据已过期", since)
+			}
+			return unknownCheck(check, ReasonCollectFailed, "Swap 采集失败", since)
+		}
+		if pagingUnavailable {
+			since := ensureUnknownSince(state, now)
+			check.ObservedAt = now.UTC()
+			return unknownCheck(check, ReasonCollectFailed, "无法读取 Swap 换页统计，Swap 状态未知", since)
+		}
+		check.ObservedAt = now.UTC()
+		return unknownCheck(check, ReasonInitializing, "正在等待 Swap 数据", ensureUnknownSince(state, now))
+	}
+
+	check.Value = numberPointer(state.lastSwap.UsedPercent)
+	check.ObservedAt = state.observedAt.UTC()
+	if now.Sub(state.observedAt) > e.staleWindow() {
+		check.Stale = true
+		return unknownCheck(check, ReasonStale, "Swap 数据已过期", ensureUnknownSince(state, state.observedAt.Add(e.staleWindow())))
+	}
+	if e.lastSample.Collection.SwapFailed {
+		return unknownCheck(check, ReasonCollectFailed, "Swap 采集失败", ensureUnknownSince(state, now))
+	}
+	if pagingUnavailable {
+		since := ensureUnknownSince(state, now)
+		return unknownCheck(check, ReasonCollectFailed, "无法读取 Swap 换页统计，Swap 状态未知", since)
+	}
+	state.unknownSince = time.Time{}
+	check.Status = state.status
+	switch state.status {
+	case StatusWarning:
+		check.Reason = ReasonThresholdWarning
+		check.Message = "Swap 使用率高且存在换页活动"
+		check.Since = timePointer(state.since)
+	default:
+		check.Reason = ReasonOK
+		check.Message = "Swap 使用情况正常"
 	}
 	return check
 }
@@ -830,6 +1083,97 @@ func (e *Engine) networkCheckLocked(now time.Time) Check {
 	return check
 }
 
+func (e *Engine) temperatureChecksLocked(now time.Time) []Check {
+	if e.temperatureSampledAt.IsZero() {
+		// The sampler has not produced a sample yet; the engine snapshot is not
+		// exposed before the first monitor sample either.
+		return nil
+	}
+	if len(e.temperatureSensors) == 0 {
+		return []Check{{
+			ID:         "temperature",
+			Category:   "temperature",
+			Label:      "温度",
+			Status:     StatusUnknown,
+			Applicable: false,
+			Reason:     ReasonNotSupported,
+			Message:    "未发现可用的温度传感器",
+			ObservedAt: now.UTC(),
+		}}
+	}
+
+	checks := make([]Check, 0, len(e.temperatureSensors))
+	for _, sensor := range e.temperatureSensors {
+		checks = append(checks, e.temperatureCheckLocked(now, sensor))
+	}
+	sort.Slice(checks, func(i, j int) bool { return checks[i].ID < checks[j].ID })
+	return checks
+}
+
+func (e *Engine) temperatureCheckLocked(now time.Time, sensor temperatureSensor) Check {
+	check := Check{
+		ID:         sensor.ID,
+		Category:   "temperature",
+		Label:      sensor.Sensor,
+		Applicable: true,
+		Unit:       stringPointer("celsius"),
+		Value:      numberPointer(sensor.Celsius),
+		Details: TemperatureDetails{
+			Sensor:   sensor.Sensor,
+			Chip:     sensor.Chip,
+			Celsius:  sensor.Celsius,
+			Warning:  copyFloatPointer(sensor.Warning),
+			Critical: copyFloatPointer(sensor.Critical),
+		},
+	}
+
+	if sensor.Warning == nil && sensor.Critical == nil {
+		// The reading is display-only: never invent a threshold and never alert.
+		check.Applicable = false
+		check.ObservedAt = now.UTC()
+		return unknownCheck(check, ReasonNoThreshold, "传感器没有可信温度阈值，仅供参考", time.Time{})
+	}
+
+	state := e.state(sensor.ID)
+	check.Thresholds = temperatureThresholdValues(sensor)
+	check.ObservedAt = state.observedAt.UTC()
+	if state.observedAt.IsZero() {
+		check.ObservedAt = e.temperatureSampledAt.UTC()
+	}
+	if now.Sub(e.temperatureSampledAt) > e.temperatureStaleWindow() {
+		check.Stale = true
+		return unknownCheck(check, ReasonStale, "温度数据已过期", ensureUnknownSince(state, e.temperatureSampledAt.Add(e.temperatureStaleWindow())))
+	}
+	if !state.initialized {
+		check.ObservedAt = now.UTC()
+		return unknownCheck(check, ReasonInitializing, "正在等待温度数据", ensureUnknownSince(state, now))
+	}
+	state.unknownSince = time.Time{}
+	check.Status = state.status
+	switch state.status {
+	case StatusWarning:
+		check.Reason = ReasonThresholdWarning
+		check.Message = "温度持续偏高"
+		check.Since = timePointer(state.since)
+	case StatusCritical:
+		check.Reason = ReasonThresholdCritical
+		check.Message = "温度持续过高"
+		check.Since = timePointer(state.since)
+	default:
+		check.Reason = ReasonOK
+		check.Message = "温度正常"
+	}
+	return check
+}
+
+func (e *Engine) temperatureStaleWindow() time.Duration {
+	window := 3 * e.temperatureInterval
+	if window < 5*time.Second {
+		window = 5 * time.Second
+	}
+	return window
+}
+
 func (e *Engine) hostFacts() Host {
 	host := e.host
 	host.Platform = e.lastSample.Platform
@@ -961,6 +1305,45 @@ func usedBytes(memory monitor.MemoryStat) uint64 {
 	return memory.Total - memory.Available
 }
 
+func load5PerCore(load monitor.LoadStat) float64 {
+	if load.LogicalCores <= 0 {
+		return 0
+	}
+	return load.Load5 / float64(load.LogicalCores)
+}
+
+func loadDetails(load monitor.LoadStat) LoadDetails {
+	return LoadDetails{
+		Load1:        load.Load1,
+		Load5:        load.Load5,
+		Load15:       load.Load15,
+		LogicalCores: load.LogicalCores,
+		Load5PerCore: load5PerCore(load),
+	}
+}
+
+// swapTriggerValue collapses the compound "high usage AND active paging"
+// condition into the engine's numeric state machine. The reported value stays
+// the real used percentage.
+func swapTriggerValue(swap monitor.SwapStat) float64 {
+	highUsage := swap.UsedPercent >= swapUsageWarningPercent
+	paging := swap.SwapInPerSec > 0 || swap.SwapOutPerSec > 0
+	if highUsage && paging {
+		return 1
+	}
+	return 0
+}
+
+func swapDetails(swap monitor.SwapStat) SwapDetails {
+	return SwapDetails{
+		TotalBytes:    swap.TotalBytes,
+		UsedBytes:     swap.UsedBytes,
+		UsedPercent:   swap.UsedPercent,
+		SwapInPerSec:  swap.SwapInPerSec,
+		SwapOutPerSec: swap.SwapOutPerSec,
+	}
+}
+
 func clampPercent(value float64) float64 {
 	if math.IsNaN(value) || value < 0 {
 		return 0
@@ -972,7 +1355,10 @@ func clampPercent(value float64) float64 {
 }
 
 func thresholdValues(r rule) *Thresholds {
-	return &Thresholds{Warning: r.warning, Critical: r.critical}
+	return &Thresholds{
+		Warning:  numberPointer(r.warning),
+		Critical: numberPointer(r.critical),
+	}
 }
 
 func summarize(checks []Check) Summary {

@@ -16,12 +16,17 @@ type HostEntry = {
   group: string
   permissions: string
   mode: string
+  modTime: string
   targetKind?: string
   targetError?: string
 }
 
 export type HostFile = Pick<Entry, 'id' | 'name' | 'type' | 'size' | 'directory'>
-  & Pick<HostEntry, 'kind' | 'targetKind' | 'targetError' | 'owner' | 'group' | 'permissions' | 'mode'> & { symbolicLink: boolean }
+  & Pick<HostEntry, 'kind' | 'targetKind' | 'targetError' | 'owner' | 'group' | 'permissions' | 'mode' | 'modTime'>
+  & { symbolicLink: boolean; sizeBytes: number }
+
+export type ExtractMode = 'folder' | 'here'
+export type ExtractResult = { destination: string; extracted: number; skipped: number }
 
 export class FileError extends Error {
   readonly code: string
@@ -36,6 +41,20 @@ export class FileError extends Error {
 
 export function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : '操作失败'
+}
+
+export function archiveErrorMessage(error: unknown, elevated = false) {
+  if (error instanceof FileError) {
+    switch (error.code) {
+      case 'path_traversal': return '归档包含越界路径，已拒绝解压'
+      case 'invalid_archive': return '归档文件无效或已损坏'
+      case 'unsupported_type': return '不支持此归档格式或文件类型'
+      case 'permission': return elevated ? '权限不足，或无法以管理员身份执行此操作' : '没有权限执行此操作'
+      case 'not_found': return '目标文件或目录不存在'
+      case 'exists': return '目标位置已存在同名项'
+    }
+  }
+  return errorMessage(error)
 }
 
 function responseError(data: { code?: string; message?: string; path?: string } | undefined, status: number) {
@@ -84,6 +103,10 @@ export function imageFile(file: HostFile) {
   return regularFile(file) && /\.(?:png|jpe?g|gif|webp|bmp|ico|svg)$/i.test(file.name)
 }
 
+export function archiveFile(file?: HostFile) {
+  return !!file && regularFile(file) && /\.(?:zip|tar\.gz|tgz|tar)$/i.test(file.name)
+}
+
 export function managedFile(file: HostFile) {
   return ['file', 'directory', 'symlink'].includes(file.kind)
 }
@@ -106,8 +129,15 @@ export async function readDirectory(path = '', signal?: AbortSignal, elevated = 
     const directory = entry.kind === 'directory' || entry.targetKind === 'directory'
     const kinds: Record<string, string> = { directory: '文件夹', symlink: '符号链接', fifo: 'FIFO', socket: '套接字', device: '设备', other: '特殊文件' }
     const type = kinds[entry.kind] ?? '文件'
-    return { ...entry, id: entry.path, type, symbolicLink: entry.kind === 'symlink',
-      directory: directory ? entry.path : undefined, size: entry.kind === 'file' ? sizeLabel(entry.size) : undefined }
+    return {
+      ...entry,
+      id: entry.path,
+      type,
+      symbolicLink: entry.kind === 'symlink',
+      directory: directory ? entry.path : undefined,
+      size: entry.kind === 'file' ? sizeLabel(entry.size) : undefined,
+      sizeBytes: entry.kind === 'file' ? entry.size : 0,
+    }
   }).sort((a, b) => Number(!!b.directory) - Number(!!a.directory) || a.name.localeCompare(b.name, 'zh-CN', { numeric: true }))
   return { ...data, entries }
 }
@@ -156,6 +186,47 @@ export async function downloadFile(path: string, elevated = false) {
   link.href = url
   link.download = filename(path)
   link.click()
+}
+
+export async function downloadArchive(paths: string[], elevated = false) {
+  const query = new URLSearchParams()
+  for (const path of paths) query.append('path', path)
+  if (elevated) query.set('elevated', 'true')
+  const url = `${prefix}/archive/download?${query}`
+  const response = await fetch(url, { method: 'HEAD' })
+  if (!response.ok) {
+    if (response.status === 401) throw new FileError('unauthorized', '登录已过期，请重新登录')
+    if (response.status === 403) {
+      throw new FileError('permission', elevated ? '无法以管理员身份打包下载，请检查权限或免密 sudo 授权' : '没有权限读取所选文件或文件夹')
+    }
+    if (response.status === 404) throw new FileError('not_found', '所选文件或文件夹不存在')
+    if (response.status === 415) throw new FileError('unsupported_type', '所选内容包含不支持打包的文件类型')
+    if (response.status === 400) throw new FileError('invalid_request', '所选路径无效')
+    throw responseError(undefined, response.status)
+  }
+  const link = document.createElement('a')
+  link.href = url
+  link.setAttribute('download', '')
+  link.click()
+}
+
+export function compressArchive(paths: string[], destination: string, conflict?: Conflict, elevated = false) {
+  return request<{ path: string }>(
+    endpoint('/archive/compress', {}, elevated),
+    json('POST', { paths, destination, ...(conflict ? { conflict } : {}) }),
+  )
+}
+
+export function extractArchive(
+  path: string,
+  mode: ExtractMode,
+  options: { destination?: string; conflict?: Conflict } = {},
+  elevated = false,
+) {
+  return request<ExtractResult>(
+    endpoint('/archive/extract', {}, elevated),
+    json('POST', { path, mode, ...options }),
+  )
 }
 
 export function imagePreviewURL(path: string, elevated: boolean) {

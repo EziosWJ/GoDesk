@@ -2,12 +2,14 @@ const prefix = '/api/v1/services'
 
 export type ServiceState = 'running' | 'completed' | 'stopped' | 'failed' | 'unknown'
 export type ServiceBootState = 'enabled' | 'disabled' | 'static' | 'masked' | 'runtime' | 'not_applicable'
-export type ServiceAction = 'start' | 'stop' | 'restart' | 'enable' | 'disable'
+export type ServiceAction = 'start' | 'stop' | 'restart' | 'reload' | 'enable' | 'disable'
 
 export type ServiceCapabilities = {
   start: boolean
   stop: boolean
   restart: boolean
+  reload: boolean
+  daemonReload: boolean
   enable: boolean
   disable: boolean
   logs: boolean
@@ -76,9 +78,16 @@ export const servicesApi = {
   action(unit: string, action: ServiceAction) {
     return request<void>(`/${encodeURIComponent(unit)}/${action}`, { method: 'POST' })
   },
+  daemonReload() {
+    return request<void>('/daemon-reload', { method: 'POST' })
+  },
   async logs(unit: string, lines: number, signal?: AbortSignal) {
     const query = new URLSearchParams({ lines: String(lines) })
     const data = await request<{ lines: string[] }>(`/${encodeURIComponent(unit)}/logs?${query}`, { signal })
     return data.lines
+  },
+  logsStreamUrl(unit: string, lines = 200) {
+    const query = new URLSearchParams({ lines: String(lines) })
+    return `${prefix}/${encodeURIComponent(unit)}/logs/stream?${query}`
   },
 }

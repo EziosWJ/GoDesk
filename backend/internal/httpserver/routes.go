@@ -11,6 +11,7 @@ import (
 	"godesk/internal/auth"
 	"godesk/internal/files"
 	"godesk/internal/health"
+	"godesk/internal/host"
 	"godesk/internal/monitor"
 	"godesk/internal/services"
 	"godesk/internal/terminal"
@@ -28,6 +29,7 @@ func New(db *sql.DB, credentials *auth.Store, terminals *terminal.Manager, monit
 	if healthEngine != nil {
 		healthEngine.Register(mux, credentials.RequireSession)
 	}
+	host.Register(mux, credentials.RequireSession)
 	if serviceBackend != nil {
 		services.Register(mux, credentials.RequireSession, serviceBackend)
 	}

@@ -12,10 +12,11 @@ import {
 } from './wallpapers'
 import { useSplitLayout } from './useSplitLayout'
 import { TerminalSettings } from './TerminalSettings'
+import { HostSettings } from './HostSettings'
 
 const categories = {
   appearance: { label: '外观', Icon: Monitor },
-  general: { label: '常规', Icon: Settings2 },
+  general: { label: '主机与常规', Icon: Settings2 },
   terminal: { label: '终端', Icon: Terminal },
   account: { label: '账户', Icon: LockKeyhole },
 }
@@ -202,19 +203,20 @@ export function Settings({ onSession }: { onSession: (session: Session) => void 
           </>
         ) : category === 'account' ? <ChangePassword onSession={onSession} /> : category === 'terminal' ? <TerminalSettings /> : (
           <GeneralSettings theme={theme} accent={accent} wallpaper={wallpaper} effective={effective}
-            onOpenAppearance={openAppearance} />
+            onOpenAppearance={openAppearance} onSession={onSession} />
         )}
       </section>
     </div>
   )
 }
 
-function GeneralSettings({ theme, accent, wallpaper, effective, onOpenAppearance }: {
+function GeneralSettings({ theme, accent, wallpaper, effective, onOpenAppearance, onSession }: {
   theme: ThemePreference
   accent: AccentPreference
   wallpaper: WallpaperId
   effective: EffectiveTheme
   onOpenAppearance: () => void
+  onSession: (session: Session) => void
 }) {
   const appearanceLabel = theme === 'system'
     ? `${themeOptions.system}（当前${effective === 'dark' ? '深色' : '浅色'}）`
@@ -223,25 +225,31 @@ function GeneralSettings({ theme, accent, wallpaper, effective, onOpenAppearance
 
   return (
     <>
-      <p className="system-caption settings-note">以下信息来自当前桌面环境，并随外观更改即时更新。</p>
-      <dl className="settings-list settings-summary">
-        <div><dt><Languages size={16} aria-hidden="true" />显示语言</dt><dd>简体中文</dd></div>
-        <div><dt><Timer size={16} aria-hidden="true" />时间格式</dt><dd>24 小时制</dd></div>
-        <div><dt><Monitor size={16} aria-hidden="true" />外观模式</dt><dd>{appearanceLabel}</dd></div>
-        <div>
-          <dt><Palette size={16} aria-hidden="true" />强调色</dt>
-          <dd>
-            <span className="settings-accent-chip" style={{ background: accentColor }} aria-hidden="true" />
-            {accentOptions[accent].label}
-          </dd>
+      <HostSettings onSession={onSession} />
+      <section className="settings-section" aria-labelledby="settings-desktop-env-title">
+        <div className="settings-section-head">
+          <h3 id="settings-desktop-env-title">桌面环境</h3>
+          <p className="system-caption">随外观更改即时更新</p>
         </div>
-        <div><dt><Wallpaper size={16} aria-hidden="true" />桌面壁纸</dt><dd>{wallpapers[wallpaper].name}</dd></div>
-      </dl>
-      <button type="button" className="app-control settings-jump" onClick={onOpenAppearance}>
-        <Palette size={16} aria-hidden="true" />
-        调整外观
-        <ChevronRight size={16} aria-hidden="true" />
-      </button>
+        <dl className="settings-list settings-summary">
+          <div><dt><Languages size={16} aria-hidden="true" />显示语言</dt><dd>简体中文</dd></div>
+          <div><dt><Timer size={16} aria-hidden="true" />时间格式</dt><dd>24 小时制</dd></div>
+          <div><dt><Monitor size={16} aria-hidden="true" />外观模式</dt><dd>{appearanceLabel}</dd></div>
+          <div>
+            <dt><Palette size={16} aria-hidden="true" />强调色</dt>
+            <dd>
+              <span className="settings-accent-chip" style={{ background: accentColor }} aria-hidden="true" />
+              {accentOptions[accent].label}
+            </dd>
+          </div>
+          <div><dt><Wallpaper size={16} aria-hidden="true" />桌面壁纸</dt><dd>{wallpapers[wallpaper].name}</dd></div>
+        </dl>
+        <button type="button" className="app-control settings-jump" onClick={onOpenAppearance}>
+          <Palette size={16} aria-hidden="true" />
+          调整外观
+          <ChevronRight size={16} aria-hidden="true" />
+        </button>
+      </section>
     </>
   )
 }

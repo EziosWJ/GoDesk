@@ -1,19 +1,24 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
+	"io/fs"
 	"log/slog"
 	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"godesk/internal/privileges"
 
 	"github.com/coder/websocket"
+	"golang.org/x/sys/unix"
 )
 
 func (m *Manager) Register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler) {
@@ -59,8 +64,15 @@ func (m *Manager) listHTTP(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (m *Manager) createHTTP(w http.ResponseWriter, r *http.Request) {
-	var form struct{}
-	if !readJSON(w, r, &form) {
+	var form struct {
+		Cwd string `json:"cwd"`
+	}
+	if !readJSONOptional(w, r, &form) {
+		return
+	}
+	dir, cwdErr := sessionDir(form.Cwd)
+	if cwdErr != nil {
+		writeRequestError(w, cwdErr)
 		return
 	}
 	settings, err := m.settings(r.Context())
@@ -68,9 +80,13 @@ func (m *Manager) createHTTP(w http.ResponseWriter, r *http.Request) {
 		failed(w, err)
 		return
 	}
-	summary, err := m.start(settings)
+	summary, err := m.start(settings, dir)
 	if errors.Is(err, errShuttingDown) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	if errors.Is(err, errCwdPermission) {
+		writeRequestError(w, &requestError{http.StatusForbidden, "cwd_permission_denied", "没有访问该工作目录的权限"})
 		return
 	}
 	if err != nil {
@@ -78,6 +94,57 @@ func (m *Manager) createHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, summary)
+}
+
+type requestError struct {
+	status  int
+	code    string
+	message string
+}
+
+func writeRequestError(w http.ResponseWriter, failure *requestError) {
+	writeJSON(w, failure.status, struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}{failure.code, failure.message})
+}
+
+// sessionDir validates a requested working directory. The Shell always runs as
+// the GoDesk host account, so the check uses the caller's effective credentials
+// and requires search (X_OK) permission, which is what chdir needs.
+func sessionDir(cwd string) (string, *requestError) {
+	if cwd == "" {
+		return "", nil
+	}
+	if !filepath.IsAbs(cwd) {
+		return "", &requestError{http.StatusBadRequest, "invalid_cwd", "工作目录必须是绝对路径"}
+	}
+	dir := filepath.Clean(cwd)
+	info, err := os.Stat(dir)
+	if err != nil {
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return "", &requestError{http.StatusNotFound, "cwd_not_found", "工作目录不存在"}
+		case errors.Is(err, fs.ErrPermission):
+			return "", &requestError{http.StatusForbidden, "cwd_permission_denied", "没有访问该工作目录的权限"}
+		default:
+			return "", &requestError{http.StatusBadRequest, "invalid_cwd", "无法访问工作目录"}
+		}
+	}
+	if !info.IsDir() {
+		return "", &requestError{http.StatusBadRequest, "cwd_not_directory", "工作目录不是文件夹"}
+	}
+	if err := unix.Faccessat(unix.AT_FDCWD, dir, unix.X_OK, unix.AT_EACCESS); err != nil {
+		switch {
+		case errors.Is(err, fs.ErrPermission):
+			return "", &requestError{http.StatusForbidden, "cwd_permission_denied", "没有访问该工作目录的权限"}
+		case errors.Is(err, fs.ErrNotExist):
+			return "", &requestError{http.StatusNotFound, "cwd_not_found", "工作目录不存在"}
+		default:
+			return "", &requestError{http.StatusBadRequest, "invalid_cwd", "无法进入工作目录"}
+		}
+	}
+	return dir, nil
 }
 
 func (m *Manager) renameHTTP(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +212,29 @@ func readJSON(w http.ResponseWriter, r *http.Request, form any) bool {
 		return false
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 8192)).Decode(form); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// readJSONOptional keeps clients that send an empty body compatible while
+// still accepting the usual JSON object.
+func readJSONOptional(w http.ResponseWriter, r *http.Request, form any) bool {
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 8192))
+	if err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return false
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return true
+	}
+	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mediaType != "application/json" {
+		http.Error(w, "expected application/json", http.StatusUnsupportedMediaType)
+		return false
+	}
+	if err := json.Unmarshal(body, form); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 		return false
 	}

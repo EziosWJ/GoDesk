@@ -192,7 +192,7 @@
 .file-inspector dl { border-top: 1px solid var(--godesk-divider); }
 .file-inspector dl > div {
   display: grid;
-  grid-template-columns: 3em minmax(0, 1fr);
+  grid-template-columns: 4em minmax(0, 1fr);
   align-items: baseline;
   gap: 10px;
   padding-block: 8px;
@@ -239,10 +239,28 @@
 .file-property-form .file-mode-input { font-family: var(--godesk-font-mono); }
 .file-property-form [role="alert"] { color: var(--godesk-danger); }
 .file-property-form > div { display: flex; flex-wrap: wrap; gap: 6px; }
-.file-table { min-width: 520px; }
+.file-table { min-width: 640px; }
 .file-table th { background: var(--godesk-surface); }
 .file-table :is(th, td):not(:first-child) { white-space: nowrap; }
 .file-table code, .file-inspector code { font-family: var(--godesk-font-mono); }
+.file-mod-time { font-variant-numeric: tabular-nums; }
+.file-sort-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 4px;
+  margin-inline: -4px;
+  border-radius: var(--godesk-radius-control);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.file-sort-button:hover { background: var(--godesk-hover); color: var(--godesk-fg); }
+.file-sort-button[data-active="true"] { color: var(--godesk-fg); font-weight: 600; }
+.file-sort-button[data-active="true"] svg { flex: none; color: var(--godesk-accent); }
+.file-sort-button:focus-visible { outline: 2px solid var(--godesk-focus); outline-offset: -1px; }
+.file-table th:last-child .file-sort-button { justify-content: flex-end; }
 .file-table tr[data-selected] { cursor: pointer; }
 .file-table tr[data-selected="false"]:hover { background: var(--godesk-hover); }
 .file-table tr[data-selected="true"] { background: var(--godesk-selected); }
@@ -385,6 +403,21 @@
   list-style: disc;
   overflow-wrap: anywhere;
 }
+.file-dialog-message { margin-top: 10px; overflow-wrap: anywhere; }
+.file-compress-form { display: grid; gap: 10px; margin-top: 10px; }
+.file-compress-form label { display: grid; gap: 6px; }
+.file-compress-form input {
+  width: 100%;
+  min-width: 0;
+  min-height: var(--godesk-control);
+  padding-inline: 8px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-surface);
+  color: var(--godesk-fg);
+}
+.file-compress-form input:focus-visible { outline: 2px solid var(--godesk-focus); }
+.file-dialog-error { color: var(--godesk-danger); }
 
 /* Compact the command bar before the window reaches the split-layout breakpoint. */
 @container app (max-width: 840px) {
@@ -392,7 +425,7 @@
 }
 
 @container app (max-width: 720px) {
-  .file-new-label, .file-layout-label, .file-toolbar-divider { display: none; }
+  .file-new-label, .file-sort-label, .file-layout-label, .file-toolbar-divider { display: none; }
 }
 
 @container app (max-width: 560px) {
@@ -402,7 +435,7 @@
 }
 
 @variant @max-godesk-split/app {
-  .file-extra-tools, .file-new-label, .file-layout-label { display: none; }
+  .file-extra-tools, .file-new-label, .file-sort-label, .file-layout-label { display: none; }
   .file-navigation { gap: 4px; }
 }
 

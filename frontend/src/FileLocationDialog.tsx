@@ -1,6 +1,6 @@
 import { useEffect, useEffectEvent, useId, useLayoutEffect, useRef, useState, type FormEvent, type PointerEvent } from 'react'
 import { ArrowLeft, ArrowRight, ArrowUp, ChevronRight, FolderPlus, HardDrive, House, Search, X } from 'lucide-react'
-import { announceFileChange, childPath, errorMessage, FileError, fileAction, filename as pathName, pathCrumbs, readDirectory, type Conflict } from './hostFiles'
+import { announceFileChange, childPath, errorMessage, FileError, fileAction, filename as pathName, pathCrumbs, readDirectory, regularFile, type Conflict } from './hostFiles'
 import { FileIcon } from './fileIcons'
 import './styles/file-location-dialog.css'
 
@@ -42,6 +42,10 @@ type FileLocationDialogProps = {
   mode: 'save'
   initialName?: string
   onSave: (path: string, conflict?: Conflict) => Promise<void>
+} | {
+  mode: 'open'
+  actionLabel?: string
+  onOpen: (path: string) => Promise<void>
 } | {
   mode: 'folder'
   actionLabel: string
@@ -85,6 +89,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   const request = useRef<AbortController>(undefined)
   const [query, setQuery] = useState('')
   const [filename, setFilename] = useState(props.mode === 'save' ? props.initialName ?? '' : '')
+  const [selectedPath, setSelectedPath] = useState<string>()
   const [error, setError] = useState('')
   const [newFolder, setNewFolder] = useState<string>()
   const [folderError, setFolderError] = useState('')
@@ -94,7 +99,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
   const breadcrumbs = pathCrumbs(directory)
   const currentName = directory ? pathName(directory) : '主目录'
   const entries = (data?.entries ?? []).filter(file => file.name.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
-  const canSelect = available && (props.mode === 'save' || props.canSelect(directory))
+  const canSelect = available && props.mode === 'folder' && props.canSelect(directory)
 
   useLayoutEffect(() => {
     const element = modal.current!
@@ -138,6 +143,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
           : { paths: [...current.paths.slice(0, current.index + 1), next.path], index: current.index + 1 })
       setQuery('')
       setError('')
+      setSelectedPath(undefined)
       setLocationError('')
       setLocationInput(undefined)
       setConflictPath(undefined)
@@ -264,6 +270,19 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
     }
   }
 
+  async function openSelected(path: string) {
+    if (props.mode !== 'open' || busy) return
+    setBusy(true)
+    setError('')
+    try {
+      await props.onOpen(path)
+    } catch (error) {
+      setError(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (props.mode !== 'save' || !available) return
@@ -373,7 +392,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
             value={query} onChange={event => { setQuery(event.target.value); if (listing.current) listing.current.scrollTop = 0 }} />
         </label>
       </div>
-      <div className="file-location-tools">
+      {props.mode !== 'open' && <div className="file-location-tools">
         <button type="button" className="app-control" disabled={!available || creatingFolder}
           onClick={() => setNewFolder('')}>
           <FolderPlus size={16} aria-hidden="true" />新建文件夹
@@ -385,7 +404,7 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
           <button type="submit" className="app-control" disabled={!available}>创建</button>
           <button type="button" className="app-control" onClick={() => { setNewFolder(undefined); setFolderError(''); listing.current?.focus() }}>取消</button>
         </form>}
-      </div>
+      </div>}
       {props.warning && <p className="file-location-error" role="status">{props.warning}</p>}
       {locationError && <p className="file-location-error" role="alert">{locationError}</p>}
       {folderError && <p className="file-location-error" id={`${id}-folder-error`} role="alert">{folderError}</p>}
@@ -400,18 +419,28 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
           <table aria-label="文件和文件夹">
             <thead><tr><th scope="col">名称</th><th scope="col">类型</th><th scope="col">大小</th></tr></thead>
             <tbody>
-              {entries.map(file => (
-                <tr key={file.id} data-folder={!!file.directory}>
-                  <td>{file.directory
-                    ? <button type="button" title={file.name} className="file-location-entry" onClick={() => navigate(file.directory!)}>
-                      <FileIcon file={file} /><span className="truncate">{file.name}</span>
-                    </button>
-                    : <span className="file-location-entry" title={file.name}><FileIcon file={file} /><span className="truncate">{file.name}</span></span>}
-                  </td>
-                  <td className="truncate">{file.type}</td>
-                  <td>{file.size}</td>
-                </tr>
-              ))}
+              {entries.map(file => {
+                const selectable = props.mode === 'open' && !file.directory && regularFile(file)
+                const selected = selectable && selectedPath === file.id
+                return (
+                  <tr key={file.id} data-folder={!!file.directory} data-selectable={selectable} data-selected={selected}>
+                    <td>{file.directory
+                      ? <button type="button" title={file.name} className="file-location-entry" onClick={() => navigate(file.directory!)}>
+                        <FileIcon file={file} /><span className="truncate">{file.name}</span>
+                      </button>
+                      : selectable
+                        ? <button type="button" title={file.name} className="file-location-entry" aria-pressed={selected}
+                          onClick={() => { setSelectedPath(file.id); setError('') }}
+                          onDoubleClick={() => void openSelected(file.id)}>
+                          <FileIcon file={file} /><span className="truncate">{file.name}</span>
+                        </button>
+                        : <span className="file-location-entry" title={file.name}><FileIcon file={file} /><span className="truncate">{file.name}</span></span>}
+                    </td>
+                    <td className="truncate">{file.type}</td>
+                    <td>{file.size}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
           {!entries.length && <p className="file-location-empty" role="status">{loading ? '正在读取目录…' : query.trim() ? '没有匹配的文件或文件夹。' : '此文件夹为空。'}</p>}
@@ -431,7 +460,17 @@ export function FileLocationDialog(props: FileLocationDialogProps) {
             onClick={() => void saveTo(conflictPath, 'keep')}>保留两者</button>}
           <button className="app-control" type="button" disabled={busy} onClick={onCancel}>取消</button>
         </div>
-      </form> : <footer className="file-location-form">
+      </form> : props.mode === 'open' ? <footer className="file-location-form">
+        {error ? <p className="file-location-error" role="alert">{error}</p>
+          : <p className="file-location-selected truncate" title={selectedPath}>
+            {selectedPath ? `已选择：${pathName(selectedPath)}` : '请选择要打开的文件'}
+          </p>}
+        <div className="service-dialog-actions">
+          <button className="app-control primary-control" type="button" disabled={!available || !selectedPath}
+            onClick={() => { if (selectedPath) void openSelected(selectedPath) }}>{props.actionLabel ?? '打开'}</button>
+          <button className="app-control" type="button" disabled={busy} onClick={onCancel}>取消</button>
+        </div>
+      </footer> : <footer className="file-location-form">
         {!canSelect && <p className="file-location-error" role="status">
           {available ? '无法使用当前文件夹，请选择其他位置。' : '目标文件夹已不可用，请重新选择。'}
         </p>}

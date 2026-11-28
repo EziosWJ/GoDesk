@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -32,6 +33,7 @@ type entry struct {
 	Group       string `json:"group"`
 	Permissions string `json:"permissions"`
 	Mode        string `json:"mode"`
+	ModTime     string `json:"modTime"`
 	TargetKind  string `json:"targetKind,omitempty"`
 	TargetError string `json:"targetError,omitempty"`
 }
@@ -85,7 +87,8 @@ func list(path string) ([]entry, error) {
 		stat := info.Sys().(*syscall.Stat_t)
 		next := entry{Name: item.Name(), Path: child, Kind: fileKind(info.Mode()), Size: info.Size(),
 			Owner: owners.label(stat.Uid, ownerName), Group: groups.label(stat.Gid, groupName),
-			Permissions: permissionLabel(info.Mode()), Mode: fmt.Sprintf("%04o", stat.Mode&07777)}
+			Permissions: permissionLabel(info.Mode()), Mode: fmt.Sprintf("%04o", stat.Mode&07777),
+			ModTime: info.ModTime().UTC().Format(time.RFC3339)}
 		if next.Kind == "symlink" {
 			target, err := os.Stat(child)
 			if err != nil {

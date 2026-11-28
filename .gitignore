@@ -5,3 +5,7 @@
 /.pnpm-store/
 /go.work
 /go.work.sum
+
+# 本地工具临时目录
+/.claude/
+/.playwright-mcp/

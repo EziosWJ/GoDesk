@@ -42,6 +42,25 @@
   line-height: var(--text-godesk-caption--line-height);
   overflow-wrap: anywhere;
 }
+.extensions-notice {
+  margin: 0;
+  padding: 7px 10px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+  overflow-wrap: anywhere;
+}
+.extensions-notice[data-tone='success'] {
+  border-color: color-mix(in srgb, var(--godesk-success) 35%, var(--godesk-divider));
+  background: color-mix(in srgb, var(--godesk-success) 10%, transparent);
+  color: var(--godesk-success);
+}
+.extensions-notice[data-tone='warning'] {
+  border-color: color-mix(in srgb, var(--godesk-warning) 40%, var(--godesk-divider));
+  background: color-mix(in srgb, var(--godesk-warning) 12%, transparent);
+  color: var(--godesk-warning);
+}
 
 .extensions-list {
   display: flex;
@@ -258,9 +277,184 @@
   background: var(--godesk-surface);
 }
 
+.extension-mono {
+  font-family: var(--godesk-font-mono);
+  overflow-wrap: anywhere;
+}
+
+.extension-upgrade-summary {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-subtle);
+}
+.extension-upgrade-summary > div {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+.extension-upgrade-summary dt {
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+.extension-upgrade-summary dd {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+
+.extension-warning-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--godesk-warning) 40%, var(--godesk-divider));
+  border-radius: var(--godesk-radius-control);
+  background: color-mix(in srgb, var(--godesk-warning) 12%, transparent);
+  color: var(--godesk-warning);
+  font-size: var(--text-godesk-caption);
+  line-height: var(--text-godesk-caption--line-height);
+}
+.extension-warning-box svg {
+  flex: none;
+  margin-top: 1px;
+}
+
+.extension-logs-dialog {
+  width: min(760px, calc(100% - 24px));
+  height: min(560px, calc(100% - 24px));
+}
+.extension-logs-header {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--godesk-divider);
+}
+.extension-logs-title {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.extension-logs-title h2 {
+  margin: 0;
+  font-size: var(--text-godesk-subtitle);
+  line-height: var(--text-godesk-subtitle--line-height);
+  font-weight: 650;
+}
+.extension-logs-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px 16px;
+}
+.extension-logs-toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.extension-log-search {
+  display: flex;
+  flex: 1;
+  min-width: 160px;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--godesk-control-compact);
+  padding-inline: 8px;
+  border: 1px solid var(--godesk-border);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-panel);
+  color: var(--godesk-muted);
+}
+.extension-log-search svg { flex: none; }
+.extension-log-search input {
+  flex: 1;
+  min-width: 0;
+  min-height: 26px;
+  border: 0;
+  background: transparent;
+  color: var(--godesk-fg);
+  font: inherit;
+  outline: none;
+}
+.extension-log-search input::placeholder { color: var(--godesk-muted); opacity: 1; }
+.extension-log-search:focus-within { outline: 2px solid var(--godesk-focus); outline-offset: -1px; }
+
+.extension-log-control {
+  min-height: var(--godesk-control-compact);
+  border: 1px solid var(--godesk-divider);
+  font-size: var(--text-godesk-caption);
+}
+.extension-log-control[aria-pressed='true'] {
+  background: var(--godesk-selected);
+  color: var(--godesk-accent);
+}
+.extension-log-meta {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.extension-log-state {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  min-height: 120px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-subtle);
+  color: var(--godesk-muted);
+  font-size: var(--text-godesk-caption);
+}
+.extension-log-view {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--godesk-divider);
+  border-radius: var(--godesk-radius-control);
+  background: var(--godesk-subtle);
+  font-family: var(--godesk-font-mono);
+  font-size: var(--text-godesk-compact);
+  line-height: var(--text-godesk-compact--line-height);
+}
+.extension-log-view[data-wrap='true'] .extension-log-line {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.extension-log-view[data-wrap='false'] .extension-log-line {
+  white-space: pre;
+}
+.extension-log-line mark {
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--godesk-accent) 24%, transparent);
+  color: inherit;
+}
+
+@keyframes extension-spin {
+  to { transform: rotate(360deg); }
+}
+.extension-spin {
+  animation: extension-spin 0.9s linear infinite;
+}
+
 @media (any-pointer: coarse) {
   .extension-actions .app-control,
   .extensions-toolbar-actions .app-control,
+  .extension-log-control,
+  .extension-log-search,
   .extension-field input[type='text'],
   .extension-field input[type='password'],
   .extension-field input[type='number'] {

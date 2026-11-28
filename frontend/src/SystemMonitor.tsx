@@ -302,13 +302,14 @@ function Overview({ metrics, error }: { metrics?: Metrics; error: string }) {
 type Tab = 'overview' | 'processes' | 'ports'
 const TABS: Tab[] = ['overview', 'processes', 'ports']
 
-export function SystemMonitor() {
+export function SystemMonitor({ active = true }: { active?: boolean }) {
   const [tab, setTab] = useState<Tab>('overview')
   const [metrics, setMetrics] = useState<Metrics>()
   const [error, setError] = useState('')
   const reloading = useRef(false)
 
   useEffect(() => {
+    if (!active) return
     const controller = new AbortController()
     let timer: number | undefined
     let stopped = false
@@ -342,7 +343,7 @@ export function SystemMonitor() {
       controller.abort()
       window.clearTimeout(timer)
     }
-  }, [])
+  }, [active])
 
   function handleTabKey(event: KeyboardEvent<HTMLDivElement>) {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home' && event.key !== 'End') return
@@ -374,7 +375,7 @@ export function SystemMonitor() {
           onClick={() => setTab('ports')}>端口</button>
       </div>
       {tab === 'overview' && <Overview metrics={metrics} error={error} />}
-      {tab === 'processes' && <ProcessesPanel />}
+      {tab === 'processes' && <ProcessesPanel active={active} />}
       {tab === 'ports' && <PortsPanel />}
     </div>
   )

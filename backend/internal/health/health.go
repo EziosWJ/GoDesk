@@ -361,7 +361,15 @@ func (e *Engine) applySampleLocked(sample monitor.Snapshot) {
 		if sample.Swap.Configured && sample.Swap.TotalBytes > 0 {
 			state := e.state("swap")
 			state.lastSwap = *sample.Swap
-			e.advanceThreshold(state, swapTriggerValue(*sample.Swap), sample.SampledAt, e.rules["swap"])
+			if sample.Swap.PagingAvailable {
+				e.advanceThreshold(state, swapTriggerValue(*sample.Swap), sample.SampledAt, e.rules["swap"])
+			} else {
+				// Paging counters are unavailable: hold the threshold state so
+				// an unknown paging activity is never evaluated as healthy or
+				// recovered. Recording the sample time keeps the check from
+				// aging into "stale" while capacity data keeps arriving.
+				state.observedAt = sample.SampledAt
+			}
 		} else {
 			delete(e.thresholds, "swap")
 		}
@@ -823,6 +831,10 @@ func (e *Engine) swapCheckLocked(now time.Time) Check {
 		Thresholds: &Thresholds{Warning: numberPointer(swapUsageWarningPercent)},
 		Details:    swapDetails(state.lastSwap),
 	}
+	// Capacity and paging are collected separately. Without the paging
+	// counters the swap warning condition cannot be evaluated, so the check is
+	// unknown rather than healthy. Capacity stays visible in the details.
+	pagingUnavailable := e.lastSample.Swap != nil && !e.lastSample.Swap.PagingAvailable
 	if !state.initialized {
 		if e.lastSample.Collection.SwapFailed {
 			since := ensureUnknownSince(state, now)
@@ -832,6 +844,11 @@ func (e *Engine) swapCheckLocked(now time.Time) Check {
 				return unknownCheck(check, ReasonStale, "Swap 数据已过期", since)
 			}
 			return unknownCheck(check, ReasonCollectFailed, "Swap 采集失败", since)
+		}
+		if pagingUnavailable {
+			since := ensureUnknownSince(state, now)
+			check.ObservedAt = now.UTC()
+			return unknownCheck(check, ReasonCollectFailed, "无法读取 Swap 换页统计，Swap 状态未知", since)
 		}
 		check.ObservedAt = now.UTC()
 		return unknownCheck(check, ReasonInitializing, "正在等待 Swap 数据", ensureUnknownSince(state, now))
@@ -845,6 +862,10 @@ func (e *Engine) swapCheckLocked(now time.Time) Check {
 	}
 	if e.lastSample.Collection.SwapFailed {
 		return unknownCheck(check, ReasonCollectFailed, "Swap 采集失败", ensureUnknownSince(state, now))
+	}
+	if pagingUnavailable {
+		since := ensureUnknownSince(state, now)
+		return unknownCheck(check, ReasonCollectFailed, "无法读取 Swap 换页统计，Swap 状态未知", since)
 	}
 	state.unknownSince = time.Time{}
 	check.Status = state.status

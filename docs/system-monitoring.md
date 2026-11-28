@@ -223,7 +223,7 @@
 
 - 只接受 `SIGTERM` 和 `SIGKILL`；其他值返回 `400 invalid_signal`。
 - `pid <= 1` 返回 `403 forbidden_pid`。目标进程不存在返回 `404 process_not_found`；`startTicks` 不匹配返回 `409 process_changed`。
-- 后端先以运行账号通过 pidfd（不可用时回退到校验 `startTicks` 后的 `kill`）发送信号。遇到 `EPERM` 时复用 [GoDesk 免密 sudo](privileges.md) 的管理员子进程；免密 sudo 不可用返回 `403 sudo_unavailable`，管理员子进程仍无权限返回 `403 permission_denied`。
+- 后端只通过 pidfd 以运行账号发送信号；`pidfd_open` 不可用时返回 `501 pidfd_unsupported`，不会回退到按 `startTicks` 校验后的数值 `kill`。遇到 `EPERM` 时复用 [GoDesk 免密 sudo](privileges.md) 的管理员子进程；免密 sudo 不可用返回 `403 sudo_unavailable`，管理员子进程仍无权限返回 `403 permission_denied`。
 - 成功返回 `204 No Content`。操作超时返回 `504 timeout`。
 
 ## 主机健康状态接口

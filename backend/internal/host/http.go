@@ -94,7 +94,7 @@ func (h *handler) hostnameHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !validHostname(request.Hostname) {
-		writeError(w, http.StatusBadRequest, "invalid_hostname", "主机名无效：请使用 1-63 个字母、数字或连字符组成的标签，且首尾必须是字母或数字")
+		writeError(w, http.StatusBadRequest, "invalid_hostname", "主机名无效：请使用不超过 64 个字符、由字母、数字或连字符组成的标签，且首尾必须是字母或数字")
 		return
 	}
 	env := h.environment()
@@ -223,11 +223,15 @@ func unsupportedMessage(reason string) string {
 	}
 }
 
+// hostNameMax is the Linux HOST_NAME_MAX (64) enforced by hostnamectl.
+const hostNameMax = 64
+
 // validHostname checks the RFC 1123 hostname form: dot-separated labels of
 // 1-63 ASCII letters, digits and hyphens, with each label starting and ending
-// in a letter or digit. The whole name stays within 253 characters.
+// in a letter or digit. The whole name stays within the Linux 64-character
+// limit so hostnamectl accepts it.
 func validHostname(name string) bool {
-	if len(name) == 0 || len(name) > 253 {
+	if len(name) == 0 || len(name) > hostNameMax {
 		return false
 	}
 	for _, label := range strings.Split(name, ".") {

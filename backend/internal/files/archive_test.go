@@ -207,6 +207,19 @@ func TestCompressArchiveAndConflicts(t *testing.T) {
 	if failureCode(t, w) != "exists" {
 		t.Fatalf("conflict code = %q", failureCode(t, w))
 	}
+	original := mustReadBytes(t, destination)
+	form["conflict"] = "skip"
+	w = sendJSONValue(t, mux, "/archive/compress", form, 200)
+	skipped := decodeValue[struct {
+		Path    string `json:"path"`
+		Skipped bool   `json:"skipped"`
+	}](t, w)
+	if skipped.Path != destination || !skipped.Skipped {
+		t.Fatalf("skip result = %+v", skipped)
+	}
+	if string(mustReadBytes(t, destination)) != string(original) {
+		t.Fatal("compress with conflict skip replaced the existing archive")
+	}
 	form["conflict"] = "keep"
 	w = sendJSONValue(t, mux, "/archive/compress", form, 200)
 	kept := filepath.Join(root, "bundle (1).zip")
@@ -216,6 +229,58 @@ func TestCompressArchiveAndConflicts(t *testing.T) {
 		t.Fatalf("kept path = %q, want %q", created.Path, kept)
 	}
 	readZip(t, mustReadBytes(t, kept))
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range entries {
+		if strings.HasPrefix(item.Name(), ".godesk-") {
+			t.Fatalf("compress left temporary %q behind", item.Name())
+		}
+	}
+}
+
+func TestCompressArchiveExistingDirectoryConflict(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "a.txt")
+	mustWrite(t, source, "alpha")
+	destination := filepath.Join(root, "bundle.zip")
+	if err := os.Mkdir(destination, 0700); err != nil {
+		t.Fatal(err)
+	}
+	mux := testRoutes()
+	form := map[string]any{"paths": []string{source}, "destination": destination}
+
+	w := sendJSONValue(t, mux, "/archive/compress", form, 400)
+	if failureCode(t, w) != "invalid_request" {
+		t.Fatalf("default conflict code = %q", failureCode(t, w))
+	}
+
+	form["conflict"] = "skip"
+	w = sendJSONValue(t, mux, "/archive/compress", form, 200)
+	skipped := decodeValue[struct {
+		Path    string `json:"path"`
+		Skipped bool   `json:"skipped"`
+	}](t, w)
+	if skipped.Path != destination || !skipped.Skipped {
+		t.Fatalf("skip result = %+v", skipped)
+	}
+	if info, err := os.Stat(destination); err != nil || !info.IsDir() {
+		t.Fatalf("existing directory was replaced: %v", err)
+	}
+
+	form["conflict"] = "keep"
+	w = sendJSONValue(t, mux, "/archive/compress", form, 200)
+	kept := filepath.Join(root, "bundle (1).zip")
+	if created := decodeValue[struct {
+		Path string `json:"path"`
+	}](t, w); created.Path != kept {
+		t.Fatalf("keep path = %q, want %q", created.Path, kept)
+	}
+	members := readZip(t, mustReadBytes(t, kept))
+	if string(members["a.txt"].body) != "alpha" {
+		t.Fatalf("kept archive members = %+v", members)
+	}
 }
 
 func TestCompressArchiveCancellationLeavesNothing(t *testing.T) {
@@ -268,6 +333,7 @@ type testArchiveEntry struct {
 	name string
 	body string
 	mode fs.FileMode
+	link string
 }
 
 func buildZipArchive(t *testing.T, entries []testArchiveEntry) []byte {
@@ -312,6 +378,8 @@ func buildTarArchive(t *testing.T, entries []testArchiveEntry, compressed bool) 
 		}
 		header := &tar.Header{Name: entry.name, Mode: int64(mode.Perm()), ModTime: archiveStamp}
 		switch {
+		case entry.link != "":
+			header.Typeflag, header.Linkname = tar.TypeLink, entry.link
 		case mode.IsDir():
 			header.Typeflag = tar.TypeDir
 		case mode&fs.ModeSymlink != 0:
@@ -353,7 +421,7 @@ func TestExtractArchiveFormats(t *testing.T) {
 		{name: "a.txt", body: "alpha"},
 		{name: "sub", mode: fs.ModeDir | 0755},
 		{name: "sub/b.txt", body: "beta"},
-		{name: "link", mode: fs.ModeSymlink | 0777, body: "a.txt"},
+		{name: "link", mode: fs.ModeSymlink | 0777, body: "./a.txt"},
 	}
 	tests := []struct {
 		name   string
@@ -527,4 +595,402 @@ func TestExtractUnsupportedType(t *testing.T) {
 	if code := failureCode(t, w); code != "unsupported_type" {
 		t.Fatalf("code = %q", code)
 	}
+}
+
+func TestExtractArchiveRejectsUnsafeFolderNames(t *testing.T) {
+	root := t.TempDir()
+	input := filepath.Join(root, "input")
+	if err := os.Mkdir(input, 0700); err != nil {
+		t.Fatal(err)
+	}
+	mux := testRoutes()
+	for _, name := range []string{"...zip", "..zip", `bad\name.zip`} {
+		t.Run(name, func(t *testing.T) {
+			archive := filepath.Join(input, name)
+			if err := os.WriteFile(archive, buildZipArchive(t, []testArchiveEntry{{name: "escape.txt", body: "x"}}), 0600); err != nil {
+				t.Fatal(err)
+			}
+			w := sendJSONValue(t, mux, "/archive/extract", map[string]string{"path": archive, "mode": "folder"}, 400)
+			if code := failureCode(t, w); code != "invalid_request" {
+				t.Fatalf("code = %q, want invalid_request", code)
+			}
+		})
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "input" {
+		t.Fatalf("unsafe folder name created entries outside the destination: %v", entries)
+	}
+	entries, err = os.ReadDir(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, item := range entries {
+		if item.Name() == "escape.txt" {
+			t.Fatal("unsafe folder name extracted into the destination itself")
+		}
+	}
+}
+
+func TestExtractFolderNeverFollowsExistingSymlink(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, "out")
+	outside := filepath.Join(root, "outside")
+	for _, dir := range []string{destination, outside} {
+		if err := os.Mkdir(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	link := filepath.Join(destination, "sample")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Fatal(err)
+	}
+	archive := filepath.Join(root, "sample.zip")
+	if err := os.WriteFile(archive, buildZipArchive(t, []testArchiveEntry{{name: "evil.txt", body: "evil"}}), 0600); err != nil {
+		t.Fatal(err)
+	}
+	mux := testRoutes()
+	for _, conflict := range []string{"", "skip"} {
+		form := map[string]string{"path": archive, "destination": destination, "mode": "folder"}
+		if conflict != "" {
+			form["conflict"] = conflict
+		}
+		w := sendJSONValue(t, mux, "/archive/extract", form, 409)
+		if code := failureCode(t, w); code != "exists" {
+			t.Fatalf("conflict %q: code = %q", conflict, code)
+		}
+	}
+	if target, err := os.Readlink(link); err != nil || target != outside {
+		t.Fatalf("existing symlink was replaced: %q, %v", target, err)
+	}
+	if _, err := os.Lstat(filepath.Join(outside, "evil.txt")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("extraction followed a symlink outside the destination")
+	}
+
+	form := map[string]string{"path": archive, "destination": destination, "mode": "folder", "conflict": "keep"}
+	w := sendJSONValue(t, mux, "/archive/extract", form, 200)
+	result := decodeValue[struct {
+		Destination string `json:"destination"`
+	}](t, w)
+	kept := filepath.Join(destination, "sample (1)")
+	if result.Destination != kept {
+		t.Fatalf("destination = %q, want %q", result.Destination, kept)
+	}
+	mustRead(t, filepath.Join(kept, "evil.txt"), "evil")
+	if _, err := os.Lstat(filepath.Join(outside, "evil.txt")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("keep extraction followed a symlink outside the destination")
+	}
+}
+
+func TestExtractArchiveRejectsLinkEscapes(t *testing.T) {
+	tarArchive := func(entries []testArchiveEntry) []byte { return buildTarArchive(t, entries, false) }
+	tests := []struct {
+		name   string
+		suffix string
+		data   []byte
+	}{
+		{"zip symlink parent escape", ".zip", buildZipArchive(t, []testArchiveEntry{
+			{name: "link", mode: fs.ModeSymlink | 0777, body: "../../outside.txt"},
+		})},
+		{"zip nested symlink escape", ".zip", buildZipArchive(t, []testArchiveEntry{
+			{name: "dir/link", mode: fs.ModeSymlink | 0777, body: "../../outside.txt"},
+		})},
+		{"zip symlink absolute", ".zip", buildZipArchive(t, []testArchiveEntry{
+			{name: "link", mode: fs.ModeSymlink | 0777, body: "/etc/passwd"},
+		})},
+		{"tar hardlink parent escape", ".tar", tarArchive([]testArchiveEntry{
+			{name: "ok.txt", body: "ok"}, {name: "copy", link: "../../outside.txt"},
+		})},
+		{"tar hardlink absolute", ".tar", tarArchive([]testArchiveEntry{
+			{name: "copy", link: "/etc/passwd"},
+		})},
+		{"tar hardlink to symlink", ".tar", tarArchive([]testArchiveEntry{
+			{name: "ok.txt", body: "ok"},
+			{name: "alias", mode: fs.ModeSymlink | 0777, body: "ok.txt"},
+			{name: "copy", link: "alias"},
+		})},
+		{"tar child through symlink", ".tar", tarArchive([]testArchiveEntry{
+			{name: "real/ok.txt", body: "ok"},
+			{name: "alias", mode: fs.ModeSymlink | 0777, body: "real"},
+			{name: "alias/copy.txt", body: "x"},
+		})},
+	}
+	mux := testRoutes()
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			destination := filepath.Join(root, "out")
+			if err := os.Mkdir(destination, 0700); err != nil {
+				t.Fatal(err)
+			}
+			archive := filepath.Join(root, "archive"+test.suffix)
+			if err := os.WriteFile(archive, test.data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			w := sendJSONValue(t, mux, "/archive/extract", map[string]string{
+				"path": archive, "destination": destination, "mode": "here",
+			}, 400)
+			if code := failureCode(t, w); code != "path_traversal" {
+				t.Fatalf("code = %q, want path_traversal", code)
+			}
+			if _, err := os.Lstat(filepath.Join(root, "outside.txt")); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatal("link entry escaped the destination")
+			}
+		})
+	}
+}
+
+func TestExtractFailureRollsBackIntoExistingDirectory(t *testing.T) {
+	tests := []struct {
+		name    string
+		entries []testArchiveEntry
+		status  int
+		code    string
+	}{
+		{"conflict after valid entries", []testArchiveEntry{
+			{name: "fresh/nested.txt", body: "new"},
+			{name: "blocked.txt", body: "replacement"},
+		}, 409, "exists"},
+		{"traversal after valid entries", []testArchiveEntry{
+			{name: "fresh/nested.txt", body: "new"},
+			{name: "../bad.txt", body: "bad"},
+		}, 400, "path_traversal"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			destination := filepath.Join(root, "out")
+			if err := os.Mkdir(destination, 0700); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(destination, "keep.txt"), "original")
+			mustWrite(t, filepath.Join(destination, "blocked.txt"), "existing")
+			archive := filepath.Join(root, "sample.zip")
+			if err := os.WriteFile(archive, buildZipArchive(t, test.entries), 0600); err != nil {
+				t.Fatal(err)
+			}
+			w := sendJSONValue(t, testRoutes(), "/archive/extract", map[string]string{
+				"path": archive, "destination": destination, "mode": "here",
+			}, test.status)
+			if code := failureCode(t, w); code != test.code {
+				t.Fatalf("code = %q, want %q", code, test.code)
+			}
+			mustRead(t, filepath.Join(destination, "keep.txt"), "original")
+			mustRead(t, filepath.Join(destination, "blocked.txt"), "existing")
+			if _, err := os.Lstat(filepath.Join(destination, "fresh")); !errors.Is(err, fs.ErrNotExist) {
+				t.Fatal("failed extraction left its created directory behind")
+			}
+			entries, err := os.ReadDir(destination)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 2 {
+				t.Fatalf("failed extraction left entries behind: %v", entries)
+			}
+		})
+	}
+}
+
+func TestExtractFailureRollsBackIntoExistingFolder(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, "out")
+	existing := filepath.Join(destination, "sample")
+	if err := os.MkdirAll(existing, 0700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(existing, "keep.txt"), "original")
+	archive := filepath.Join(root, "sample.zip")
+	entries := []testArchiveEntry{{name: "fresh.txt", body: "new"}, {name: "../bad.txt", body: "bad"}}
+	if err := os.WriteFile(archive, buildZipArchive(t, entries), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w := sendJSONValue(t, testRoutes(), "/archive/extract", map[string]string{
+		"path": archive, "destination": destination, "mode": "folder", "conflict": "skip",
+	}, 400)
+	if code := failureCode(t, w); code != "path_traversal" {
+		t.Fatalf("code = %q, want path_traversal", code)
+	}
+	mustRead(t, filepath.Join(existing, "keep.txt"), "original")
+	if _, err := os.Lstat(filepath.Join(existing, "fresh.txt")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("failed extraction left a file in the pre-existing folder")
+	}
+	if info, err := os.Stat(existing); err != nil || !info.IsDir() {
+		t.Fatalf("pre-existing folder was removed: %v", err)
+	}
+}
+
+func TestExtractDirectoryConflictWithExistingFile(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, "out")
+	if err := os.Mkdir(destination, 0700); err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Join(destination, "docs")
+	mustWrite(t, blocked, "occupied")
+	entries := []testArchiveEntry{
+		{name: "docs", mode: fs.ModeDir | 0755},
+		{name: "docs/a.txt", body: "a"},
+		{name: "docs/nested/b.txt", body: "b"},
+	}
+	archive := filepath.Join(root, "sample.zip")
+	if err := os.WriteFile(archive, buildZipArchive(t, entries), 0600); err != nil {
+		t.Fatal(err)
+	}
+	mux := testRoutes()
+	form := map[string]string{"path": archive, "destination": destination, "mode": "here", "conflict": "skip"}
+	result := decodeValue[struct {
+		Extracted int `json:"extracted"`
+		Skipped   int `json:"skipped"`
+	}](t, sendJSONValue(t, mux, "/archive/extract", form, 200))
+	if result.Extracted != 0 || result.Skipped != 3 {
+		t.Fatalf("skip directory conflict = %+v, want 0 extracted and 3 skipped", result)
+	}
+	mustRead(t, blocked, "occupied")
+	if _, err := os.Lstat(filepath.Join(destination, "docs (1)")); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("skip created a renamed directory")
+	}
+
+	form["conflict"] = "keep"
+	result = decodeValue[struct {
+		Extracted int `json:"extracted"`
+		Skipped   int `json:"skipped"`
+	}](t, sendJSONValue(t, mux, "/archive/extract", form, 200))
+	if result.Extracted != 3 || result.Skipped != 0 {
+		t.Fatalf("keep directory conflict = %+v, want 3 extracted", result)
+	}
+	mustRead(t, blocked, "occupied")
+	renamed := filepath.Join(destination, "docs (1)")
+	mustRead(t, filepath.Join(renamed, "a.txt"), "a")
+	mustRead(t, filepath.Join(renamed, "nested", "b.txt"), "b")
+}
+
+func TestExtractDirectoryConflictWithoutDirectoryEntry(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, "out")
+	if err := os.Mkdir(destination, 0700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(destination, "docs"), "occupied")
+	archive := filepath.Join(root, "sample.zip")
+	entries := []testArchiveEntry{{name: "docs/a.txt", body: "a"}}
+	if err := os.WriteFile(archive, buildZipArchive(t, entries), 0600); err != nil {
+		t.Fatal(err)
+	}
+	w := sendJSONValue(t, testRoutes(), "/archive/extract", map[string]string{
+		"path": archive, "destination": destination, "mode": "here", "conflict": "keep",
+	}, 200)
+	result := decodeValue[struct {
+		Extracted int `json:"extracted"`
+	}](t, w)
+	if result.Extracted != 1 {
+		t.Fatalf("extracted = %d, want 1", result.Extracted)
+	}
+	mustRead(t, filepath.Join(destination, "docs"), "occupied")
+	mustRead(t, filepath.Join(destination, "docs (1)", "a.txt"), "a")
+}
+
+func TestExtractTarGzRejectsCorruptTrailer(t *testing.T) {
+	valid := buildTarArchive(t, []testArchiveEntry{{name: "ok.txt", body: "ok"}}, true)
+	corruptCRC := bytes.Clone(valid)
+	corruptCRC[len(corruptCRC)-8] ^= 0xff
+	tests := []struct {
+		name string
+		data []byte
+	}{
+		{"corrupt crc", corruptCRC},
+		{"truncated trailer", valid[:len(valid)-4]},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			destination := filepath.Join(root, "out")
+			if err := os.Mkdir(destination, 0700); err != nil {
+				t.Fatal(err)
+			}
+			mustWrite(t, filepath.Join(destination, "keep.txt"), "original")
+			archive := filepath.Join(root, "sample.tar.gz")
+			if err := os.WriteFile(archive, test.data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			w := sendJSONValue(t, testRoutes(), "/archive/extract", map[string]string{
+				"path": archive, "destination": destination, "mode": "here",
+			}, 400)
+			if code := failureCode(t, w); code != "invalid_archive" {
+				t.Fatalf("code = %q, want invalid_archive", code)
+			}
+			entries, err := os.ReadDir(destination)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Name() != "keep.txt" {
+				t.Fatalf("corrupt gzip left entries behind: %v", entries)
+			}
+		})
+	}
+}
+
+func TestExtractCancellationRollsBack(t *testing.T) {
+	root := t.TempDir()
+	destination := filepath.Join(root, "out")
+	if err := os.Mkdir(destination, 0700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(destination, "keep.txt"), "original")
+	entries := []testArchiveEntry{
+		{name: "first.txt", body: strings.Repeat("a", 1<<20)},
+		{name: "second.txt", body: strings.Repeat("b", 16<<20)},
+	}
+	archive := filepath.Join(root, "sample.zip")
+	if err := os.WriteFile(archive, buildZipArchive(t, entries), 0600); err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(map[string]string{"path": archive, "destination": destination, "mode": "here"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	request := httptest.NewRequest(http.MethodPost, "/archive/extract", bytes.NewReader(body)).WithContext(ctx)
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		testRoutes().ServeHTTP(recorder, request)
+	}()
+
+	first := filepath.Join(destination, "first.txt")
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		if _, err := os.Lstat(first); err == nil {
+			cancel()
+			break
+		}
+		select {
+		case <-done:
+			t.Fatal("extraction completed before it was canceled")
+		case <-time.After(100 * time.Microsecond):
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first entry never appeared")
+		}
+	}
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("canceled extraction did not return")
+	}
+	if recorder.Code >= 200 && recorder.Code < 300 {
+		t.Fatalf("canceled extraction returned %d", recorder.Code)
+	}
+	onDisk, err := os.ReadDir(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(onDisk) != 1 || onDisk[0].Name() != "keep.txt" {
+		t.Fatalf("canceled extraction left entries behind: %v", onDisk)
+	}
+	mustRead(t, filepath.Join(destination, "keep.txt"), "original")
 }

@@ -169,6 +169,8 @@ func TestTimezoneFromLocaltime(t *testing.T) {
 	}{
 		{name: "absolute", target: "/usr/share/zoneinfo/Asia/Shanghai", want: "Asia/Shanghai"},
 		{name: "relative", target: "../usr/share/zoneinfo/Europe/Berlin", want: "Europe/Berlin"},
+		{name: "relative without parent", target: "usr/share/zoneinfo/Etc/UTC", want: "Etc/UTC"},
+		{name: "trailing whitespace", target: " /usr/share/zoneinfo/UTC\n", want: "UTC"},
 		{name: "unknown target", target: "/etc/localtime", want: ""},
 		{name: "traversal", target: "/usr/share/zoneinfo/../../../etc/passwd", want: ""},
 		{name: "empty", target: "", want: ""},
@@ -191,22 +193,30 @@ func TestDetectTimezone(t *testing.T) {
 	}
 	missing := errors.New("missing")
 
-	t.Run("timezone file wins", func(t *testing.T) {
+	// `timedatectl set-timezone` updates /etc/localtime, so a stale
+	// /etc/timezone must not win during readback.
+	t.Run("localtime symlink wins over stale timezone file", func(t *testing.T) {
 		got := detectTimezone(readFile("Asia/Shanghai\n", nil), readlink("/usr/share/zoneinfo/Europe/Berlin", nil))
-		if got != "Asia/Shanghai" {
-			t.Errorf("detectTimezone() = %q, want Asia/Shanghai", got)
-		}
-	})
-	t.Run("localtime symlink fallback", func(t *testing.T) {
-		got := detectTimezone(readFile("", missing), readlink("/usr/share/zoneinfo/Europe/Berlin", nil))
 		if got != "Europe/Berlin" {
 			t.Errorf("detectTimezone() = %q, want Europe/Berlin", got)
 		}
 	})
-	t.Run("invalid timezone file falls through", func(t *testing.T) {
-		got := detectTimezone(readFile("../etc/passwd", nil), readlink("/usr/share/zoneinfo/UTC", nil))
-		if got != "UTC" {
-			t.Errorf("detectTimezone() = %q, want UTC", got)
+	t.Run("relative localtime symlink", func(t *testing.T) {
+		got := detectTimezone(readFile("Asia/Shanghai\n", nil), readlink("../usr/share/zoneinfo/Europe/Berlin", nil))
+		if got != "Europe/Berlin" {
+			t.Errorf("detectTimezone() = %q, want Europe/Berlin", got)
+		}
+	})
+	t.Run("timezone file fallback", func(t *testing.T) {
+		got := detectTimezone(readFile("Asia/Shanghai\n", nil), readlink("", missing))
+		if got != "Asia/Shanghai" {
+			t.Errorf("detectTimezone() = %q, want Asia/Shanghai", got)
+		}
+	})
+	t.Run("invalid localtime falls back to timezone file", func(t *testing.T) {
+		got := detectTimezone(readFile("Asia/Shanghai\n", nil), readlink("/etc/localtime", nil))
+		if got != "Asia/Shanghai" {
+			t.Errorf("detectTimezone() = %q, want Asia/Shanghai", got)
 		}
 	})
 	t.Run("runtime fallback is never empty", func(t *testing.T) {
@@ -280,8 +290,8 @@ func TestInspectEnvironment(t *testing.T) {
 func TestValidHostname(t *testing.T) {
 	longLabel := strings.Repeat("a", 63)
 	tooLongLabel := strings.Repeat("a", 64)
-	validLong := strings.Repeat("a.", 125) + "aab" // 253 characters
-	tooLong := validLong + "a"                     // 254 characters
+	maxName := strings.Repeat("a.", 31) + "ab" // 64 characters
+	overMax := strings.Repeat("a.", 32) + "a"  // 65 characters
 
 	tests := []struct {
 		name     string
@@ -294,7 +304,7 @@ func TestValidHostname(t *testing.T) {
 		{name: "uppercase", hostname: "Host-01.Example.COM", want: true},
 		{name: "digits", hostname: "123", want: true},
 		{name: "63 character label", hostname: longLabel, want: true},
-		{name: "253 characters", hostname: validLong, want: true},
+		{name: "64 characters", hostname: maxName, want: true},
 		{name: "empty", hostname: "", want: false},
 		{name: "leading hyphen", hostname: "-host", want: false},
 		{name: "leading hyphen in label", hostname: "host.-name", want: false},
@@ -308,7 +318,7 @@ func TestValidHostname(t *testing.T) {
 		{name: "unicode", hostname: "héllo", want: false},
 		{name: "newline", hostname: "host\nname", want: false},
 		{name: "64 character label", hostname: tooLongLabel, want: false},
-		{name: "254 characters", hostname: tooLong, want: false},
+		{name: "65 characters", hostname: overMax, want: false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

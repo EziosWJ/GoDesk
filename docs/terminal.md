@@ -38,7 +38,7 @@
 
 会话字段为 `id`、`name`、`createdAt`、`lastAttachedAt`、`attached`、`controllerClientId` 和 `scrollbackLines`。`attached` 表示至少有一个连接。`controllerClientId` 为控制窗口的连接标识，无控制窗口时为 `null`。时间戳采用 RFC 3339，尚未接入时 `lastAttachedAt` 为 `null`。窗口是否最小化由各自桌面决定。无效输入返回 `400`，不存在的会话返回 `404`，未登录返回 `401`。
 
-`POST /api/v1/terminal/sessions` 接受可选的 `cwd` 字段（Linux 绝对路径）指定初始工作目录。终端始终以 goDesk 运行账号启动，不会隐式提权为 root；服务端使用运行账号校验 `cwd`，失败时返回 JSON `{code, message}`：无效路径返回 `400`（`invalid_cwd`）、非目录返回 `400`（`cwd_not_directory`）、目录不存在返回 `404`（`cwd_not_found`）、运行账号无权限访问返回 `403`（`cwd_permission_denied`）。
+`POST /api/v1/terminal/sessions` 接受可选的 `cwd` 字段（Linux 绝对路径）指定初始工作目录。终端始终以 goDesk 运行账号启动，不会隐式提权为 root；服务端使用运行账号的搜索（执行）权限校验 `cwd`，失败时返回 JSON `{code, message}`：无效路径返回 `400`（`invalid_cwd`）、非目录返回 `400`（`cwd_not_directory`）、目录不存在返回 `404`（`cwd_not_found`）、运行账号无权限访问返回 `403`（`cwd_permission_denied`）。
 
 ## WebSocket
 

@@ -30,13 +30,18 @@ type LoadStat struct {
 
 // SwapStat is the swap configuration and paging activity. The paging rates are
 // bytes per second so the health engine can reuse them without another read.
+// PagingAvailable is false when /proc/vmstat could not be read or did not
+// expose the pswpin/pswpout counters, and until a previous sample with an
+// elapsed interval exists to measure a rate against; in those cases the zero
+// rates carry no information.
 type SwapStat struct {
-	TotalBytes    uint64  `json:"totalBytes"`
-	UsedBytes     uint64  `json:"usedBytes"`
-	UsedPercent   float64 `json:"usedPercent"`
-	Configured    bool    `json:"configured"`
-	SwapInPerSec  float64 `json:"swapInPerSec"`
-	SwapOutPerSec float64 `json:"swapOutPerSec"`
+	TotalBytes      uint64  `json:"totalBytes"`
+	UsedBytes       uint64  `json:"usedBytes"`
+	UsedPercent     float64 `json:"usedPercent"`
+	Configured      bool    `json:"configured"`
+	PagingAvailable bool    `json:"pagingAvailable"`
+	SwapInPerSec    float64 `json:"swapInPerSec"`
+	SwapOutPerSec   float64 `json:"swapOutPerSec"`
 }
 
 type DiskIODevice struct {
@@ -100,7 +105,13 @@ func parseLoadAverage(r io.Reader) (LoadStat, error) {
 }
 
 func collectSwap(now time.Time, previous swapCounters, previousAt time.Time) (*SwapStat, swapCounters, time.Time, error) {
-	meminfo, err := os.Open("/proc/meminfo")
+	return collectSwapFrom(now, previous, previousAt, "/proc/meminfo", "/proc/vmstat")
+}
+
+// collectSwapFrom is collectSwap with injectable procfs paths so tests can
+// exercise a missing /proc/vmstat.
+func collectSwapFrom(now time.Time, previous swapCounters, previousAt time.Time, meminfoPath, vmstatPath string) (*SwapStat, swapCounters, time.Time, error) {
+	meminfo, err := os.Open(meminfoPath)
 	if err != nil {
 		return nil, previous, previousAt, err
 	}
@@ -111,7 +122,7 @@ func collectSwap(now time.Time, previous swapCounters, previousAt time.Time) (*S
 	}
 
 	current := swapCounters{}
-	if vmstat, err := os.Open("/proc/vmstat"); err == nil {
+	if vmstat, err := os.Open(vmstatPath); err == nil {
 		in, out, parseErr := parseVMStat(vmstat)
 		vmstat.Close()
 		if parseErr == nil {
@@ -190,7 +201,14 @@ func buildSwapStat(total, free uint64, current, previous swapCounters, elapsed f
 		free = total
 	}
 	used := total - free
-	stat := SwapStat{TotalBytes: total, UsedBytes: used, Configured: total > 0}
+	stat := SwapStat{
+		TotalBytes: total,
+		UsedBytes:  used,
+		Configured: total > 0,
+		// A rate needs a baseline: the first readable sample after startup or
+		// an outage must not claim paging availability with zero rates.
+		PagingAvailable: current.valid && previous.valid && elapsed > 0,
+	}
 	if total > 0 {
 		stat.UsedPercent = float64(used) / float64(total) * 100
 	}

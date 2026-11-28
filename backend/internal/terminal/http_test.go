@@ -3,6 +3,7 @@ package terminal
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -131,6 +132,88 @@ func TestCreateSessionCwdErrors(t *testing.T) {
 	}
 	if len(manager.list()) != 0 {
 		t.Fatal("rejected cwd started a session")
+	}
+}
+
+func TestCreateSessionCwdSearchPermission(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory search permission checks")
+	}
+	manager := newHTTPManager(t)
+	mux := sessionMux(manager)
+	root := t.TempDir()
+
+	searchOnly := filepath.Join(root, "search-only")
+	if err := os.Mkdir(searchOnly, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(searchOnly, 0111); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(searchOnly, 0700) })
+	recorder := postSession(t, mux, `{"cwd": `+strconv.Quote(searchOnly)+`}`)
+	if recorder.Code != http.StatusCreated {
+		t.Fatalf("searchable directory status = %d, want %d: %s", recorder.Code, http.StatusCreated, recorder.Body)
+	}
+
+	readOnly := filepath.Join(root, "read-only")
+	if err := os.Mkdir(readOnly, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(readOnly, 0444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(readOnly, 0700) })
+	recorder = postSession(t, mux, `{"cwd": `+strconv.Quote(readOnly)+`}`)
+	if recorder.Code != http.StatusForbidden {
+		t.Fatalf("non-searchable directory status = %d, want %d: %s", recorder.Code, http.StatusForbidden, recorder.Body)
+	}
+	var failure struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &failure); err != nil {
+		t.Fatal(err)
+	}
+	if failure.Code != "cwd_permission_denied" || failure.Message == "" {
+		t.Fatalf("failure = %+v", failure)
+	}
+}
+
+func TestStartMapsCwdPermission(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory search permission checks")
+	}
+	manager := newHTTPManager(t)
+	dir := filepath.Join(t.TempDir(), "read-only")
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0444); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0700) })
+	if _, err := manager.start(Settings{}, dir); !errors.Is(err, errCwdPermission) {
+		t.Fatalf("start error = %v, want errCwdPermission", err)
+	}
+}
+
+func TestStartDefaultSessionDoesNotMapShellPermission(t *testing.T) {
+	manager := newHTTPManager(t)
+	shell := filepath.Join(t.TempDir(), "shell")
+	if err := os.WriteFile(shell, []byte("#!/bin/sh\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("SHELL", shell)
+	_, err := manager.start(Settings{}, "")
+	if err == nil {
+		t.Fatal("start succeeded with a non-executable shell")
+	}
+	if errors.Is(err, errCwdPermission) {
+		t.Fatalf("start error = %v, want the raw shell permission error", err)
+	}
+	if !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("start error = %v, want a permission error", err)
 	}
 }
 

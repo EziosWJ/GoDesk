@@ -490,6 +490,55 @@ func TestSendSignalProcess(t *testing.T) {
 	}
 }
 
+func stubPidfdOpen(t *testing.T, err error) {
+	t.Helper()
+	original := pidfdOpen
+	pidfdOpen = func(int, int) (int, error) { return -1, err }
+	t.Cleanup(func() { pidfdOpen = original })
+}
+
+func TestSendSignalRefusesWithoutPidfd(t *testing.T) {
+	for _, stub := range []error{unix.ENOSYS, unix.EINVAL} {
+		t.Run(stub.Error(), func(t *testing.T) {
+			child := startSleep(t)
+			pid := child.Process.Pid
+			stat, err := readProcStat(pid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stubPidfdOpen(t, stub)
+
+			if err := sendSignal(pid, stat.startTicks, unix.SIGTERM); !errors.Is(err, errPidfdUnsupported) {
+				t.Fatalf("sendSignal error = %v, want errPidfdUnsupported", err)
+			}
+			// The numeric PID must never be signalled as a fallback.
+			if err := unix.Kill(pid, 0); err != nil {
+				t.Fatalf("process was signalled without pidfd: %v", err)
+			}
+
+			result := executeProcessSignal(t.Context(), processSignalOperation{PID: pid, StartTicks: stat.startTicks, Signal: "SIGTERM"})
+			if result.Status != http.StatusNotImplemented {
+				t.Fatalf("executeProcessSignal status = %d, want 501: %s", result.Status, result.Body)
+			}
+			var body errorBody
+			if err := json.Unmarshal(result.Body, &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.Code != "pidfd_unsupported" || body.Message == "" {
+				t.Errorf("body = %+v, want pidfd_unsupported with a message", body)
+			}
+
+			result = runProcessSignalOperation(t.Context(), processSignalOperation{PID: pid, StartTicks: stat.startTicks, Signal: "SIGTERM"})
+			if result.Status != http.StatusNotImplemented {
+				t.Fatalf("runProcessSignalOperation status = %d, want 501: %s", result.Status, result.Body)
+			}
+			if err := unix.Kill(pid, 0); err != nil {
+				t.Fatalf("process was signalled without pidfd: %v", err)
+			}
+		})
+	}
+}
+
 func TestRunProcessSignalOperation(t *testing.T) {
 	child := startSleep(t)
 	pid := child.Process.Pid
@@ -539,6 +588,7 @@ func TestSignalFailureMapping(t *testing.T) {
 	}{
 		{errProcessNotFound, http.StatusNotFound, "process_not_found"},
 		{errProcessChanged, http.StatusConflict, "process_changed"},
+		{errPidfdUnsupported, http.StatusNotImplemented, "pidfd_unsupported"},
 		{unix.EPERM, http.StatusForbidden, "permission_denied"},
 		{unix.EACCES, http.StatusForbidden, "permission_denied"},
 		{errors.New("boom"), http.StatusInternalServerError, "signal_failed"},

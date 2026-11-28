@@ -148,6 +148,7 @@ export function ServiceLogs({ unit, active, version, logsAvailable = true }: Ser
         const parsed = JSON.parse(event.data) as { line?: unknown }
         if (typeof parsed?.line !== 'string') return
         pending.push(parsed.line)
+        if (pending.length > MAX_LIVE_LINES) pending = pending.slice(-MAX_LIVE_LINES)
         setStreamStatus('live')
         setLoaded(true)
         if (rafId === undefined) rafId = window.requestAnimationFrame(flush)
@@ -159,6 +160,7 @@ export function ServiceLogs({ unit, active, version, logsAvailable = true }: Ser
     function onError(event: Event) {
       if (closed) return
       closed = true
+      pending = []
       if (rafId !== undefined) {
         window.cancelAnimationFrame(rafId)
         rafId = undefined
@@ -180,6 +182,7 @@ export function ServiceLogs({ unit, active, version, logsAvailable = true }: Ser
 
     return () => {
       closed = true
+      pending = []
       if (rafId !== undefined) window.cancelAnimationFrame(rafId)
       source.removeEventListener('open', onOpen)
       source.removeEventListener('message', onMessage)

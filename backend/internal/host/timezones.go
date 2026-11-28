@@ -62,8 +62,11 @@ func availableTimezones(root string) []string {
 }
 
 func skippedZoneDir(name string) bool {
+	// Etc/ contains valid installed zones such as Etc/UTC and Etc/GMT+8, so it
+	// is included. posix/ and right/ duplicate the tree with different leap
+	// second handling and are not valid IANA names for timedatectl.
 	switch name {
-	case "posix", "right", "Etc":
+	case "posix", "right":
 		return true
 	}
 	return false

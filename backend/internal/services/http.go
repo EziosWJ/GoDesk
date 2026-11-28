@@ -23,29 +23,48 @@ type errorBody struct {
 	Message string `json:"message"`
 }
 
+const (
+	// defaultSSEWriteTimeout bounds a single SSE write and flush so a stalled
+	// client cannot block the log stream handler forever.
+	defaultSSEWriteTimeout = 15 * time.Second
+)
+
 type handler struct {
-	backend       Backend
-	listTimeout   time.Duration
-	detailTimeout time.Duration
-	actionTimeout time.Duration
-	logsTimeout   time.Duration
+	backend         Backend
+	listTimeout     time.Duration
+	detailTimeout   time.Duration
+	actionTimeout   time.Duration
+	logsTimeout     time.Duration
+	sseWriteTimeout time.Duration
 }
 
 // Register mounts the service management HTTP routes behind requireSession.
 func Register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler, backend Backend) {
 	h := &handler{
-		backend:       backend,
-		listTimeout:   5 * time.Second,
-		detailTimeout: 10 * time.Second,
-		actionTimeout: 120 * time.Second,
-		logsTimeout:   10 * time.Second,
+		backend:         backend,
+		listTimeout:     5 * time.Second,
+		detailTimeout:   10 * time.Second,
+		actionTimeout:   120 * time.Second,
+		logsTimeout:     10 * time.Second,
+		sseWriteTimeout: defaultSSEWriteTimeout,
 	}
+	h.register(mux, requireSession)
+}
+
+func (h *handler) register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler) {
 	mux.Handle("GET /api/v1/services", requireSession(http.HandlerFunc(h.list)))
 	mux.Handle("GET /api/v1/services/{unit}", requireSession(http.HandlerFunc(h.detail)))
 	mux.Handle("POST /api/v1/services/daemon-reload", requireSession(http.HandlerFunc(h.daemonReload)))
 	mux.Handle("POST /api/v1/services/{unit}/{action}", requireSession(http.HandlerFunc(h.action)))
 	mux.Handle("GET /api/v1/services/{unit}/logs", requireSession(http.HandlerFunc(h.logs)))
 	mux.Handle("GET /api/v1/services/{unit}/logs/stream", requireSession(http.HandlerFunc(h.streamLogs)))
+}
+
+func (h *handler) sseTimeout() time.Duration {
+	if h.sseWriteTimeout <= 0 {
+		return defaultSSEWriteTimeout
+	}
+	return h.sseWriteTimeout
 }
 
 func (h *handler) list(w http.ResponseWriter, r *http.Request) {
@@ -225,7 +244,8 @@ func (h *handler) streamLogs(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rc := http.NewResponseController(w)
-	// Long-lived streams must not inherit http.Server.WriteTimeout.
+	// Long-lived streams must not inherit http.Server.WriteTimeout. Every
+	// individual write below sets its own bounded deadline instead.
 	if err := rc.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, errors.ErrUnsupported) {
 		slog.Warn("cannot clear service log stream write deadline", "error", err)
 	}
@@ -235,21 +255,19 @@ func (h *handler) streamLogs(w http.ResponseWriter, r *http.Request) {
 	headers.Set("Connection", "keep-alive")
 	headers.Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
-	if _, err := io.WriteString(w, ": connected\n\n"); err != nil {
-		return
-	}
-	if err := rc.Flush(); err != nil {
+	timeout := h.sseTimeout()
+	if err := writeSSEChunk(w, rc, ": connected\n\n", timeout); err != nil {
 		return
 	}
 
 	err := h.backend.StreamLogs(r.Context(), unit, lines, func(line string) error {
-		return writeSSE(w, rc, "", streamLine{Line: line})
+		return writeSSE(w, rc, "", streamLine{Line: line}, timeout)
 	})
 	if err == nil || r.Context().Err() != nil {
 		return
 	}
 	// Headers are already committed, so the failure can only go in-band.
-	_ = writeSSE(w, rc, "error", streamError(err))
+	_ = writeSSE(w, rc, "error", streamError(err), timeout)
 }
 
 func (h *handler) find(parent context.Context, unit string) (Service, bool, error) {
@@ -311,7 +329,7 @@ func streamError(err error) errorBody {
 
 // writeSSE serializes one event and flushes it to the client. An empty event
 // name produces a default ("message") event.
-func writeSSE(w http.ResponseWriter, rc *http.ResponseController, event string, value any) error {
+func writeSSE(w http.ResponseWriter, rc *http.ResponseController, event string, value any, timeout time.Duration) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -325,10 +343,24 @@ func writeSSE(w http.ResponseWriter, rc *http.ResponseController, event string, 
 	builder.WriteString("data: ")
 	builder.Write(data)
 	builder.WriteString("\n\n")
-	if _, err := io.WriteString(w, builder.String()); err != nil {
-		return err
+	return writeSSEChunk(w, rc, builder.String(), timeout)
+}
+
+// writeSSEChunk writes one pre-framed SSE chunk under a bounded write
+// deadline. The deadline is cleared afterwards so an idle stream waiting for
+// the next journal line is not torn down by an expired deadline.
+func writeSSEChunk(w http.ResponseWriter, rc *http.ResponseController, payload string, timeout time.Duration) error {
+	if err := rc.SetWriteDeadline(time.Now().Add(timeout)); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+		slog.Warn("cannot set service log stream write deadline", "error", err)
 	}
-	return rc.Flush()
+	_, writeErr := io.WriteString(w, payload)
+	if writeErr == nil {
+		writeErr = rc.Flush()
+	}
+	if err := rc.SetWriteDeadline(time.Time{}); err != nil && !errors.Is(err, errors.ErrUnsupported) {
+		slog.Warn("cannot clear service log stream write deadline", "error", err)
+	}
+	return writeErr
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {

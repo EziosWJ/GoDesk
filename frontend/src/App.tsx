@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react'
 import { prefersReducedMotion } from '@surdeddd/wmkit'
 import type { DesktopOptions, WindowState } from '@surdeddd/wmkit'
 import { useDesktop, useWindowManager } from '@surdeddd/wmkit/react'
@@ -403,6 +403,9 @@ export default function App({ onLogout, onSession }: {
           active={!closing && focusedId === win.id && win.stage !== 'minimized'} closing={closing} />
       </Suspense>
     )
+    if (id === 'monitor') return (
+      <apps.monitor.Content active={!closing && win.stage !== 'minimized'} />
+    )
     if (id === 'services') return (
       <apps.services.Content active={!closing && win.stage !== 'minimized'} onOpenText={openTextFile} />
     )
@@ -417,8 +420,8 @@ export default function App({ onLogout, onSession }: {
       return <Extensions plugins={plugins} loadError={loadError} load={loadExtensions}
         shortcuts={extensionShortcuts} onSetShortcut={setExtensionShortcut} onOpen={openExtension} />
     }
-    const { Content } = apps[id]
-    return <Content />
+    const app = (apps as unknown as Record<string, { Content?: ComponentType }>)[id]
+    return app?.Content ? <app.Content /> : null
   }
 
   async function confirmLogout() {

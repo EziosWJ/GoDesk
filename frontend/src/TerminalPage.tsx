@@ -32,25 +32,61 @@ function matchTerminalShortcut(event: Pick<globalThis.KeyboardEvent, 'ctrlKey' |
   return null
 }
 
-function getSearchDecorations(): NonNullable<ISearchOptions['decorations']> {
+type Rgb = [number, number, number]
+
+function parseCssRgb(raw: string): Rgb | null {
+  const value = raw.trim()
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(value)
+  if (hex) {
+    const digits = hex[1]
+    if (digits.length === 3) {
+      return [
+        parseInt(digits[0] + digits[0], 16),
+        parseInt(digits[1] + digits[1], 16),
+        parseInt(digits[2] + digits[2], 16),
+      ]
+    }
+    return [
+      parseInt(digits.slice(0, 2), 16),
+      parseInt(digits.slice(2, 4), 16),
+      parseInt(digits.slice(4, 6), 16),
+    ]
+  }
+  const rgb = /^rgba?\(\s*(\d+(?:\.\d+)?)\s*[\s,]\s*(\d+(?:\.\d+)?)\s*[\s,]\s*(\d+(?:\.\d+)?)/i.exec(value)
+  if (rgb) {
+    return [Number(rgb[1]), Number(rgb[2]), Number(rgb[3])]
+  }
+  return null
+}
+
+function toHex([r, g, b]: Rgb): string {
+  const channel = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, '0')
+  return `#${channel(r)}${channel(g)}${channel(b)}`
+}
+
+function mixHex(base: Rgb, tint: Rgb, ratio: number): string {
+  return toHex([
+    base[0] + (tint[0] - base[0]) * ratio,
+    base[1] + (tint[1] - base[1]) * ratio,
+    base[2] + (tint[2] - base[2]) * ratio,
+  ])
+}
+
+function getSearchDecorations(element: HTMLElement | null): ISearchOptions['decorations'] {
+  const styles = getComputedStyle(element ?? document.documentElement)
+  const surface = parseCssRgb(styles.getPropertyValue('--godesk-surface'))
+  const warning = parseCssRgb(styles.getPropertyValue('--godesk-warning'))
+  const accent = parseCssRgb(styles.getPropertyValue('--godesk-accent'))
+  if (!surface || !warning || !accent) return undefined
   const dark = document.documentElement.dataset.theme === 'dark'
-  return dark
-    ? {
-        matchBackground: '#5A461C',
-        matchBorder: '#B48224',
-        matchOverviewRuler: '#D4A039',
-        activeMatchBackground: '#8C651D',
-        activeMatchBorder: '#FBBF24',
-        activeMatchColorOverviewRuler: '#FBBF24',
-      }
-    : {
-        matchBackground: '#FDE68A',
-        matchBorder: '#D97706',
-        matchOverviewRuler: '#D97706',
-        activeMatchBackground: '#F59E0B',
-        activeMatchBorder: '#B45309',
-        activeMatchColorOverviewRuler: '#B45309',
-      }
+  return {
+    matchBackground: mixHex(surface, warning, dark ? 0.28 : 0.22),
+    matchBorder: mixHex(surface, warning, dark ? 0.68 : 0.72),
+    matchOverviewRuler: toHex(warning),
+    activeMatchBackground: mixHex(surface, accent, dark ? 0.42 : 0.30),
+    activeMatchBorder: toHex(accent),
+    activeMatchColorOverviewRuler: toHex(accent),
+  }
 }
 
 const connectionLabels = {
@@ -183,11 +219,12 @@ export default function TerminalPage({ session, clientId, controlRequest, active
       }
     }
     setSearchRegexError(false)
+    const decorations = getSearchDecorations(host.current)
     const searchOptions: ISearchOptions = {
       caseSensitive: options.caseSensitive,
       regex: options.regex,
       incremental: options.incremental,
-      decorations: getSearchDecorations(),
+      ...(decorations ? { decorations } : {}),
     }
     try {
       if (direction === 'next') searchAddon.findNext(query, searchOptions)

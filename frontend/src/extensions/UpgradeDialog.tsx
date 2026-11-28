@@ -14,7 +14,7 @@ export function UpgradeDialog({ plugin, file, source, onClose, onUpgraded }: {
 }) {
   const dialog = useRef<HTMLDialogElement>(null)
   const titleId = useId()
-  const [manifest, setManifest] = useState<ZipManifest | null | undefined>(undefined)
+  const [inspected, setInspected] = useState<{ file: File; manifest: ZipManifest | null }>()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
 
@@ -27,10 +27,15 @@ export function UpgradeDialog({ plugin, file, source, onClose, onUpgraded }: {
   useEffect(() => {
     let cancelled = false
     void readZipManifest(file).then(parsed => {
-      if (!cancelled) setManifest(parsed)
+      if (!cancelled) setInspected({ file, manifest: parsed })
     })
     return () => { cancelled = true }
   }, [file])
+
+  const inspecting = inspected?.file !== file
+  const manifest = inspecting ? undefined : inspected.manifest
+  const manifestId = manifest?.id
+  const idMismatch = Boolean(manifestId && manifestId !== plugin.id)
 
   function close() {
     if (pending) return
@@ -39,6 +44,7 @@ export function UpgradeDialog({ plugin, file, source, onClose, onUpgraded }: {
   }
 
   async function confirm() {
+    if (inspecting || idMismatch) return
     setPending(true)
     setError('')
     try {
@@ -84,21 +90,27 @@ export function UpgradeDialog({ plugin, file, source, onClose, onUpgraded }: {
           <div>
             <dt>版本变更</dt>
             <dd className="extension-mono">
-              {manifest === undefined && `${plugin.version} → 正在读取…`}
-              {manifest !== undefined && nextVersion && `${plugin.version} → ${nextVersion}`}
-              {manifest !== undefined && !nextVersion && `当前 ${plugin.version}（上传后由宿主校验新版本）`}
+              {inspecting && `${plugin.version} → 正在读取…`}
+              {!inspecting && nextVersion && `${plugin.version} → ${nextVersion}`}
+              {!inspecting && !nextVersion && `当前 ${plugin.version}（上传后由宿主校验新版本）`}
             </dd>
           </div>
         </dl>
 
-        {comparison === 'same' && nextVersion && (
+        {idMismatch && (
+          <p className="extensions-error" role="alert">
+            所选插件包的扩展 ID 为「{manifestId}」，与当前升级目标「{plugin.id}」不一致，无法用于升级此扩展。
+          </p>
+        )}
+
+        {!idMismatch && comparison === 'same' && nextVersion && (
           <p className="extension-warning-box" role="note">
             <TriangleAlert size={15} aria-hidden="true" />
             <span>新版本与当前版本相同（{plugin.version}），确认后将覆盖现有插件包。</span>
           </p>
         )}
 
-        {comparison === 'downgrade' && nextVersion && (
+        {!idMismatch && comparison === 'downgrade' && nextVersion && (
           <p className="extension-warning-box" role="note">
             <TriangleAlert size={15} aria-hidden="true" />
             <span>新版本（{nextVersion}）低于当前版本（{plugin.version}），确认后将降级替换现有插件包。</span>
@@ -112,8 +124,8 @@ export function UpgradeDialog({ plugin, file, source, onClose, onUpgraded }: {
 
       <div className="extension-dialog-actions">
         <button type="button" className="app-control" disabled={pending} onClick={close}>取消</button>
-        <button type="button" className="app-control primary-control" disabled={pending} autoFocus onClick={() => void confirm()}>
-          {pending ? '正在升级…' : '确认升级'}
+        <button type="button" className="app-control primary-control" disabled={pending || inspecting || idMismatch} autoFocus onClick={() => void confirm()}>
+          {pending ? '正在升级…' : inspecting ? '正在检查…' : '确认升级'}
         </button>
       </div>
     </dialog>

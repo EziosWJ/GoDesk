@@ -1,8 +1,11 @@
 package monitor
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseLoadAverage(t *testing.T) {
@@ -65,6 +68,9 @@ func TestBuildSwapStat(t *testing.T) {
 	if !stat.Configured {
 		t.Error("configured = false, want true")
 	}
+	if !stat.PagingAvailable {
+		t.Error("pagingAvailable = false, want true")
+	}
 	if stat.TotalBytes != 1000*1024 || stat.UsedBytes != 600*1024 {
 		t.Errorf("total = %d, used = %d", stat.TotalBytes, stat.UsedBytes)
 	}
@@ -84,9 +90,130 @@ func TestBuildSwapStat(t *testing.T) {
 	}
 
 	first := buildSwapStat(1000, 500, current, swapCounters{}, 2, 4096)
-	if first.SwapInPerSec != 0 || first.SwapOutPerSec != 0 {
-		t.Errorf("first sample rates = %v/%v, want 0", first.SwapInPerSec, first.SwapOutPerSec)
+	if first.PagingAvailable || first.SwapInPerSec != 0 || first.SwapOutPerSec != 0 {
+		t.Errorf("first sample = %+v, want unavailable with zero rates", first)
 	}
+	second := buildSwapStat(1000, 500, current, current, 2, 4096)
+	if !second.PagingAvailable {
+		t.Error("second sample PagingAvailable = false, want true")
+	}
+
+	missing := buildSwapStat(1000, 500, swapCounters{}, previous, 2, 4096)
+	if missing.PagingAvailable || missing.SwapInPerSec != 0 || missing.SwapOutPerSec != 0 {
+		t.Errorf("missing paging counters = %+v, want unavailable with zero rates", missing)
+	}
+}
+
+func TestCollectSwapPagingAvailability(t *testing.T) {
+	dir := t.TempDir()
+	meminfoPath := filepath.Join(dir, "meminfo")
+	if err := os.WriteFile(meminfoPath, []byte("SwapTotal: 1000 kB\nSwapFree: 500 kB\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	vmstatPath := filepath.Join(dir, "vmstat")
+	now := time.Unix(1000, 0)
+
+	t.Run("valid counters", func(t *testing.T) {
+		if err := os.WriteFile(vmstatPath, []byte("pswpin 100\npswpout 50\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stat, counters, at, err := collectSwapFrom(now, swapCounters{}, time.Time{}, meminfoPath, vmstatPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The first readable sample has no baseline, so it cannot report a rate.
+		if stat.PagingAvailable || !counters.valid {
+			t.Fatalf("first sample paging available = %v/%v, want false/true", stat.PagingAvailable, counters.valid)
+		}
+		if stat.TotalBytes != 1000*1024 || stat.UsedBytes != 500*1024 || stat.UsedPercent != 50 {
+			t.Errorf("capacity = %+v", stat)
+		}
+		if !at.Equal(now) {
+			t.Errorf("sampled at = %v, want %v", at, now)
+		}
+		stat, _, _, err = collectSwapFrom(at.Add(time.Second), counters, at, meminfoPath, vmstatPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stat.PagingAvailable {
+			t.Fatal("second sample paging available = false, want true")
+		}
+	})
+
+	t.Run("missing vmstat", func(t *testing.T) {
+		missing := filepath.Join(dir, "does-not-exist")
+		stat, counters, _, err := collectSwapFrom(now, swapCounters{in: 1, out: 2, valid: true}, now.Add(-time.Second), meminfoPath, missing)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stat.PagingAvailable || counters.valid {
+			t.Fatalf("paging available = %v/%v, want false", stat.PagingAvailable, counters.valid)
+		}
+		// Capacity stays visible even when paging activity is unknown.
+		if !stat.Configured || stat.TotalBytes != 1000*1024 || stat.UsedPercent != 50 {
+			t.Errorf("capacity = %+v", stat)
+		}
+		if stat.SwapInPerSec != 0 || stat.SwapOutPerSec != 0 {
+			t.Errorf("rates = %v/%v, want 0", stat.SwapInPerSec, stat.SwapOutPerSec)
+		}
+	})
+
+	t.Run("vmstat without paging counters", func(t *testing.T) {
+		if err := os.WriteFile(vmstatPath, []byte("nr_free_pages 100\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stat, _, _, err := collectSwapFrom(now, swapCounters{}, time.Time{}, meminfoPath, vmstatPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if stat.PagingAvailable {
+			t.Error("pagingAvailable = true, want false when pswpin/pswpout are missing")
+		}
+	})
+
+	t.Run("rates resume only from a valid sample", func(t *testing.T) {
+		if err := os.WriteFile(vmstatPath, []byte("pswpin 100\npswpout 50\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, previous, previousAt, err := collectSwapFrom(now, swapCounters{}, time.Time{}, meminfoPath, vmstatPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		gap := filepath.Join(dir, "missing-vmstat")
+		if _, previous, previousAt, err = collectSwapFrom(now.Add(2*time.Second), previous, previousAt, meminfoPath, gap); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(vmstatPath, []byte("pswpin 400\npswpout 150\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stat, recovered, recoveredAt, err := collectSwapFrom(now.Add(4*time.Second), previous, previousAt, meminfoPath, vmstatPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The first sample after the outage becomes the new baseline; it must
+		// not report availability with a zero rate.
+		if stat.PagingAvailable {
+			t.Error("pagingAvailable = true on the first sample after recovery, want false")
+		}
+		if stat.SwapInPerSec != 0 || stat.SwapOutPerSec != 0 {
+			t.Errorf("rates on first sample after recovery = %v/%v, want 0", stat.SwapInPerSec, stat.SwapOutPerSec)
+		}
+		if err := os.WriteFile(vmstatPath, []byte("pswpin 500\npswpout 250\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		stat, _, _, err = collectSwapFrom(now.Add(6*time.Second), recovered, recoveredAt, meminfoPath, vmstatPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stat.PagingAvailable {
+			t.Error("pagingAvailable = false on the second sample after recovery, want true")
+		}
+		wantIn := float64(100*os.Getpagesize()) / 2
+		wantOut := float64(100*os.Getpagesize()) / 2
+		if stat.SwapInPerSec != wantIn || stat.SwapOutPerSec != wantOut {
+			t.Errorf("rates after recovery = %v/%v, want %v/%v", stat.SwapInPerSec, stat.SwapOutPerSec, wantIn, wantOut)
+		}
+	})
 }
 
 func TestPhysicalBlockDevice(t *testing.T) {

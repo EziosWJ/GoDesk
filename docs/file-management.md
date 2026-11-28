@@ -46,7 +46,7 @@
 | `HEAD /download` | 与下载相同 | 与下载相同的状态及响应头 |
 | `GET /archive/download` | 重复查询参数 `path` | 附件形式的流式 ZIP 字节 |
 | `HEAD /archive/download` | 与打包下载相同 | 预检可读性，返回相同状态及响应头 |
-| `POST /archive/compress` | JSON `{paths, destination, conflict?}` | `{path}` |
+| `POST /archive/compress` | JSON `{paths, destination, conflict?}` | `{path}`，跳过时附 `skipped: true` |
 | `POST /archive/extract` | JSON `{path, destination?, mode, conflict?}` | `{destination, extracted, skipped}` |
 | `GET /image` | 查询参数 `path` | 浏览器内显示的图片字节和对应的媒体类型 |
 | `HEAD /image` | 与图片预览相同 | 与图片预览相同的状态及响应头 |
@@ -55,7 +55,7 @@
 
 `entries` 每项包含 `name`、`path`、`kind`、`size`、`owner`、`group`、`permissions`、`mode`、`modTime`。其中所有者和所属组为显示名称或数字字符串。`mode` 为四位八进制权限字符串，`modTime` 为 RFC 3339 UTC 修改时间戳。符号链接附带 `targetKind` 或 `targetError`。目录类型为 `directory`，普通文件为 `file`，符号链接为 `symlink`。
 
-`operation` 取 `mkdir`、`rename`、`copy`、`move` 或 `delete`。新建时 `path` 是父目录。重命名和新建提供 `name`。复制和移动提供目标目录 `destination`。批量由前端逐项调用，保留每项结果。未指定 `conflict` 时返回同名错误。复制、移动、上传、压缩和解压接受 `keep` 或 `skip`，创建文本接受 `keep`。解压支持 `.zip`、`.tar`、`.tar.gz`、`.tgz`，`mode` 取 `folder`（解压到同名文件夹）或 `here`（解压到当前目录）。
+`operation` 取 `mkdir`、`rename`、`copy`、`move` 或 `delete`。新建时 `path` 是父目录。重命名和新建提供 `name`。复制和移动提供目标目录 `destination`。批量由前端逐项调用，保留每项结果。未指定 `conflict` 时返回同名错误。复制、移动、上传、压缩和解压接受 `keep` 或 `skip`，创建文本接受 `keep`。解压支持 `.zip`、`.tar`、`.tar.gz`、`.tgz`，`mode` 取 `folder`（解压到同名文件夹）或 `here`（解压到当前目录）。解压遇到同名目录被普通文件占用时，`skip` 跳过该目录及其全部子项，`keep` 将目录改名为如 `foo (1)` 并同步迁移其子项。归档内的越界链接（`path_traversal`）和损坏或截断的 gzip 数据（`invalid_archive`）会拒绝整次解压并回滚本次已写入的条目。
 
 文本接口按内容接受任意文件名下无 NUL 字节且不超过 5 MiB 的 UTF-8 文本。读取时最多读取 5 MiB 加一个字节以判断是否超限。保存原文件时传入读取或上次保存取得的 `version`。编辑器在实际目标目录中写入临时文件，再原子替换原文件，因此保存原文件需要写入该文件和实际目标目录的权限。创建文本时省略版本。
 

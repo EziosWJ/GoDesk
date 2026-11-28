@@ -6,7 +6,9 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -489,6 +491,158 @@ func TestStreamLogsErrorEvent(t *testing.T) {
 				t.Errorf("body = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// deadlineWriter records SetWriteDeadline calls and can simulate a client that
+// stops draining the socket: the configured write blocks until the current
+// deadline expires and then fails with os.ErrDeadlineExceeded.
+type deadlineWriter struct {
+	*httptest.ResponseRecorder
+
+	mu           sync.Mutex
+	deadlines    []time.Time
+	timeouts     []time.Duration
+	lastDeadline time.Time
+	writes       int
+	stallFrom    int
+}
+
+func (w *deadlineWriter) SetWriteDeadline(deadline time.Time) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.deadlines = append(w.deadlines, deadline)
+	w.lastDeadline = deadline
+	if !deadline.IsZero() {
+		w.timeouts = append(w.timeouts, time.Until(deadline))
+	}
+	return nil
+}
+
+func (w *deadlineWriter) Write(data []byte) (int, error) {
+	w.mu.Lock()
+	w.writes++
+	index := w.writes
+	deadline := w.lastDeadline
+	w.mu.Unlock()
+
+	if w.stallFrom > 0 && index >= w.stallFrom {
+		if wait := time.Until(deadline); wait > 0 {
+			time.Sleep(wait)
+		}
+		return 0, os.ErrDeadlineExceeded
+	}
+	return w.ResponseRecorder.Write(data)
+}
+
+// WriteString must go through Write; otherwise the promoted
+// httptest.ResponseRecorder.WriteString would bypass the stall simulation for
+// io.WriteString callers.
+func (w *deadlineWriter) WriteString(data string) (int, error) {
+	return w.Write([]byte(data))
+}
+
+func (w *deadlineWriter) recordedDeadlines() []time.Time {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]time.Time{}, w.deadlines...)
+}
+
+func (w *deadlineWriter) recordedTimeouts() []time.Duration {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return append([]time.Duration{}, w.timeouts...)
+}
+
+func TestStreamLogsWriteDeadlines(t *testing.T) {
+	backend := &fakeBackend{
+		caps:     allCapabilities(),
+		services: []Service{{Name: "ssh.service"}},
+		stream:   []string{"line one", "line two"},
+	}
+	writer := &deadlineWriter{ResponseRecorder: httptest.NewRecorder()}
+	h := &handler{
+		backend:         backend,
+		listTimeout:     time.Second,
+		detailTimeout:   time.Second,
+		actionTimeout:   time.Second,
+		logsTimeout:     time.Second,
+		sseWriteTimeout: 30 * time.Millisecond,
+	}
+	mux := http.NewServeMux()
+	h.register(mux, func(next http.Handler) http.Handler { return next })
+	mux.ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/api/v1/services/ssh.service/logs/stream", nil))
+
+	if got := writer.Body.String(); got != ": connected\n\ndata: {\"line\":\"line one\"}\n\ndata: {\"line\":\"line two\"}\n\n" {
+		t.Errorf("body = %q", got)
+	}
+
+	// One initial clear, then a bounded deadline and an idle (zero) reset for
+	// each of the three chunks: connected, line one and line two.
+	deadlines := writer.recordedDeadlines()
+	if len(deadlines) != 7 {
+		t.Fatalf("deadlines = %v, want 7 entries", deadlines)
+	}
+	if !deadlines[0].IsZero() {
+		t.Errorf("initial deadline = %v, want zero", deadlines[0])
+	}
+	for chunk := 0; chunk < 3; chunk++ {
+		bounded := deadlines[1+chunk*2]
+		idle := deadlines[2+chunk*2]
+		if bounded.IsZero() {
+			t.Errorf("chunk %d deadline is zero, want a bounded deadline", chunk)
+		}
+		if !idle.IsZero() {
+			t.Errorf("chunk %d idle deadline = %v, want cleared", chunk, idle)
+		}
+	}
+	timeouts := writer.recordedTimeouts()
+	if len(timeouts) != 3 {
+		t.Fatalf("bounded deadlines = %v, want 3", timeouts)
+	}
+	for chunk, timeout := range timeouts {
+		if timeout <= 0 || timeout > 30*time.Millisecond {
+			t.Errorf("chunk %d timeout = %v, want at most 30ms", chunk, timeout)
+		}
+	}
+}
+
+func TestStreamLogsStalledWriteTerminates(t *testing.T) {
+	backend := &fakeBackend{
+		caps:     allCapabilities(),
+		services: []Service{{Name: "ssh.service"}},
+		stream:   []string{"line one", "line two"},
+	}
+	// The connected comment succeeds; the first log line write stalls until its
+	// deadline fires and fails the emit callback.
+	writer := &deadlineWriter{ResponseRecorder: httptest.NewRecorder(), stallFrom: 2}
+	h := &handler{
+		backend:         backend,
+		listTimeout:     time.Second,
+		detailTimeout:   time.Second,
+		actionTimeout:   time.Second,
+		logsTimeout:     time.Second,
+		sseWriteTimeout: 20 * time.Millisecond,
+	}
+	mux := http.NewServeMux()
+	h.register(mux, func(next http.Handler) http.Handler { return next })
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		mux.ServeHTTP(writer, httptest.NewRequest(http.MethodGet, "/api/v1/services/ssh.service/logs/stream", nil))
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("handler did not terminate after the stalled write deadline")
+	}
+
+	if !errors.Is(backend.streamResult, os.ErrDeadlineExceeded) {
+		t.Errorf("StreamLogs result = %v, want the write deadline error", backend.streamResult)
+	}
+	if !strings.HasPrefix(writer.Body.String(), ": connected\n\n") {
+		t.Errorf("body = %q, want the connected comment before the stall", writer.Body.String())
 	}
 }
 

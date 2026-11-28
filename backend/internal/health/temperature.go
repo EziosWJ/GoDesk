@@ -75,10 +75,15 @@ func sampleHwmon(dir string) []temperatureSensor {
 	}
 	var sensors []temperatureSensor
 	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "hwmon") {
+		if !strings.HasPrefix(entry.Name(), "hwmon") {
 			continue
 		}
 		chipDir := filepath.Join(dir, entry.Name())
+		// /sys/class/hwmon/hwmon* are symlinks on real systems, so entry.IsDir()
+		// is false there. Follow the link instead.
+		if info, err := os.Stat(chipDir); err != nil || !info.IsDir() {
+			continue
+		}
 		chip := readTrimmed(filepath.Join(chipDir, "name"))
 		if chip == "" {
 			chip = entry.Name()
@@ -121,10 +126,15 @@ func sampleThermal(dir string) []temperatureSensor {
 	}
 	var sensors []temperatureSensor
 	for _, entry := range entries {
-		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "thermal_zone") {
+		if !strings.HasPrefix(entry.Name(), "thermal_zone") {
 			continue
 		}
 		zoneDir := filepath.Join(dir, entry.Name())
+		// /sys/class/thermal/thermal_zone* are symlinks on real systems, so
+		// entry.IsDir() is false there. Follow the link instead.
+		if info, err := os.Stat(zoneDir); err != nil || !info.IsDir() {
+			continue
+		}
 		celsius, ok := readCelsius(filepath.Join(zoneDir, "temp"))
 		if !ok {
 			continue

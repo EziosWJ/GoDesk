@@ -33,7 +33,7 @@ func healthySnapshot(at time.Time) monitor.Snapshot {
 		CPU:       &monitor.CPUStat{Percent: 10, PerCore: []float64{10}},
 		Load:      &monitor.LoadStat{Load1: 0.2, Load5: 0.3, Load15: 0.4, LogicalCores: 4},
 		Memory:    &monitor.MemoryStat{Total: 100, Used: 50, Available: 50, Percent: 50},
-		Swap:      &monitor.SwapStat{TotalBytes: 100, UsedBytes: 10, UsedPercent: 10, Configured: true},
+		Swap:      &monitor.SwapStat{TotalBytes: 100, UsedBytes: 10, UsedPercent: 10, Configured: true, PagingAvailable: true},
 		Disks: []monitor.DiskStat{
 			{Mountpoint: "/", Total: 100, Used: 10, Percent: 10, Available: 90},
 		},
@@ -1060,6 +1060,66 @@ func writeSysFile(t *testing.T, path, content string) {
 	}
 }
 
+// Real /sys/class/hwmon/hwmon* and /sys/class/thermal/thermal_zone* entries are
+// symlinks into the device tree; the sampler must follow them.
+func TestSysfsTemperatureSamplerFollowsSymlinks(t *testing.T) {
+	root := t.TempDir()
+
+	hwmonDevice := filepath.Join(root, "devices/platform/coretemp.0/hwmon/hwmon0")
+	writeSysFile(t, filepath.Join(hwmonDevice, "name"), "coretemp")
+	writeSysFile(t, filepath.Join(hwmonDevice, "temp1_input"), "45000")
+	writeSysFile(t, filepath.Join(hwmonDevice, "temp1_label"), "Package id 0")
+	writeSysFile(t, filepath.Join(hwmonDevice, "temp1_max"), "80000")
+	writeSysFile(t, filepath.Join(hwmonDevice, "temp1_crit"), "100000")
+
+	thermalDevice := filepath.Join(root, "devices/virtual/thermal/thermal_zone0")
+	writeSysFile(t, filepath.Join(thermalDevice, "type"), "x86_pkg_temp")
+	writeSysFile(t, filepath.Join(thermalDevice, "temp"), "47000")
+	writeSysFile(t, filepath.Join(thermalDevice, "trip_point_0_type"), "passive")
+	writeSysFile(t, filepath.Join(thermalDevice, "trip_point_0_temp"), "85000")
+	writeSysFile(t, filepath.Join(thermalDevice, "trip_point_1_type"), "critical")
+	writeSysFile(t, filepath.Join(thermalDevice, "trip_point_1_temp"), "100000")
+
+	hwmonClass := filepath.Join(root, "sys/class/hwmon")
+	thermalClass := filepath.Join(root, "sys/class/thermal")
+	for _, dir := range []string{hwmonClass, thermalClass} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Symlink(filepath.Join("..", "..", "..", "devices/platform/coretemp.0/hwmon/hwmon0"), filepath.Join(hwmonClass, "hwmon0")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join("..", "..", "..", "devices/virtual/thermal/thermal_zone0"), filepath.Join(thermalClass, "thermal_zone0")); err != nil {
+		t.Fatal(err)
+	}
+	// Broken symlinks and plain files must be skipped without failing the scan.
+	if err := os.Symlink(filepath.Join("..", "..", "..", "devices/missing/hwmon"), filepath.Join(hwmonClass, "hwmon1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(thermalClass, "thermal_zone1"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	sensors := (&sysfsTemperatureSampler{root: root}).Sample()
+	if len(sensors) != 2 {
+		t.Fatalf("sensors = %#v, want 2", sensors)
+	}
+	byID := make(map[string]temperatureSensor, len(sensors))
+	for _, sensor := range sensors {
+		byID[sensor.ID] = sensor
+	}
+
+	hwmon := byID[temperatureCheckID("coretemp/Package id 0")]
+	if hwmon.Celsius != 45 || hwmon.Warning == nil || *hwmon.Warning != 80 || hwmon.Critical == nil || *hwmon.Critical != 100 {
+		t.Errorf("symlinked hwmon sensor = %+v", hwmon)
+	}
+	thermal := byID[temperatureCheckID("thermal/x86_pkg_temp")]
+	if thermal.Celsius != 47 || thermal.Warning == nil || *thermal.Warning != 85 || thermal.Critical == nil || *thermal.Critical != 100 {
+		t.Errorf("symlinked thermal sensor = %+v", thermal)
+	}
+}
+
 // --- V2: load average ---
 
 func loadSample(engine *Engine, clock *fakeClock, at time.Time, load5 float64, cores int) Snapshot {
@@ -1225,7 +1285,7 @@ func TestSwapHighUsageWithoutPagingStaysHealthy(t *testing.T) {
 	at := baseTime
 	for i := 0; i < 20; i++ {
 		snapshot := swapSample(engine, clock, at.Add(time.Duration(i)*time.Second), monitor.SwapStat{
-			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true,
+			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true, PagingAvailable: true,
 		})
 		check := findCheck(t, snapshot, "swap")
 		if check.Status != StatusHealthy || check.Reason != ReasonOK {
@@ -1249,7 +1309,7 @@ func TestSwapNeedsHighUsageAndPaging(t *testing.T) {
 	// High usage alone must not trigger.
 	for i := 0; i < 15; i++ {
 		snapshot := swapSample(engine, clock, at.Add(time.Duration(i)*time.Second), monitor.SwapStat{
-			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true,
+			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true, PagingAvailable: true,
 		})
 		if check := findCheck(t, snapshot, "swap"); check.Status != StatusHealthy {
 			t.Fatalf("high usage without paging status = %q, want healthy", check.Status)
@@ -1259,7 +1319,7 @@ func TestSwapNeedsHighUsageAndPaging(t *testing.T) {
 	// Paging at low usage must not trigger either.
 	for i := 15; i < 30; i++ {
 		snapshot := swapSample(engine, clock, at.Add(time.Duration(i)*time.Second), monitor.SwapStat{
-			TotalBytes: 1000, UsedBytes: 100, UsedPercent: 10, Configured: true, SwapOutPerSec: 4096,
+			TotalBytes: 1000, UsedBytes: 100, UsedPercent: 10, Configured: true, PagingAvailable: true, SwapOutPerSec: 4096,
 		})
 		if check := findCheck(t, snapshot, "swap"); check.Status != StatusHealthy {
 			t.Fatalf("paging at low usage status = %q, want healthy", check.Status)
@@ -1270,7 +1330,7 @@ func TestSwapNeedsHighUsageAndPaging(t *testing.T) {
 	var snapshot Snapshot
 	for i := 30; i <= 40; i++ {
 		snapshot = swapSample(engine, clock, at.Add(time.Duration(i)*time.Second), monitor.SwapStat{
-			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true, SwapInPerSec: 2048,
+			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true, PagingAvailable: true, SwapInPerSec: 2048,
 		})
 	}
 	check := findCheck(t, snapshot, "swap")
@@ -1288,7 +1348,7 @@ func TestSwapNeedsHighUsageAndPaging(t *testing.T) {
 	// Paging stops: the warning clears after the recovery window.
 	for i := 41; i <= 43; i++ {
 		snapshot = swapSample(engine, clock, at.Add(time.Duration(i)*time.Second), monitor.SwapStat{
-			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true,
+			TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true, PagingAvailable: true,
 		})
 	}
 	check = findCheck(t, snapshot, "swap")
@@ -1306,6 +1366,82 @@ func TestSwapCollectFailure(t *testing.T) {
 	check := findCheck(t, snapshot, "swap")
 	if !check.Applicable || check.Status != StatusUnknown || check.Reason != ReasonCollectFailed {
 		t.Fatalf("applicable=%v status=%q reason=%q", check.Applicable, check.Status, check.Reason)
+	}
+}
+
+func TestSwapPagingUnavailableIsUnknown(t *testing.T) {
+	engine, clock := newTestEngine()
+	snapshot := swapSample(engine, clock, baseTime, monitor.SwapStat{
+		TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true,
+	})
+	check := findCheck(t, snapshot, "swap")
+	if !check.Applicable || check.Status != StatusUnknown || check.Reason != ReasonCollectFailed {
+		t.Fatalf("applicable=%v status=%q reason=%q, want unknown/collect_failed", check.Applicable, check.Status, check.Reason)
+	}
+	if check.Since == nil {
+		t.Error("since is nil")
+	}
+	// Capacity stays visible even though paging activity is unknown.
+	details := check.Details.(SwapDetails)
+	if details.TotalBytes != 1000 || details.UsedBytes != 900 || details.UsedPercent != 90 {
+		t.Errorf("details = %+v, want capacity preserved", details)
+	}
+	if snapshot.Summary.Unknown != 1 || snapshot.Summary.IssueCount != 0 {
+		t.Errorf("summary = %+v", snapshot.Summary)
+	}
+	if snapshot.Overall != StatusUnknown {
+		t.Errorf("overall = %q, want unknown", snapshot.Overall)
+	}
+}
+
+func TestSwapPagingUnavailablePausesEvaluation(t *testing.T) {
+	engine, clock := newTestEngine()
+	engine.rules["swap"] = rule{warning: 1, critical: unreachableThreshold, recoverHealthy: 0.5, recoverWarning: unreachableThreshold, enterAfter: 9 * time.Second, recoverAfter: 3 * time.Second}
+	at := baseTime
+	paging := monitor.SwapStat{
+		TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true,
+		PagingAvailable: true, SwapInPerSec: 2048,
+	}
+
+	var snapshot Snapshot
+	for i := 0; i <= 10; i++ {
+		snapshot = swapSample(engine, clock, at.Add(time.Duration(i)*time.Second), paging)
+	}
+	if check := findCheck(t, snapshot, "swap"); check.Status != StatusWarning {
+		t.Fatalf("status = %q, want warning before the paging outage", check.Status)
+	}
+
+	// The paging counters disappear: an active warning must not be reported as
+	// healthy (or recovered) while paging activity cannot be observed.
+	unknown := monitor.SwapStat{TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true}
+	for i := 11; i <= 15; i++ {
+		snapshot = swapSample(engine, clock, at.Add(time.Duration(i)*time.Second), unknown)
+		check := findCheck(t, snapshot, "swap")
+		if check.Status != StatusUnknown || check.Reason != ReasonCollectFailed {
+			t.Fatalf("sample %d status = %q/%q, want unknown/collect_failed", i, check.Status, check.Reason)
+		}
+		if check.Value == nil || *check.Value != 90 {
+			t.Errorf("value = %v, want the current used percent 90", check.Value)
+		}
+		if details := check.Details.(SwapDetails); details.UsedPercent != 90 {
+			t.Errorf("details = %+v, want capacity preserved", details)
+		}
+		if snapshot.Overall != StatusUnknown {
+			t.Errorf("sample %d overall = %q, want unknown", i, snapshot.Overall)
+		}
+	}
+
+	// Once paging counters return the accumulated window is re-evaluated from a
+	// stale gap, so healthy activity does not immediately restore the warning.
+	snapshot = swapSample(engine, clock, at.Add(16*time.Second), monitor.SwapStat{
+		TotalBytes: 1000, UsedBytes: 900, UsedPercent: 90, Configured: true, PagingAvailable: true,
+	})
+	check := findCheck(t, snapshot, "swap")
+	if check.Status != StatusHealthy || check.Reason != ReasonOK {
+		t.Fatalf("status after paging recovery = %q/%q, want healthy/ok", check.Status, check.Reason)
+	}
+	if check.Since != nil {
+		t.Errorf("since = %v, want nil", check.Since)
 	}
 }
 

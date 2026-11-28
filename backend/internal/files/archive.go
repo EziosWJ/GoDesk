@@ -228,7 +228,10 @@ func (s *server) compressArchive(w http.ResponseWriter, r *http.Request) {
 		failure(w, errPath)
 		return
 	}
-	if info, err := os.Lstat(destination); err == nil && info.IsDir() {
+	// An existing directory is a conflict like any other occupied destination:
+	// skip and keep resolve it through chooseTarget below. Only an unspecified
+	// conflict policy rejects it up front.
+	if info, err := os.Lstat(destination); err == nil && info.IsDir() && form.Conflict == "" {
 		failure(w, errPath)
 		return
 	}
@@ -274,11 +277,7 @@ func (s *server) compressArchive(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
-	conflict := ""
-	if form.Conflict == "keep" {
-		conflict = "keep"
-	}
-	outcome, err := chooseTarget(destination, conflict, false, func(path string) error {
+	outcome, err := chooseTarget(destination, form.Conflict, false, func(path string) error {
 		return renameExclusive(tempPath, path)
 	})
 	if err != nil {
@@ -286,9 +285,14 @@ func (s *server) compressArchive(w http.ResponseWriter, r *http.Request) {
 		failure(w, err)
 		return
 	}
+	if outcome.Skipped {
+		// The existing archive is authoritative; discard the temporary output.
+		_ = os.Remove(tempPath)
+	}
 	jsonResponse(w, struct {
-		Path string `json:"path"`
-	}{outcome.Path})
+		Path    string `json:"path"`
+		Skipped bool   `json:"skipped,omitempty"`
+	}{outcome.Path, outcome.Skipped})
 }
 
 func archiveFormat(path string) (string, bool) {
@@ -316,6 +320,54 @@ func archiveStem(name string) string {
 		}
 	}
 	return "archive"
+}
+
+// validArchiveStem rejects folder names that would escape the destination or
+// resolve to the destination itself when mode is "folder".
+func validArchiveStem(stem string) bool {
+	return stem != "" && stem != "." && stem != ".." && !strings.ContainsAny(stem, "/\\\x00")
+}
+
+// extractionRoot picks the mode:"folder" target inside destRoot. A pre-existing
+// symlink or regular file at that name is never followed or reused: keep picks
+// a fresh numbered directory, and skip/default fail cleanly.
+func extractionRoot(destRoot *os.Root, stem, conflict string) (string, bool, error) {
+	info, err := destRoot.Lstat(stem)
+	if errors.Is(err, fs.ErrNotExist) {
+		return stem, false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	if info.IsDir() {
+		switch conflict {
+		case "skip":
+			return stem, true, nil
+		case "keep":
+			return availableExtractionDir(destRoot, stem)
+		default:
+			return "", false, fs.ErrExist
+		}
+	}
+	// Lstat reports a symlink itself, so a link to a directory is not treated
+	// as an existing folder.
+	if conflict == "keep" {
+		return availableExtractionDir(destRoot, stem)
+	}
+	return "", false, fs.ErrExist
+}
+
+func availableExtractionDir(destRoot *os.Root, stem string) (string, bool, error) {
+	for n := 1; ; n++ {
+		candidate := numbered(stem, n, true)
+		_, err := destRoot.Lstat(candidate)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return candidate, false, nil
+		case err != nil:
+			return "", false, err
+		}
+	}
 }
 
 func (s *server) extractArchive(w http.ResponseWriter, r *http.Request) {
@@ -377,58 +429,52 @@ func (s *server) extractArchive(w http.ResponseWriter, r *http.Request) {
 	s.mutations.Lock()
 	defer s.mutations.Unlock()
 
-	root, created := destination, ""
+	// Pin the destination for the whole request so later path lookups cannot
+	// escape through a replaced symlink.
+	destRoot, err := os.OpenRoot(destination)
+	if err != nil {
+		failure(w, err)
+		return
+	}
+	defer destRoot.Close()
+
+	root := destination
+	extractRoot := destRoot
+	createdRoot := ""
 	if mode == "folder" {
-		target := filepath.Join(destination, archiveStem(filepath.Base(path)))
-		_, statErr := os.Lstat(target)
-		existing := statErr == nil
-		if statErr != nil && !errors.Is(statErr, fs.ErrNotExist) {
-			failure(w, statErr)
+		stem := archiveStem(filepath.Base(path))
+		if !validArchiveStem(stem) {
+			failure(w, errPath)
 			return
 		}
-		if existing {
-			switch conflict {
-			case "keep":
-				for n := 1; ; n++ {
-					candidate := numbered(target, n, true)
-					if _, err := os.Lstat(candidate); errors.Is(err, fs.ErrNotExist) {
-						target, existing = candidate, false
-						break
-					} else if err != nil {
-						failure(w, err)
-						return
-					}
-				}
-			case "skip":
-				// Extract into the existing folder and skip its conflicts.
-			default:
-				failure(w, fs.ErrExist)
-				return
-			}
+		target, existing, err := extractionRoot(destRoot, stem, conflict)
+		if err != nil {
+			failure(w, err)
+			return
 		}
-		if existing {
-			existingInfo, err := os.Stat(target)
-			if err != nil {
+		if !existing {
+			if err := destRoot.Mkdir(target, 0777); err != nil {
 				failure(w, err)
 				return
 			}
-			if !existingInfo.IsDir() {
-				failure(w, fs.ErrExist)
-				return
+			createdRoot = target
+		}
+		extractRoot, err = destRoot.OpenRoot(target)
+		if err != nil {
+			if createdRoot != "" {
+				_ = destRoot.Remove(createdRoot)
 			}
-		} else if err := os.Mkdir(target, 0777); err != nil {
 			failure(w, err)
 			return
-		} else {
-			created = target
 		}
-		root = target
+		defer extractRoot.Close()
+		root = filepath.Join(destination, target)
 	}
 
-	counts, err := extractArchiveFile(r.Context(), path, format, root, conflict)
+	counts, err := extractArchiveFile(r.Context(), path, format, extractRoot, conflict)
 	if err != nil {
-		if created != "" {
-			discardStage(created)
+		if createdRoot != "" {
+			_ = destRoot.Remove(createdRoot)
 		}
 		failure(w, err)
 		return
@@ -446,7 +492,7 @@ type extractCounts struct {
 }
 
 type extractedDir struct {
-	path    string
+	rel     string
 	mode    fs.FileMode
 	modTime time.Time
 }
@@ -460,16 +506,29 @@ type archiveMember struct {
 	body    io.Reader
 }
 
+// createdEntry records one filesystem object created by this request so it can
+// be rolled back if a later entry fails or the request is canceled.
+type createdEntry struct {
+	rel  string
+	kind string
+}
+
 type extractor struct {
 	ctx         context.Context
-	root        string
+	root        *os.Root
 	conflict    string
 	counts      extractCounts
 	directories []extractedDir
 	skippedDirs map[string]bool
+	renamedDirs map[string]string
+	created     []createdEntry
 }
 
-func extractArchiveFile(ctx context.Context, path, format, root, conflict string) (extractCounts, error) {
+func extractArchiveFile(ctx context.Context, path, format string, root *os.Root, conflict string) (extractCounts, error) {
+	x := &extractor{
+		ctx: ctx, root: root, conflict: conflict,
+		skippedDirs: make(map[string]bool), renamedDirs: make(map[string]string),
+	}
 	file, err := os.OpenFile(path, os.O_RDONLY|unix.O_NONBLOCK, 0)
 	if err != nil {
 		return extractCounts{}, err
@@ -478,7 +537,6 @@ func extractArchiveFile(ctx context.Context, path, format, root, conflict string
 	if err := ctx.Err(); err != nil {
 		return extractCounts{}, err
 	}
-	x := &extractor{ctx: ctx, root: root, conflict: conflict, skippedDirs: make(map[string]bool)}
 	switch format {
 	case "zip":
 		info, err := file.Stat()
@@ -489,12 +547,13 @@ func extractArchiveFile(ctx context.Context, path, format, root, conflict string
 		if err != nil {
 			return extractCounts{}, archiveError(err)
 		}
-		err = extractZip(ctx, reader, x)
-		if err != nil {
+		if err := extractZip(ctx, reader, x); err != nil {
+			x.rollback()
 			return extractCounts{}, err
 		}
 	case "tar":
 		if err := extractTar(ctx, tar.NewReader(file), x); err != nil {
+			x.rollback()
 			return extractCounts{}, err
 		}
 	case "targz":
@@ -504,6 +563,14 @@ func extractArchiveFile(ctx context.Context, path, format, root, conflict string
 		}
 		defer reader.Close()
 		if err := extractTar(ctx, tar.NewReader(reader), x); err != nil {
+			x.rollback()
+			return extractCounts{}, err
+		}
+		// tar.Reader stops at the tar EOF blocks, before gzip verifies its
+		// CRC32/ISIZE trailer. Drain the stream so corrupt or truncated gzip
+		// data is still reported and rolled back.
+		if err := drainGzip(ctx, reader); err != nil {
+			x.rollback()
 			return extractCounts{}, err
 		}
 	default:
@@ -511,6 +578,34 @@ func extractArchiveFile(ctx context.Context, path, format, root, conflict string
 	}
 	x.finish()
 	return x.counts, nil
+}
+
+// drainGzip reads the remainder of a gzip stream to EOF, which makes gzip
+// validate the trailer. The size bound rejects archives that hide unbounded
+// data after the tar EOF blocks.
+func drainGzip(ctx context.Context, reader io.Reader) error {
+	const limit = 1 << 20
+	buffer := make([]byte, 32<<10)
+	total := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		n, err := reader.Read(buffer)
+		total += n
+		if errors.Is(err, io.EOF) {
+			if total > limit {
+				return fmt.Errorf("%w: 归档尾部数据过多", errArchive)
+			}
+			return nil
+		}
+		if err != nil {
+			return archiveError(err)
+		}
+		if total > limit {
+			return fmt.Errorf("%w: 归档尾部数据过多", errArchive)
+		}
+	}
 }
 
 func archiveError(err error) error {
@@ -593,83 +688,335 @@ func (x *extractor) add(member archiveMember) error {
 	if err := x.ctx.Err(); err != nil {
 		return err
 	}
-	name, target, err := x.resolve(member.name)
+	rel, err := x.resolve(member.name)
 	if err != nil {
 		return err
 	}
-	if name == "" {
+	if rel == "" {
 		// The archive's own root directory entry.
 		return nil
 	}
-	if x.skippedParent(name) {
+	rel = x.remap(rel)
+	if x.skippedParent(rel) {
+		x.counts.skipped++
+		return nil
+	}
+	rel, skipped, err := x.prepare(rel)
+	if err != nil {
+		return err
+	}
+	if skipped {
 		x.counts.skipped++
 		return nil
 	}
 	switch member.kind {
 	case "directory":
-		return x.directory(name, target, member)
+		return x.directory(rel, member)
 	case "file":
-		return x.file(target, member)
+		return x.file(rel, member)
 	case "symlink":
-		return x.symlink(target, member)
+		return x.symlink(rel, member)
 	case "hardlink":
-		return x.hardlink(target, member)
+		return x.hardlink(rel, member)
 	default:
 		x.counts.skipped++
 		return nil
 	}
 }
 
-// resolve normalizes an archive member name into a path confined to the target
-// root and rejects absolute names, ".." escapes and symlinked parent folders.
-func (x *extractor) resolve(name string) (string, string, error) {
+// resolve normalizes an archive member name into a path relative to the
+// extraction root and rejects absolute names, NUL bytes and ".." escapes.
+func (x *extractor) resolve(name string) (string, error) {
 	if name == "" || strings.ContainsRune(name, 0) {
-		return "", "", errArchive
+		return "", errArchive
 	}
 	if filepath.IsAbs(name) || strings.HasPrefix(name, "/") {
-		return "", "", errTraversal
+		return "", errTraversal
 	}
 	cleaned := filepath.Clean(name)
 	if cleaned == "." {
-		return "", "", nil
+		return "", nil
 	}
 	if cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) {
-		return "", "", errTraversal
+		return "", errTraversal
 	}
-	target := filepath.Join(x.root, cleaned)
-	inside, err := underRoot(x.root, target)
-	if err != nil {
-		return "", "", err
-	}
-	if !inside {
-		return "", "", errTraversal
-	}
-	if err := checkParents(x.root, cleaned); err != nil {
-		return "", "", err
-	}
-	return cleaned, target, nil
+	return cleaned, nil
 }
 
-func underRoot(root, target string) (bool, error) {
-	rel, err := filepath.Rel(root, target)
-	if err != nil {
-		return false, errArchive
+// remap applies directory renames chosen under conflict:"keep" so descendants
+// of a renamed directory are written beside the renamed directory.
+func (x *extractor) remap(rel string) string {
+	for range len(x.renamedDirs) + 1 {
+		matched, renamed := "", ""
+		for original, actual := range x.renamedDirs {
+			prefix := original + string(filepath.Separator)
+			if (rel == original || strings.HasPrefix(rel, prefix)) && len(original) > len(matched) {
+				matched, renamed = original, actual
+			}
+		}
+		if matched == "" {
+			return rel
+		}
+		rel = renamed + rel[len(matched):]
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
-		return false, nil
-	}
-	return true, nil
+	return rel
 }
 
-func checkParents(root, rel string) error {
+// prepare ensures every parent of rel is a real directory inside the root,
+// never traversing a symlink. A parent blocked by a non-directory follows the
+// same conflict policy as files: skip skips this entry, keep renames the
+// blocking directory and remaps the entry below it.
+func (x *extractor) prepare(rel string) (string, bool, error) {
+	parent := filepath.Dir(rel)
+	if parent == "." {
+		return rel, false, nil
+	}
+	current := ""
+	for _, part := range strings.Split(parent, string(filepath.Separator)) {
+		if current == "" {
+			current = part
+		} else {
+			current += string(filepath.Separator) + part
+		}
+		info, err := x.root.Lstat(current)
+		switch {
+		case err == nil && info.IsDir():
+			continue
+		case err == nil:
+			if info.Mode()&fs.ModeSymlink != 0 {
+				return "", false, errTraversal
+			}
+			switch x.conflict {
+			case "skip":
+				x.skippedDirs[current] = true
+				return "", true, nil
+			case "keep":
+				renamed, err := x.createRenamedDir(current)
+				if err != nil {
+					return "", false, err
+				}
+				x.renamedDirs[current] = renamed
+				return x.prepare(renamed + rel[len(current):])
+			default:
+				return "", false, fs.ErrExist
+			}
+		case errors.Is(err, fs.ErrNotExist):
+			if err := x.root.Mkdir(current, 0700); err != nil {
+				return "", false, err
+			}
+			x.created = append(x.created, createdEntry{rel: current, kind: "directory"})
+		default:
+			return "", false, err
+		}
+	}
+	return rel, false, nil
+}
+
+// createRenamedDir creates a fresh numbered directory beside base and records
+// it for rollback.
+func (x *extractor) createRenamedDir(base string) (string, error) {
+	for n := 1; ; n++ {
+		candidate := numbered(base, n, true)
+		_, err := x.root.Lstat(candidate)
+		switch {
+		case err == nil:
+			continue
+		case !errors.Is(err, fs.ErrNotExist):
+			return "", err
+		}
+		if err := x.root.Mkdir(candidate, 0700); err != nil {
+			return "", err
+		}
+		x.created = append(x.created, createdEntry{rel: candidate, kind: "directory"})
+		return candidate, nil
+	}
+}
+
+func (x *extractor) skippedParent(rel string) bool {
+	for parent := filepath.Dir(rel); parent != "."; parent = filepath.Dir(parent) {
+		if x.skippedDirs[parent] {
+			return true
+		}
+	}
+	return false
+}
+
+func (x *extractor) directory(rel string, member archiveMember) error {
+	info, err := x.root.Lstat(rel)
+	switch {
+	case err == nil && info.IsDir():
+		x.counts.skipped++
+		return nil
+	case err == nil:
+		// A symlink (even one pointing at a directory) or regular file blocks
+		// the directory path; never follow or replace it.
+		switch x.conflict {
+		case "skip":
+			x.skippedDirs[rel] = true
+			x.counts.skipped++
+			return nil
+		case "keep":
+			renamed, err := x.createRenamedDir(rel)
+			if err != nil {
+				return err
+			}
+			x.renamedDirs[rel] = renamed
+			x.counts.extracted++
+			x.directories = append(x.directories, extractedDir{renamed, member.mode.Perm(), member.modTime})
+			return nil
+		default:
+			return fs.ErrExist
+		}
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
+	}
+	if err := x.root.Mkdir(rel, 0700); err != nil {
+		return err
+	}
+	x.created = append(x.created, createdEntry{rel: rel, kind: "directory"})
+	x.counts.extracted++
+	x.directories = append(x.directories, extractedDir{rel, member.mode.Perm(), member.modTime})
+	return nil
+}
+
+// available applies the skip/keep contract to an existing target. It returns
+// the path to create and whether the entry should be skipped.
+func (x *extractor) available(rel string) (string, bool, error) {
+	_, err := x.root.Lstat(rel)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return rel, false, nil
+	case err != nil:
+		return "", false, err
+	case x.conflict == "skip":
+		return "", true, nil
+	case x.conflict == "keep":
+		for n := 1; ; n++ {
+			candidate := numbered(rel, n, false)
+			if _, err := x.root.Lstat(candidate); errors.Is(err, fs.ErrNotExist) {
+				return candidate, false, nil
+			} else if err != nil {
+				return "", false, err
+			}
+		}
+	default:
+		return "", false, fs.ErrExist
+	}
+}
+
+func (x *extractor) file(rel string, member archiveMember) error {
+	target, skipped, err := x.available(rel)
+	if err != nil {
+		return err
+	}
+	if skipped {
+		x.counts.skipped++
+		return nil
+	}
+	handle, err := x.root.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err != nil {
+		return err
+	}
+	x.created = append(x.created, createdEntry{rel: target, kind: "file"})
+	_, copyErr := io.Copy(handle, contextReader{x.ctx, member.body})
+	if err := errors.Join(copyErr, handle.Close()); err != nil {
+		return err
+	}
+	if perm := member.mode.Perm(); perm != 0 {
+		_ = x.root.Chmod(target, perm)
+	}
+	if !member.modTime.IsZero() {
+		_ = x.root.Chtimes(target, member.modTime, member.modTime)
+	}
+	x.counts.extracted++
+	return nil
+}
+
+func (x *extractor) symlink(rel string, member archiveMember) error {
+	if err := x.linkTarget(rel, member.link); err != nil {
+		return err
+	}
+	target, skipped, err := x.available(rel)
+	if err != nil {
+		return err
+	}
+	if skipped {
+		x.counts.skipped++
+		return nil
+	}
+	// Store the normalized target: the raw header value may contain "./" or
+	// ".." segments that linkTarget already validated as non-escaping.
+	if err := x.root.Symlink(filepath.Clean(member.link), target); err != nil {
+		return err
+	}
+	x.created = append(x.created, createdEntry{rel: target, kind: "symlink"})
+	x.counts.extracted++
+	return nil
+}
+
+func (x *extractor) hardlink(rel string, member archiveMember) error {
+	if member.link == "" || strings.ContainsRune(member.link, 0) {
+		return errArchive
+	}
+	if filepath.IsAbs(member.link) || strings.HasPrefix(member.link, "/") {
+		return errTraversal
+	}
+	source := filepath.Clean(member.link)
+	if source == "." || source == ".." || strings.HasPrefix(source, ".."+string(filepath.Separator)) {
+		return errTraversal
+	}
+	source = x.remap(source)
+	if x.skippedParent(source) {
+		x.counts.skipped++
+		return nil
+	}
+	if err := x.checkParentLinks(source); err != nil {
+		return err
+	}
+	info, err := x.root.Lstat(source)
+	if errors.Is(err, fs.ErrNotExist) {
+		x.counts.skipped++
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		// Hard links may only reference a regular file reached without
+		// following a symlink; otherwise confinement cannot be guaranteed.
+		return errTraversal
+	}
+	target, skipped, err := x.available(rel)
+	if err != nil {
+		return err
+	}
+	if skipped {
+		x.counts.skipped++
+		return nil
+	}
+	if err := x.root.Link(source, target); err != nil {
+		return err
+	}
+	x.created = append(x.created, createdEntry{rel: target, kind: "hardlink"})
+	x.counts.extracted++
+	return nil
+}
+
+// checkParentLinks rejects hardlink sources reached through a symlinked parent
+// inside the extraction root.
+func (x *extractor) checkParentLinks(rel string) error {
 	parent := filepath.Dir(rel)
 	if parent == "." {
 		return nil
 	}
-	current := root
+	current := ""
 	for _, part := range strings.Split(parent, string(filepath.Separator)) {
-		current = filepath.Join(current, part)
-		info, err := os.Lstat(current)
+		if current == "" {
+			current = part
+		} else {
+			current += string(filepath.Separator) + part
+		}
+		info, err := x.root.Lstat(current)
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
@@ -686,174 +1033,38 @@ func checkParents(root, rel string) error {
 	return nil
 }
 
-func (x *extractor) skippedParent(rel string) bool {
-	for parent := filepath.Dir(rel); parent != "."; parent = filepath.Dir(parent) {
-		if x.skippedDirs[parent] {
-			return true
-		}
-	}
-	return false
-}
-
-func (x *extractor) directory(rel, target string, member archiveMember) error {
-	info, err := os.Lstat(target)
-	switch {
-	case err == nil && info.IsDir():
-		x.counts.skipped++
-		return nil
-	case err == nil:
-		if x.conflict == "skip" {
-			x.skippedDirs[rel] = true
-			x.counts.skipped++
-			return nil
-		}
-		return fs.ErrExist
-	case !errors.Is(err, fs.ErrNotExist):
-		return err
-	}
-	if err := os.MkdirAll(target, 0700); err != nil {
-		return err
-	}
-	x.counts.extracted++
-	x.directories = append(x.directories, extractedDir{target, member.mode.Perm(), member.modTime})
-	return nil
-}
-
-// available applies the skip/keep contract to an existing target. It returns
-// the path to create and whether the entry should be skipped.
-func (x *extractor) available(target string) (string, bool, error) {
-	_, err := os.Lstat(target)
-	switch {
-	case errors.Is(err, fs.ErrNotExist):
-		return target, false, nil
-	case err != nil:
-		return "", false, err
-	case x.conflict == "skip":
-		return "", true, nil
-	case x.conflict == "keep":
-		for n := 1; ; n++ {
-			candidate := numbered(target, n, false)
-			if _, err := os.Lstat(candidate); errors.Is(err, fs.ErrNotExist) {
-				return candidate, false, nil
-			} else if err != nil {
-				return "", false, err
-			}
-		}
-	default:
-		return "", false, fs.ErrExist
-	}
-}
-
-func (x *extractor) file(target string, member archiveMember) error {
-	target, skipped, err := x.available(target)
-	if err != nil || skipped {
-		if skipped {
-			x.counts.skipped++
-		}
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
-		return err
-	}
-	handle, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL|unix.O_NOFOLLOW, 0600)
-	if err != nil {
-		return err
-	}
-	_, copyErr := io.Copy(handle, contextReader{x.ctx, member.body})
-	if err := errors.Join(copyErr, handle.Close()); err != nil {
-		_ = os.Remove(target)
-		return err
-	}
-	if perm := member.mode.Perm(); perm != 0 {
-		_ = os.Chmod(target, perm)
-	}
-	if !member.modTime.IsZero() {
-		_ = os.Chtimes(target, member.modTime, member.modTime)
-	}
-	x.counts.extracted++
-	return nil
-}
-
-func (x *extractor) symlink(target string, member archiveMember) error {
-	if _, err := x.linkTarget(target, member.link); err != nil {
-		return err
-	}
-	target, skipped, err := x.available(target)
-	if err != nil || skipped {
-		if skipped {
-			x.counts.skipped++
-		}
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
-		return err
-	}
-	if err := os.Symlink(member.link, target); err != nil {
-		return err
-	}
-	x.counts.extracted++
-	return nil
-}
-
-func (x *extractor) hardlink(target string, member archiveMember) error {
-	if member.link == "" {
+// linkTarget validates a symlink target relative to the link's parent so it
+// cannot point outside the extraction root.
+func (x *extractor) linkTarget(rel, link string) error {
+	if link == "" || strings.ContainsRune(link, 0) {
 		return errArchive
 	}
-	if filepath.IsAbs(member.link) || strings.HasPrefix(member.link, "/") {
+	if filepath.IsAbs(link) || strings.HasPrefix(link, "/") {
 		return errTraversal
 	}
-	source := filepath.Join(x.root, filepath.Clean(member.link))
-	if inside, err := underRoot(x.root, source); err != nil || !inside {
+	resolved := filepath.Join(filepath.Dir(rel), link)
+	if resolved == ".." || strings.HasPrefix(resolved, ".."+string(filepath.Separator)) || filepath.IsAbs(resolved) {
 		return errTraversal
 	}
-	if _, err := os.Lstat(source); err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			x.counts.skipped++
-			return nil
-		}
-		return err
-	}
-	target, skipped, err := x.available(target)
-	if err != nil || skipped {
-		if skipped {
-			x.counts.skipped++
-		}
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
-		return err
-	}
-	if err := os.Link(source, target); err != nil {
-		return err
-	}
-	x.counts.extracted++
 	return nil
 }
 
-// linkTarget validates a symlink target so it cannot point outside the root.
-func (x *extractor) linkTarget(target, link string) (string, error) {
-	if link == "" || strings.ContainsRune(link, 0) {
-		return "", errArchive
+// rollback removes everything this request created, in reverse creation order,
+// leaving all pre-existing entries untouched.
+func (x *extractor) rollback() {
+	for i := len(x.created) - 1; i >= 0; i-- {
+		_ = x.root.Remove(x.created[i].rel)
 	}
-	if filepath.IsAbs(link) || strings.HasPrefix(link, "/") {
-		return "", errTraversal
-	}
-	resolved := filepath.Join(filepath.Dir(target), link)
-	inside, err := underRoot(x.root, resolved)
-	if err != nil || !inside {
-		return "", errTraversal
-	}
-	return resolved, nil
 }
 
 func (x *extractor) finish() {
 	for i := len(x.directories) - 1; i >= 0; i-- {
 		directory := x.directories[i]
 		if directory.mode != 0 {
-			_ = os.Chmod(directory.path, directory.mode)
+			_ = x.root.Chmod(directory.rel, directory.mode)
 		}
 		if !directory.modTime.IsZero() {
-			_ = os.Chtimes(directory.path, directory.modTime, directory.modTime)
+			_ = x.root.Chtimes(directory.rel, directory.modTime, directory.modTime)
 		}
 	}
 }

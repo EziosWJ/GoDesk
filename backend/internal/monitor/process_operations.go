@@ -17,9 +17,13 @@ import (
 )
 
 var (
-	errProcessNotFound = errors.New("process not found")
-	errProcessChanged  = errors.New("process changed")
+	errProcessNotFound  = errors.New("process not found")
+	errProcessChanged   = errors.New("process changed")
+	errPidfdUnsupported = errors.New("pidfd signaling is unavailable")
 )
+
+// pidfdOpen is a variable so tests can simulate kernels without pidfd_open.
+var pidfdOpen = unix.PidfdOpen
 
 type processSignalOperation struct {
 	PID        int    `json:"pid"`
@@ -67,13 +71,16 @@ func executeProcessSignal(ctx context.Context, operation processSignalOperation)
 }
 
 func sendSignal(pid int, startTicks uint64, sig unix.Signal) error {
-	fd, err := unix.PidfdOpen(pid, 0)
+	fd, err := pidfdOpen(pid, 0)
 	if err != nil {
 		switch {
 		case errors.Is(err, unix.ESRCH):
 			return errProcessNotFound
 		case errors.Is(err, unix.ENOSYS), errors.Is(err, unix.EINVAL):
-			return sendSignalByKill(pid, startTicks, sig)
+			// Without pidfd there is no way to bind the signal to the verified
+			// process instance: a numeric kill could hit a reused PID. Refuse
+			// instead of falling back to kill(2).
+			return errPidfdUnsupported
 		default:
 			return err
 		}
@@ -86,17 +93,6 @@ func sendSignal(pid int, startTicks uint64, sig unix.Signal) error {
 		return err
 	}
 	err = unix.PidfdSendSignal(fd, sig, nil, 0)
-	if errors.Is(err, unix.ESRCH) {
-		return errProcessNotFound
-	}
-	return err
-}
-
-func sendSignalByKill(pid int, startTicks uint64, sig unix.Signal) error {
-	if err := verifyProcessIdentity(pid, startTicks); err != nil {
-		return err
-	}
-	err := unix.Kill(pid, sig)
 	if errors.Is(err, unix.ESRCH) {
 		return errProcessNotFound
 	}
@@ -198,6 +194,8 @@ func signalFailure(err error) processSignalResult {
 		return signalError(404, "process_not_found", "进程不存在")
 	case errors.Is(err, errProcessChanged):
 		return signalError(409, "process_changed", "进程已变化，请重新加载")
+	case errors.Is(err, errPidfdUnsupported):
+		return signalError(501, "pidfd_unsupported", "当前内核不支持 pidfd_open，无法安全地向进程发送信号")
 	case errors.Is(err, unix.EPERM), errors.Is(err, unix.EACCES):
 		return signalError(403, "permission_denied", "权限不足，无法结束该进程")
 	case errors.Is(err, context.DeadlineExceeded):

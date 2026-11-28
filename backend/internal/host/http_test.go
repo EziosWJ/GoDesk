@@ -37,7 +37,7 @@ func newTestHandler(env environment, run commandRunner) *handler {
 			}
 		},
 		environment: func() environment { return env },
-		timezones:   func() []string { return []string{"Asia/Shanghai", "Europe/Berlin", "UTC"} },
+		timezones:   func() []string { return []string{"Asia/Shanghai", "Etc/GMT+8", "Europe/Berlin", "UTC"} },
 		run:         run,
 		timeout:     time.Second,
 	}
@@ -131,7 +131,7 @@ func TestTimezonesHTTP(t *testing.T) {
 	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	want := []string{"Asia/Shanghai", "Europe/Berlin", "UTC"}
+	want := []string{"Asia/Shanghai", "Etc/GMT+8", "Europe/Berlin", "UTC"}
 	if !slices.Equal(response.Timezones, want) {
 		t.Errorf("timezones = %v, want %v", response.Timezones, want)
 	}
@@ -179,6 +179,30 @@ func TestHostnameHTTP(t *testing.T) {
 		assertErrorBody(t, recorder, http.StatusBadRequest, "invalid_hostname")
 		if called {
 			t.Error("command ran for an invalid hostname")
+		}
+	})
+
+	t.Run("hostname longer than HOST_NAME_MAX", func(t *testing.T) {
+		called := false
+		run := func(context.Context, string, ...string) error {
+			called = true
+			return nil
+		}
+		// A syntactically valid dotted name that is 65 characters long.
+		name := strings.Repeat("a.", 32) + "a"
+		recorder := putJSON(testMux(newTestHandler(available, run)), "/api/v1/system/host/hostname", `{"hostname":"`+name+`"}`)
+		assertErrorBody(t, recorder, http.StatusBadRequest, "invalid_hostname")
+		if called {
+			t.Error("command ran for an over-long hostname")
+		}
+	})
+
+	t.Run("64 character hostname", func(t *testing.T) {
+		run := func(context.Context, string, ...string) error { return nil }
+		name := strings.Repeat("a.", 31) + "ab"
+		recorder := putJSON(testMux(newTestHandler(available, run)), "/api/v1/system/host/hostname", `{"hostname":"`+name+`"}`)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", recorder.Code, recorder.Body.String())
 		}
 	})
 
@@ -286,6 +310,21 @@ func TestTimezoneHTTP(t *testing.T) {
 			t.Errorf("command path = %q, want %q", gotPath, testTimezoneTool)
 		}
 		if want := []string{"set-timezone", "--", "Asia/Shanghai"}; !slices.Equal(gotArgs, want) {
+			t.Errorf("command args = %v, want %v", gotArgs, want)
+		}
+	})
+
+	t.Run("etc zone accepted", func(t *testing.T) {
+		var gotArgs []string
+		run := func(_ context.Context, _ string, args ...string) error {
+			gotArgs = args
+			return nil
+		}
+		recorder := putJSON(testMux(newTestHandler(available, run)), "/api/v1/system/host/timezone", `{"timezone":"Etc/GMT+8"}`)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %s)", recorder.Code, recorder.Body.String())
+		}
+		if want := []string{"set-timezone", "--", "Etc/GMT+8"}; !slices.Equal(gotArgs, want) {
 			t.Errorf("command args = %v, want %v", gotArgs, want)
 		}
 	})

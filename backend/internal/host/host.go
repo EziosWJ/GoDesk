@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/user"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -235,17 +236,18 @@ func parseUptime(data []byte) int64 {
 	return int64(seconds)
 }
 
-// detectTimezone prefers /etc/timezone and resolves the /etc/localtime
-// symlink next. It falls back to the runtime zone name so the field is always
-// present.
+// detectTimezone reads the /etc/localtime symlink first because
+// `timedatectl set-timezone` updates that symlink while /etc/timezone can stay
+// stale on modern distributions. It falls back to /etc/timezone and finally to
+// the runtime zone name so the field is always present.
 func detectTimezone(readFile func(string) ([]byte, error), readlink func(string) (string, error)) string {
-	if data, err := readFile(timezonePath); err == nil {
-		if zone := parseTimezone(data); zone != "" {
+	if target, err := readlink(localtimePath); err == nil {
+		if zone := timezoneFromLocaltime(target); zone != "" {
 			return zone
 		}
 	}
-	if target, err := readlink(localtimePath); err == nil {
-		if zone := timezoneFromLocaltime(target); zone != "" {
+	if data, err := readFile(timezonePath); err == nil {
+		if zone := parseTimezone(data); zone != "" {
 			return zone
 		}
 	}
@@ -262,14 +264,23 @@ func parseTimezone(data []byte) string {
 }
 
 // timezoneFromLocaltime extracts the IANA zone from a /etc/localtime symlink
-// target such as /usr/share/zoneinfo/Asia/Shanghai.
+// target such as /usr/share/zoneinfo/Asia/Shanghai. Relative targets such as
+// ../usr/share/zoneinfo/Asia/Shanghai are resolved from /etc first.
 func timezoneFromLocaltime(target string) string {
+	target = strings.TrimSpace(target)
+	if target == "" {
+		return ""
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join("/etc", target)
+	}
+	target = filepath.Clean(target)
 	const marker = "/usr/share/zoneinfo/"
-	index := strings.Index(strings.TrimSpace(target), marker)
+	index := strings.Index(target, marker)
 	if index < 0 {
 		return ""
 	}
-	return cleanZonePath(strings.TrimSpace(target)[index+len(marker):])
+	return cleanZonePath(target[index+len(marker):])
 }
 
 // cleanZonePath rejects values that could escape the zoneinfo tree or be read

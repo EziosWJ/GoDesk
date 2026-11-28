@@ -18,6 +18,7 @@ import (
 	"godesk/internal/privileges"
 
 	"github.com/coder/websocket"
+	"golang.org/x/sys/unix"
 )
 
 func (m *Manager) Register(mux *http.ServeMux, requireSession func(http.Handler) http.Handler) {
@@ -71,10 +72,7 @@ func (m *Manager) createHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	dir, cwdErr := sessionDir(form.Cwd)
 	if cwdErr != nil {
-		writeJSON(w, cwdErr.status, struct {
-			Code    string `json:"code"`
-			Message string `json:"message"`
-		}{cwdErr.code, cwdErr.message})
+		writeRequestError(w, cwdErr)
 		return
 	}
 	settings, err := m.settings(r.Context())
@@ -85,6 +83,10 @@ func (m *Manager) createHTTP(w http.ResponseWriter, r *http.Request) {
 	summary, err := m.start(settings, dir)
 	if errors.Is(err, errShuttingDown) {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	if errors.Is(err, errCwdPermission) {
+		writeRequestError(w, &requestError{http.StatusForbidden, "cwd_permission_denied", "没有访问该工作目录的权限"})
 		return
 	}
 	if err != nil {
@@ -100,8 +102,16 @@ type requestError struct {
 	message string
 }
 
+func writeRequestError(w http.ResponseWriter, failure *requestError) {
+	writeJSON(w, failure.status, struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}{failure.code, failure.message})
+}
+
 // sessionDir validates a requested working directory. The Shell always runs as
-// the GoDesk host account, so the check uses the caller's own credentials.
+// the GoDesk host account, so the check uses the caller's effective credentials
+// and requires search (X_OK) permission, which is what chdir needs.
 func sessionDir(cwd string) (string, *requestError) {
 	if cwd == "" {
 		return "", nil
@@ -124,14 +134,16 @@ func sessionDir(cwd string) (string, *requestError) {
 	if !info.IsDir() {
 		return "", &requestError{http.StatusBadRequest, "cwd_not_directory", "工作目录不是文件夹"}
 	}
-	handle, err := os.Open(dir)
-	if err != nil {
-		if errors.Is(err, fs.ErrPermission) {
+	if err := unix.Faccessat(unix.AT_FDCWD, dir, unix.X_OK, unix.AT_EACCESS); err != nil {
+		switch {
+		case errors.Is(err, fs.ErrPermission):
 			return "", &requestError{http.StatusForbidden, "cwd_permission_denied", "没有访问该工作目录的权限"}
+		case errors.Is(err, fs.ErrNotExist):
+			return "", &requestError{http.StatusNotFound, "cwd_not_found", "工作目录不存在"}
+		default:
+			return "", &requestError{http.StatusBadRequest, "invalid_cwd", "无法进入工作目录"}
 		}
-		return "", &requestError{http.StatusBadRequest, "invalid_cwd", "无法进入工作目录"}
 	}
-	_ = handle.Close()
 	return dir, nil
 }
 

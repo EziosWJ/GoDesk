@@ -2,6 +2,7 @@ import {
   useEffect, useEffectEvent, useId, useImperativeHandle, useLayoutEffect, useRef, useState, useSyncExternalStore,
   type KeyboardEvent, type Ref,
 } from 'react'
+import { flushSync } from 'react-dom'
 import { FilePenLine, FilePlus, FolderOpen, Minus, Plus, RefreshCw, Save, SaveAll, WrapText, X } from 'lucide-react'
 import {
   announceFileChange, errorMessage, FileError, filename, parentPath, readText, subscribeToFileChanges, writeText,
@@ -23,6 +24,7 @@ type Draft = {
   path?: string
   version?: string
   checking?: boolean
+  reloading?: boolean
   elevated?: boolean
   readOnly?: boolean
   name: string
@@ -281,36 +283,53 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
   }
 
   async function reloadDraft(draft: Draft) {
-    if (!draft.path || saveLock.current) return
+    if (!draft.path || saveLock.current || draft.reloading) return
+    const targetPath = draft.path
+    const expectedText = draft.text
     openController.current?.abort()
     const controller = new AbortController()
     openController.current = controller
     setLoading(true)
     setStatus('')
+    setDrafts(current => current.map(item => item.id === draft.id ? { ...item, reloading: true } : item))
     try {
-      const data = await readText(draft.path, controller.signal, draft.elevated)
+      const data = await readText(targetPath, controller.signal, draft.elevated)
       if (controller.signal.aborted) return
-      setDrafts(current => current.map(item => item.id === draft.id
-        ? { ...item, path: data.path, name: filename(data.path), version: data.version, text: data.text, savedText: data.text, checking: false }
-        : item))
-      closeDialog()
-      setStatus(`已重新加载「${filename(data.path)}」`)
+      let applied = false
+      flushSync(() => {
+        setDrafts(current => current.map(item => {
+          if (item.id === draft.id && item.path === targetPath && item.text === expectedText) {
+            applied = true
+            return { ...item, path: data.path, name: filename(data.path), version: data.version, text: data.text, savedText: data.text, checking: false, reloading: false }
+          }
+          return item
+        }))
+      })
+      if (applied) {
+        setDialog(current => (
+          current?.kind === 'reload-confirm' || current?.kind === 'conflict'
+            ? undefined
+            : current
+        ))
+        setStatus(`已重新加载「${filename(data.path)}」`)
+      }
     } catch (error) {
       if (!controller.signal.aborted) {
-        const message = textErrorMessage(error, draft.path)
+        const message = textErrorMessage(error, targetPath)
         setStatus(message)
         if (error instanceof FileError && error.code === 'not_found') {
-          setDrafts(current => current.map(item => item.id === draft.id ? { ...item, version: undefined } : item))
+          setDrafts(current => current.map(item => item.id === draft.id && item.path === targetPath ? { ...item, version: undefined } : item))
         }
-        if (dialog?.kind === 'reload-confirm') closeDialog()
+        setDialog(current => current?.kind === 'reload-confirm' ? undefined : current)
       }
     } finally {
+      setDrafts(current => current.map(item => item.id === draft.id && item.reloading ? { ...item, reloading: false } : item))
       if (openController.current === controller) setLoading(false)
     }
   }
 
   function requestReload(draft: Draft) {
-    if (!draft.path || dialog || saveLock.current || loading || draft.checking) return
+    if (!draft.path || dialog || saveLock.current || loading || draft.checking || draft.reloading) return
     if (isDirty(draft)) setDialog({ kind: 'reload-confirm', drafts: [draft.id] })
     else void reloadDraft(draft)
   }
@@ -362,7 +381,7 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
           requestSaveAs(draft, ids.slice(index), close)
           return
         }
-        if (draft.checking && !created) return
+        if (draft.reloading || (draft.checking && !created)) return
         try {
           const data = await writeText(created ?? draft.path!, draft.text, created ? undefined : draft.version, conflict, draft.elevated)
           setDrafts(current => current.map(item => {
@@ -403,7 +422,7 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
     if (key === 's') {
       event.preventDefault()
       event.stopPropagation()
-      if (!dialog && active && !active.readOnly && !saving && !active.checking) {
+      if (!dialog && active && !active.readOnly && !saving && !active.checking && !active.reloading) {
         if (event.shiftKey) requestSaveAs(active, [active.id])
         else void saveDrafts([active.id])
       }
@@ -440,15 +459,15 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
         <button className="app-control" disabled={saving} aria-keyshortcuts="Control+o Meta+o" onClick={requestOpen}>
           <FolderOpen size={16} />打开文件…
         </button>
-        {!active?.readOnly && <button className="app-control primary-control" disabled={!active || saving || active.checking} aria-keyshortcuts="Control+s Meta+s"
+        {!active?.readOnly && <button className="app-control primary-control" disabled={!active || saving || active.checking || active.reloading} aria-keyshortcuts="Control+s Meta+s"
           onClick={() => { if (active) void saveDrafts([active.id]) }}>
           <Save size={16} />{!active?.path || unavailable ? '另存为…' : '保存'}
         </button>}
-        {active?.path && !active.readOnly && !unavailable && <button className="app-control" disabled={saving || active.checking} aria-keyshortcuts="Control+Shift+s Meta+Shift+s"
+        {active?.path && !active.readOnly && !unavailable && <button className="app-control" disabled={saving || active.checking || active.reloading} aria-keyshortcuts="Control+Shift+s Meta+Shift+s"
           onClick={() => requestSaveAs(active, [active.id])}>
           <SaveAll size={16} />另存为…
         </button>}
-        {active?.path && <button className="app-control" disabled={saving || loading || active.checking}
+        {active?.path && <button className="app-control" disabled={saving || loading || active.checking || active.reloading}
           onClick={() => requestReload(active)}>
           <RefreshCw size={16} />重新加载
         </button>}
@@ -480,10 +499,12 @@ export function TextEditorApp({ ref, openRequest, onClose }: {
             className="editor-panel" hidden={activeId !== draft.id}>
             <TextEditor documentId={draft.id} value={draft.text}
               language={detectTextLanguage(draft.name).language} theme={theme}
-              wordWrap={wordWrap} fontSize={fontSize} readOnly={saving || draft.readOnly}
+              wordWrap={wordWrap} fontSize={fontSize} readOnly={saving || draft.readOnly || draft.reloading}
               onFontSizeChange={adjustFontSize}
               onChange={text => {
-                if (!draft.readOnly) setDrafts(current => current.map(item => item.id === draft.id ? { ...item, text } : item))
+                if (!draft.readOnly && !draft.reloading) {
+                  setDrafts(current => current.map(item => item.id === draft.id && !item.reloading ? { ...item, text } : item))
+                }
               }} />
           </div>
         )) : <div className="editor-empty">

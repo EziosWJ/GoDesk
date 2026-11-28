@@ -163,7 +163,7 @@ function ProcessTreeBranch({
   )
 }
 
-export function ProcessesPanel() {
+export function ProcessesPanel({ active = true }: { active?: boolean }) {
   const [list, setList] = useState<ProcessList>()
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
@@ -171,19 +171,21 @@ export function ProcessesPanel() {
   const [sortKey, setSortKey] = useState<ColumnSortKey>('cpu')
   const [order, setOrder] = useState<SortOrder>('desc')
   const [paused, setPaused] = useState(false)
-  const [visible, setVisible] = useState(() => document.visibilityState === 'visible')
+  const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState === 'visible')
   const [refreshTick, setRefreshTick] = useState(0)
   const [refreshing, setRefreshing] = useState(false)
   const [selection, setSelection] = useState<SelectedProcess>()
   const [notice, setNotice] = useState('')
   const detailId = useId()
+  const visible = active && documentVisible
   const prevPausedRef = useRef(paused)
   const prevVisibleRef = useRef(visible)
+  const activeControllerRef = useRef<AbortController | null>(null)
 
   // Track document visibility so we NEVER poll when hidden.
   useEffect(() => {
     function handleVisibility() {
-      setVisible(document.visibilityState === 'visible')
+      setDocumentVisible(document.visibilityState === 'visible')
     }
     document.addEventListener('visibilitychange', handleVisibility)
     return () => document.removeEventListener('visibilitychange', handleVisibility)
@@ -200,7 +202,7 @@ export function ProcessesPanel() {
   const serverSort: ProcessSort = isServerSort(sortKey) ? sortKey : 'cpu'
   const serverOrder: SortOrder = isServerSort(sortKey) ? order : 'desc'
 
-  // On-demand polling: ONLY fetches while this tab is mounted AND document is visible.
+  // On-demand polling: ONLY fetches while this tab is mounted, window is active, AND document is visible.
   useEffect(() => {
     const justPaused = !prevPausedRef.current && paused
     const resumedVisibilityWhilePaused = !prevVisibleRef.current && visible && paused
@@ -210,11 +212,12 @@ export function ProcessesPanel() {
     if (!visible || justPaused || resumedVisibilityWhilePaused) return
 
     const controller = new AbortController()
+    activeControllerRef.current = controller
     let timer: number | undefined
     let stopped = false
 
     async function load() {
-      if (document.visibilityState !== 'visible') return
+      if (controller.signal.aborted || document.visibilityState !== 'visible') return
       setRefreshing(true)
       try {
         const next = await monitorApi.processes(
@@ -233,7 +236,9 @@ export function ProcessesPanel() {
         }
         setError(errorMessage(failure, '无法读取进程列表，正在重试…'))
       } finally {
-        if (!controller.signal.aborted) setRefreshing(false)
+        if (activeControllerRef.current === controller) {
+          setRefreshing(false)
+        }
         if (!stopped && !paused && !controller.signal.aborted && document.visibilityState === 'visible') {
           timer = window.setTimeout(load, POLL_INTERVAL_MS)
         }
@@ -244,6 +249,10 @@ export function ProcessesPanel() {
     return () => {
       controller.abort()
       window.clearTimeout(timer)
+      if (activeControllerRef.current === controller) {
+        activeControllerRef.current = null
+        setRefreshing(false)
+      }
     }
   }, [debouncedQuery, serverSort, serverOrder, paused, visible, refreshTick])
 

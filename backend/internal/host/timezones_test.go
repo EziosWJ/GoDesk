@@ -26,6 +26,8 @@ func TestAvailableTimezones(t *testing.T) {
 		"America/New_York",
 		"UTC",
 		"Etc/UTC",
+		"Etc/GMT",
+		"Etc/GMT+8",
 		"posix/UTC",
 		"right/UTC",
 	} {
@@ -48,6 +50,9 @@ func TestAvailableTimezones(t *testing.T) {
 	want := []string{
 		"America/New_York",
 		"Asia/Shanghai",
+		"Etc/GMT",
+		"Etc/GMT+8",
+		"Etc/UTC",
 		"Europe/Berlin",
 		"UTC",
 	}
@@ -62,7 +67,7 @@ func TestAvailableTimezonesIncludesSymlinkedZone(t *testing.T) {
 	if err := os.Symlink(filepath.Join("Etc", "UTC"), filepath.Join(root, "UTC")); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"UTC"}
+	want := []string{"Etc/UTC", "UTC"}
 	if got := availableTimezones(root); !reflect.DeepEqual(got, want) {
 		t.Errorf("availableTimezones() = %v, want %v", got, want)
 	}

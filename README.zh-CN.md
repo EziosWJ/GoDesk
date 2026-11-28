@@ -32,7 +32,7 @@ goDesk 将文件、终端、系统监控和服务管理带进浏览器桌面，�
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/EziosWJ/GoDesk/releases) 下载与 Linux 架构匹配的压缩包（`386`、`amd64`、`arm64` 或 `armv7`）。同一 Release 提供 `SHA256SUMS` 用于校验。
+1. 从 [Releases](https://github.com/EziosWJ/GoDesk/releases) 下载与 Linux 架构匹配的压缩包（`386`、`amd64`、`arm64`、`armv7`、`riscv64` 或 `loong64`）。同一 Release 提供 `SHA256SUMS` 用于校验。
 2. 解压并启动（以下以 `amd64` 为例）：
 
    ```sh

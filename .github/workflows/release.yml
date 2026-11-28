@@ -83,6 +83,8 @@ jobs:
           build amd64 amd64
           build arm64 arm64
           build arm armv7 7
+          build riscv64 riscv64
+          build loong64 loong64
 
           (cd "$out" && sha256sum godesk_*.tar.gz > SHA256SUMS)
 

@@ -32,7 +32,7 @@ goDesk brings files, a terminal, system monitoring, and service management into 
 
 ## Get started
 
-1. Download the archive for your Linux architecture (`386`, `amd64`, `arm64`, or `armv7`) from [Releases](https://github.com/EziosWJ/GoDesk/releases). A `SHA256SUMS` file is available alongside the archives.
+1. Download the archive for your Linux architecture (`386`, `amd64`, `arm64`, `armv7`, `riscv64`, or `loong64`) from [Releases](https://github.com/EziosWJ/GoDesk/releases). A `SHA256SUMS` file is available alongside the archives.
 2. Extract the archive and start the binary (the example below uses `amd64`):
 
    ```sh

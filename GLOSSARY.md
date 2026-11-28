@@ -88,7 +88,7 @@ goDesk 是用于操作 Linux 主机的 Web 桌面。首版每个 goDesk 实例�
 
 **Extension Host**
 
-负责安装、运行和管理插件的宿主。嵌入模式由 GoDesk 装配，独立模式由 `godesk-ext` 装配。
+负责安装、运行和管理插件的宿主。嵌入模式由 GoDesk 装配，独立模式由 `ext` 装配。
 
 **插件包**
 

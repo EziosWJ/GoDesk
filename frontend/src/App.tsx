@@ -15,7 +15,7 @@ import { TerminalSessions } from './TerminalSessions'
 import { TextEditorApp, type EditorOpenRequest, type EditorWindowHandle } from './TextEditorApp'
 import { Extensions } from './extensions/Extensions'
 import { ExtensionWindow } from './extensions/ExtensionWindow'
-import { extensionWebPath, type ExtensionPlugin } from './extensions/api'
+import { extensionWebPath, localizedPluginName, type ExtensionPlugin } from './extensions/api'
 import { useExtensionCatalog } from './extensions/useExtensionCatalog'
 import { terminalApi, terminalClientId, terminalWindowId, type TerminalSession } from './terminal'
 import { useDesktopWindows, type DesktopWindow } from './useDesktopWindows'
@@ -39,7 +39,6 @@ const workAreaOptions: DesktopOptions = {
 const TerminalPage = lazy(() => import('./TerminalPage'))
 const appIds = Object.keys(apps) as AppId[]
 const shortcutPreference = 'godesk-extension-shortcuts'
-const legacyShortcutPreference = 'react-web-desktop-extension-shortcuts'
 const pinnedAppsKey = 'godesk-pinned-apps'
 const defaultPinnedApps: AppId[] = ['files', 'editor', 'terminal', 'monitor', 'services']
 
@@ -68,9 +67,7 @@ function savePinnedApps(pinnedApps: AppId[]) {
 
 function readExtensionShortcuts(): string[] {
   try {
-    const value: unknown = JSON.parse(
-      localStorage.getItem(shortcutPreference) ?? localStorage.getItem(legacyShortcutPreference) ?? '[]',
-    )
+    const value: unknown = JSON.parse(localStorage.getItem(shortcutPreference) ?? '[]')
     return Array.isArray(value) ? [...new Set(value.filter(id => typeof id === 'string'))] : []
   } catch {
     return []
@@ -328,7 +325,7 @@ export default function App({ onLogout, onSession }: {
 
   function openExtension(plugin: ExtensionPlugin, target: 'desktop' | 'tab' = 'desktop') {
     if (!plugin.enabled || plugin.status !== 'running') {
-      notify(`「${plugin.name}」未运行，请在「扩展」中启用或启动。`)
+      notify(`「${localizedPluginName(plugin)}」未运行，请在「扩展」中启用或启动。`)
       setStartOpen(false)
       return
     }
@@ -337,7 +334,7 @@ export default function App({ onLogout, onSession }: {
       window.open(extensionWebPath(plugin.id), '_blank', 'noopener')
       return
     }
-    openWindow('extensions', `extension-${plugin.id}`, plugin.name, { extensionId: plugin.id })
+    openWindow('extensions', `extension-${plugin.id}`, localizedPluginName(plugin), { extensionId: plugin.id })
   }
 
   function setExtensionShortcut(id: string, pinned: boolean) {
@@ -446,7 +443,7 @@ export default function App({ onLogout, onSession }: {
       open: () => openWebShortcut(item.id),
     })),
     ...pluginShortcuts.map(plugin => ({
-      id: `extension-${plugin.id}`, name: plugin.name, appId: 'extensions' as const,
+      id: `extension-${plugin.id}`, name: localizedPluginName(plugin), appId: 'extensions' as const,
       open: () => openExtension(plugin), plugin,
     })),
     ...appIds.map(id => ({ id, name: apps[id].name, appId: id, open: () => openApp(id) })),

@@ -11,7 +11,7 @@ var (
 )
 
 // Format returns the version with the injected commit and build date, for
-// example "v0.2.0 (abc1234, 2026-11-27T09:30:00Z)" or just "dev".
+// example "v0.1.0 (abc1234, 2026-11-27T09:30:00Z)" or just "dev".
 func Format() string {
 	version := strings.TrimSpace(Version)
 	if version == "" {

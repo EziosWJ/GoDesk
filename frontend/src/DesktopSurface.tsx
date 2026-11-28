@@ -2,7 +2,7 @@ import { useState, type MouseEvent, type ReactNode } from 'react'
 import { ExternalLink, Image, MonitorX, Palette, PanelTop, RefreshCw, Terminal } from 'lucide-react'
 import { AppIcon, type AppIconId } from './AppIcon'
 import { CommandMenu, type MenuAnchor } from './CommandMenu'
-import type { ExtensionPlugin } from './extensions/api'
+import { localizedPluginName, type ExtensionPlugin } from './extensions/api'
 import { setWallpaperPreference, wallpaperIds, wallpapers, type WallpaperId } from './wallpapers'
 
 export type DesktopShortcutItem = {
@@ -122,7 +122,7 @@ export function DesktopSurface({
       {context && contextBoundary && (!context.pluginId || contextPlugin) && (
         <CommandMenu
           key={contextPlugin ? `extension-${contextPlugin.id}` : 'desktop'}
-          label={contextPlugin ? `${contextPlugin.name}快捷方式操作` : '桌面操作'}
+          label={contextPlugin ? `${localizedPluginName(contextPlugin)}快捷方式操作` : '桌面操作'}
           anchor={context}
           layer={contextBoundary.parentElement!}
           boundary={contextBoundary}

@@ -5,11 +5,31 @@ export type ExtensionConfigField = {
   required?: boolean
   secret?: boolean
   default?: unknown
+  format?: 'integer' | 'writable-directory'
+  min?: number
+  max?: number
+  label?: string
+  description?: string
 }
 
 export type ExtensionPlugin = {
   id: string
   name: string
+  description?: string
+  author?: { name: string; url?: string; email?: string }
+  license?: string
+  homepage?: string
+  repository?: string
+  icon?: string
+  iconPath?: string
+  categories?: string[]
+  keywords?: string[]
+  requirements?: { os?: string[]; commands?: string[]; systemd?: boolean }
+  locales?: Record<string, {
+    name?: string
+    description?: string
+    config?: Record<string, { label?: string; description?: string }>
+  }>
   version: string
   enabled: boolean
   status: ExtensionStatus
@@ -24,6 +44,22 @@ export type ExtensionPlugin = {
   installedAt: string
   startedAt?: string
   logPath: string
+}
+
+export function localizedPluginName(plugin: ExtensionPlugin): string {
+  return plugin.locales?.['zh-CN']?.name || plugin.name
+}
+
+export function localizedPluginDescription(plugin: ExtensionPlugin): string | undefined {
+  return plugin.locales?.['zh-CN']?.description || plugin.description
+}
+
+export function localizedConfigLabel(plugin: ExtensionPlugin, name: string, field: ExtensionConfigField): string {
+  return plugin.locales?.['zh-CN']?.config?.[name]?.label || field.label || name
+}
+
+export function localizedConfigDescription(plugin: ExtensionPlugin, name: string, field: ExtensionConfigField): string | undefined {
+  return plugin.locales?.['zh-CN']?.config?.[name]?.description || field.description
 }
 
 export class ExtensionError extends Error {
@@ -79,13 +115,11 @@ async function request(path: string, init?: RequestInit): Promise<Response> {
     let pluginId: string | undefined
     try {
       const payload = await response.json() as {
-        error?: unknown
         message?: unknown
         code?: unknown
         pluginId?: unknown
       }
       if (typeof payload.message === 'string' && payload.message) message = payload.message
-      else if (typeof payload.error === 'string' && payload.error) message = payload.error
       if (typeof payload.code === 'string' && payload.code) code = payload.code
       if (typeof payload.pluginId === 'string' && payload.pluginId) pluginId = payload.pluginId
     } catch {

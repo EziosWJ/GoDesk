@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import { TriangleAlert } from 'lucide-react'
-import { ExtensionError, extensionErrorMessage, extensionsApi, type ExtensionPlugin } from './api'
+import { ExtensionError, extensionErrorMessage, extensionsApi, localizedPluginName, type ExtensionPlugin } from './api'
 import { compareVersions, readZipManifest, type ZipManifest } from './zipManifest'
 
 export type UpgradeSource = 'install' | 'row'
@@ -72,7 +72,7 @@ export function UpgradeDialog({ plugin, file, source, onClose, onUpgraded }: {
       onCancel={event => { event.preventDefault(); close() }}
     >
       <div className="extension-dialog-body">
-        <h2 id={titleId}>升级 {plugin.name}</h2>
+        <h2 id={titleId}>升级 {localizedPluginName(plugin)}</h2>
 
         {source === 'install' && (
           <p className="extension-hint">检测到该扩展已安装，确认后将使用所选插件包原地升级。</p>

@@ -69,13 +69,13 @@
 | 动效时长 | `--godesk-duration-feedback` / `overlay` | `120 / 180 ms`，`ease-out` |
 | 应用容器断点 | `--container-godesk-split` / `wide` | `600 / 960 px`（`@godesk-split/app`、`@godesk-wide/app`） |
 
-## 偏好持久化键与迁移
+## 偏好持久化键
 
-| 偏好项 | 当前 Key | 兼容读取的旧 Key |
-| --- | --- | --- |
-| 主题模式 | `godesk-theme` | `react-web-desktop-theme` |
-| 强调色 | `godesk-accent` | 无（默认 `blue`） |
-| 桌面壁纸 | `godesk-wallpaper` | 无（默认 `bloom`；旧值 `iris`/`lavender` 映射为 `prism`） |
-| 任务栏固定应用 | `godesk-pinned-apps` | 无（默认 `files, editor, terminal, monitor, services`） |
-| 窗口尺寸记忆 | `godesk-window-size:<group>` | `react-web-desktop-window-size:<group>`、`react-web-desktop-file-window-size` |
-| 插件桌面快捷方式 | `godesk-extension-shortcuts` | `react-web-desktop-extension-shortcuts` |
+| 偏好项 | Key |
+| --- | --- |
+| 主题模式 | `godesk-theme` |
+| 强调色 | `godesk-accent`（默认 `blue`） |
+| 桌面壁纸 | `godesk-wallpaper`（默认 `bloom`；旧值 `iris`/`lavender` 映射为 `prism`） |
+| 任务栏固定应用 | `godesk-pinned-apps`（默认 `files, editor, terminal, monitor, services`） |
+| 窗口尺寸记忆 | `godesk-window-size:<group>` |
+| 插件桌面快捷方式 | `godesk-extension-shortcuts` |

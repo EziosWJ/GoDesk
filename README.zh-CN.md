@@ -4,7 +4,7 @@
   <p><strong>在浏览器里，管理你的 Linux 主机。</strong></p>
   <p>一个面向单台 Linux 主机的自托管 Web 桌面。</p>
   <p>
-    <a href="https://github.com/EziosWJ/GoDesk/releases/tag/v0.1"><img src="https://img.shields.io/badge/release-v0.1-blue" alt="最新版本"></a>
+    <a href="https://github.com/EziosWJ/GoDesk/releases/tag/v0.1.0"><img src="https://img.shields.io/badge/release-v0.1.0-blue" alt="最新版本"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue" alt="Apache License 2.0"></a>
     <a href="https://github.com/EziosWJ/GoDesk/releases"><img src="https://img.shields.io/badge/platform-Linux-FCC624?logo=linux&logoColor=black" alt="Linux"></a>
   </p>

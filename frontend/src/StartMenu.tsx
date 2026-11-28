@@ -3,7 +3,7 @@ import { ExternalLink, Globe, LogOut, Pin, PinOff, Puzzle, Search, Server, Setti
 import { AppIcon, type AppIconId } from './AppIcon'
 import { apps, type AppId } from './apps'
 import { CommandMenu, type MenuAnchor } from './CommandMenu'
-import type { ExtensionPlugin } from './extensions/api'
+import { localizedPluginName, type ExtensionPlugin } from './extensions/api'
 import type { HealthHost } from './health'
 import type { WebShortcut } from './webShortcuts'
 
@@ -12,6 +12,7 @@ const appIds = Object.keys(apps) as AppId[]
 type SearchResultItem = {
   key: string
   name: string
+  baseName?: string
   kind: '应用' | '扩展' | '网页'
   appId: AppIconId
   external?: boolean
@@ -67,7 +68,8 @@ export function StartMenu({
     })),
     ...webPlugins.map(plugin => ({
       key: `ext-${plugin.id}`,
-      name: plugin.name,
+      name: localizedPluginName(plugin),
+      baseName: plugin.name,
       kind: '扩展' as const,
       appId: 'extensions' as const,
       open: () => onOpenExtension(plugin),
@@ -85,6 +87,7 @@ export function StartMenu({
   const matched = search
     ? allItems.filter(item => {
         if (item.name.toLowerCase().includes(search)) return true
+        if (item.baseName?.toLowerCase().includes(search)) return true
         if (item.pinAppId && item.pinAppId.toLowerCase().includes(search)) return true
         if (item.key.toLowerCase().includes(search)) return true
         if (item.kind === '网页') {
@@ -239,7 +242,7 @@ export function StartMenu({
                       >
                         <AppIcon id="extensions" size={28} />
                         <span className="start-result-text">
-                          <span className="start-result-name">{plugin.name}</span>
+                          <span className="start-result-name">{localizedPluginName(plugin)}</span>
                           <span className="start-result-kind">
                             {plugin.enabled && plugin.status === 'running' ? '扩展 · 运行中' : '扩展 · 未运行'}
                           </span>

@@ -4,7 +4,7 @@ goDesk 在文档根节点 `<html>` 上统一管理三项独立外观偏好：`da
 
 ## 主题与强调色管理
 
-- **主题模式（`godesk-theme`）**：支持「跟随系统（默认）」「浅色」「深色」，监听 `prefers-color-scheme` 变化并实时更新 `document.documentElement.dataset.theme` 与 `color-scheme`。读取时自动兼容迁移旧键 `react-web-desktop-theme`。
+- **主题模式（`godesk-theme`）**：支持「跟随系统（默认）」「浅色」「深色」，监听 `prefers-color-scheme` 变化并实时更新 `document.documentElement.dataset.theme` 与 `color-scheme`。
 - **强调色（`godesk-accent`）**：默认 `blue`（Win11 系统蓝），可选 `iris`（鸢尾紫）、`teal`（青碧）、`amber`（琥珀）、`rose`（玫瑰）。所有主按钮、选中状态、任务栏激活胶囊条、导航选中竖条、监控主曲线与登录按钮均自动响应当前强调色。
 - **零闪烁首屏引导**：`frontend/index.html` 内联脚本在首帧绘制前同步解析并写入 `data-themePreference`、`data-theme` 与 `data-accent`。
 - **实时多端同步**：`frontend/src/theme.ts`（`subscribeAppearance`）与 `frontend/src/wallpapers.ts`（`subscribeWallpaper`）提供订阅机制；无论在「系统设置 → 外观」、任务栏「快捷控制与通知」还是桌面右键菜单修改外观，其余界面均即时同步。

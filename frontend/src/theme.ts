@@ -17,7 +17,6 @@ export const accentOptions = {
 export type AccentPreference = keyof typeof accentOptions
 
 const themeKey = 'godesk-theme'
-const legacyThemeKey = 'react-web-desktop-theme'
 const accentKey = 'godesk-accent'
 const root = document.documentElement
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)')
@@ -26,7 +25,7 @@ const listeners = new Set<() => void>()
 let storedPreference = root.dataset.themePreference
 let storedAccent = root.dataset.accent
 try {
-  storedPreference = localStorage.getItem(themeKey) ?? localStorage.getItem(legacyThemeKey) ?? undefined
+  storedPreference = localStorage.getItem(themeKey) ?? undefined
   storedAccent = localStorage.getItem(accentKey) ?? undefined
 } catch {
   // Keep the preferences from the first-paint script when storage is unavailable.

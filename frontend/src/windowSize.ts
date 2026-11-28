@@ -6,8 +6,6 @@ export const minimumWindowHeight = 240
 export type WindowSize = { width: number; height: number }
 
 const sizeKeyPrefix = 'godesk-window-size:'
-const legacySizeKeyPrefix = 'react-web-desktop-window-size:'
-const legacyFileSizeKey = 'react-web-desktop-file-window-size'
 
 export function windowSizeGroup(appId: AppId): string {
   if (appId === 'sessions') return 'terminal'
@@ -32,10 +30,7 @@ function parseSize(raw: string | null): WindowSize | undefined {
 
 export function readWindowSize(group: string): WindowSize | undefined {
   try {
-    const size = parseSize(localStorage.getItem(sizeKeyPrefix + group))
-      ?? parseSize(localStorage.getItem(legacySizeKeyPrefix + group))
-    if (size) return size
-    return group === 'files' ? parseSize(localStorage.getItem(legacyFileSizeKey)) : undefined
+    return parseSize(localStorage.getItem(sizeKeyPrefix + group))
   } catch {
     // Storage may be unavailable; the app default still works.
   }

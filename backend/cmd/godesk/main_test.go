@@ -18,8 +18,8 @@ func setBuildInfo(t *testing.T, version, commit, date string) {
 }
 
 func TestVersionFlag(t *testing.T) {
-	setBuildInfo(t, "v0.2.0", "abc1234", "2026-11-27T09:30:00Z")
-	const want = "godesk v0.2.0 (abc1234, 2026-11-27T09:30:00Z)\n"
+	setBuildInfo(t, "v0.1.0", "abc1234", "2026-11-27T09:30:00Z")
+	const want = "godesk v0.1.0 (abc1234, 2026-11-27T09:30:00Z)\n"
 	for _, flag := range []string{"--version", "-version"} {
 		var output bytes.Buffer
 		if err := command(t.Context(), []string{flag}, &output); err != nil {

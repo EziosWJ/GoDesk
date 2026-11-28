@@ -5,6 +5,7 @@ import {
 } from 'lucide-react'
 import {
   ExtensionError, extensionErrorMessage, extensionsApi,
+  localizedConfigDescription, localizedConfigLabel, localizedPluginDescription, localizedPluginName,
   type ExtensionConfigField, type ExtensionPlugin, type ExtensionStatus,
 } from './api'
 import { ExtensionLogsDialog } from './ExtensionLogsDialog'
@@ -38,6 +39,15 @@ function statusLabel(plugin: ExtensionPlugin) {
   if (!plugin.enabled) return '未启用'
   if (plugin.status === 'stopped') return '已启用，已停止'
   return statusLabels[plugin.status]
+}
+
+function ExtensionRowIcon({ src }: { src?: string }) {
+  const [failed, setFailed] = useState(false)
+  return src && !failed ? (
+    <img className="extension-row-icon" src={src} alt="" width={18} height={18} onError={() => setFailed(true)} />
+  ) : (
+    <Puzzle size={18} className="extension-icon" aria-hidden="true" />
+  )
 }
 
 function ConfigDialog({ plugin, onClose, onSaved }: {
@@ -87,13 +97,13 @@ function ConfigDialog({ plugin, onClose, onSaved }: {
         continue
       }
       if (text.trim() === '') {
-        if (field.required) return `${name} 为必填项`
+        if (field.required) return `${localizedConfigLabel(plugin, name, field)} 为必填项`
         payload[name] = null
         continue
       }
       if (field.type === 'number') {
         const parsed = Number(text)
-        if (!Number.isFinite(parsed)) return `${name} 需要数字`
+        if (!Number.isFinite(parsed)) return `${localizedConfigLabel(plugin, name, field)} 需要数字`
         payload[name] = parsed
         continue
       }
@@ -125,11 +135,11 @@ function ConfigDialog({ plugin, onClose, onSaved }: {
     }
   }
 
-  function fieldInput(name: string, field: ExtensionConfigField) {
+  function fieldInput(name: string, field: ExtensionConfigField, id: string, descriptionId?: string) {
     if (field.type === 'boolean') {
       return (
         <label className="extension-check">
-          <input type="checkbox" checked={values[name] === true}
+          <input id={id} aria-describedby={descriptionId} type="checkbox" checked={values[name] === true}
             onChange={event => setValues(current => ({ ...current, [name]: event.target.checked }))} />
           启用
         </label>
@@ -137,11 +147,18 @@ function ConfigDialog({ plugin, onClose, onSaved }: {
     }
     return (
       <input
+        id={id}
+        aria-describedby={descriptionId}
         type={field.secret ? 'password' : field.type === 'number' ? 'number' : 'text'}
-        step={field.type === 'number' ? 'any' : undefined}
+        step={field.format === 'integer' ? 1 : 'any'}
+        min={field.min}
+        max={field.max}
         value={String(values[name] ?? '')}
-        placeholder={field.secret ? '留空保持当前值' : undefined}
+        placeholder={field.secret ? '留空保持当前值' : field.format === 'writable-directory' ? '请输入可写目录路径' : undefined}
         onChange={event => setValues(current => ({ ...current, [name]: event.target.value }))}
+        onInvalid={event => {
+          if (event.currentTarget.validity.badInput) setError(`${localizedConfigLabel(plugin, name, field)} 需要数字`)
+        }}
       />
     )
   }
@@ -151,18 +168,24 @@ function ConfigDialog({ plugin, onClose, onSaved }: {
       onCancel={event => { event.preventDefault(); close() }}>
       <form onSubmit={save}>
         <div className="extension-dialog-body">
-          <h2 id={titleId}>{plugin.name} 配置</h2>
+          <h2 id={titleId}>{localizedPluginName(plugin)} 配置</h2>
           {fields.length === 0 && <p className="extension-hint">该插件没有可配置项。</p>}
           {fields.length > 0 && (
             <div className="extension-form">
-              {fields.map(([name, field]) => (
-                <div key={name} className="extension-field">
-                  <label>{name}
-                    <span className="extension-field-type">{field.type}{field.required ? ' · 必填' : ''}</span>
-                  </label>
-                  {fieldInput(name, field)}
-                </div>
-              ))}
+              {fields.map(([name, field], index) => {
+                const id = `${titleId}-field-${index}`
+                const description = localizedConfigDescription(plugin, name, field)
+                const descriptionId = description ? `${id}-hint` : undefined
+                return (
+                  <div key={name} className="extension-field">
+                    <label htmlFor={id}>{localizedConfigLabel(plugin, name, field)}
+                      <span className="extension-field-type">{field.type}{field.required ? ' · 必填' : ''}</span>
+                    </label>
+                    {fieldInput(name, field, id, descriptionId)}
+                    {description && <p id={descriptionId} className="extension-hint">{description}</p>}
+                  </div>
+                )
+              })}
             </div>
           )}
           {error && <p className="extensions-error" role="alert">{error}</p>}
@@ -221,7 +244,7 @@ function UninstallDialog({ plugin, onClose, onDone }: {
     <dialog ref={dialog} className="extension-dialog" aria-labelledby={titleId}
       onCancel={event => { event.preventDefault(); close() }}>
       <div className="extension-dialog-body">
-        <h2 id={titleId}>卸载 {plugin.name}？</h2>
+        <h2 id={titleId}>卸载 {localizedPluginName(plugin)}？</h2>
         <p className="extension-hint">插件包和配置会被移除。业务数据默认保留。</p>
         <label className="extension-check">
           <input type="checkbox" checked={purge}
@@ -287,7 +310,7 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
     try {
       const installed = await extensionsApi.install(file)
       await load()
-      setNotice({ tone: 'success', text: `已安装 ${installed.name}（${installed.version}）。` })
+      setNotice({ tone: 'success', text: `已安装 ${localizedPluginName(installed)}（${installed.version}）。` })
     } catch (cause) {
       if (unauthorized(cause)) {
         window.location.reload()
@@ -379,18 +402,24 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
           const busy = pending.startsWith(`${plugin.id}:`)
           const starting = plugin.status === 'starting' || plugin.status === 'stopping'
           const pinned = shortcuts.includes(plugin.id)
+          const description = localizedPluginDescription(plugin)
+          const attribution = [plugin.author?.name, plugin.license].filter(Boolean).join(' · ')
           return (
             <article key={plugin.id} className="extension-row" data-status={plugin.status}>
               <div className="extension-row-main">
                 <div className="extension-title">
-                  <Puzzle size={17} className="extension-icon" aria-hidden="true" />
-                  <h3>{plugin.name}</h3>
+                  <ExtensionRowIcon key={plugin.iconPath} src={plugin.iconPath} />
+                  <h3>{localizedPluginName(plugin)}</h3>
                   <span className="extension-version">{plugin.version}</span>
                   <span className="extension-status" data-status={plugin.status}>{statusLabel(plugin)}</span>
                   {plugin.hasWeb && <span className="extension-capability">Web</span>}
                   {plugin.hasLua && <span className="extension-capability">Lua</span>}
                 </div>
-                <p className="extension-id">{plugin.id}</p>
+                {description && <p className="extension-row-description">{description}</p>}
+                <div className="extension-row-meta">
+                  <span className="extension-id">{plugin.id}</span>
+                  {attribution && <span className="extension-row-attribution">{attribution}</span>}
+                </div>
                 {plugin.error && <p className="extensions-error" role="alert">{plugin.error}</p>}
               </div>
               <div className="extension-actions">
@@ -470,15 +499,16 @@ export function Extensions({ plugins, loadError, load, shortcuts, onSetShortcut,
           onUpgraded={async (updated, previousVersion) => {
             setUpgradeTarget(undefined)
             await load()
+            const name = localizedPluginName(updated)
             if (updated.enabled && updated.status === 'failed') {
               setNotice({
                 tone: 'warning',
-                text: `已将 ${updated.name} 更新至 ${updated.version}，但重启失败：${updated.error || '请查看日志并重试'}`,
+                text: `已将 ${name} 更新至 ${updated.version}，但重启失败：${updated.error || '请查看日志并重试'}`,
               })
             } else if (updated.version === previousVersion) {
-              setNotice({ tone: 'success', text: `已覆盖更新 ${updated.name}（${updated.version}）。` })
+              setNotice({ tone: 'success', text: `已覆盖更新 ${name}（${updated.version}）。` })
             } else {
-              setNotice({ tone: 'success', text: `已将 ${updated.name} 从 ${previousVersion} 升级至 ${updated.version}。` })
+              setNotice({ tone: 'success', text: `已将 ${name} 从 ${previousVersion} 升级至 ${updated.version}。` })
             }
           }}
         />

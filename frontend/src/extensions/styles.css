@@ -115,6 +115,7 @@
 }
 
 .extension-icon { flex: none; color: var(--godesk-accent); }
+.extension-row-icon { flex: none; object-fit: contain; }
 .extension-version {
   color: var(--godesk-muted);
   font-family: var(--godesk-font-mono);
@@ -153,13 +154,26 @@
   line-height: 16px;
 }
 
+.extension-row-description,
+.extension-row-attribution,
 .extension-id {
   margin: 0;
-  overflow: hidden;
   color: var(--godesk-muted);
-  font-family: var(--godesk-font-mono);
   font-size: var(--text-godesk-caption);
   line-height: var(--text-godesk-caption--line-height);
+}
+.extension-row-description {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.extension-row-meta { display: flex; flex-wrap: wrap; gap: 2px 8px; }
+.extension-row-attribution { overflow-wrap: anywhere; }
+.extension-id {
+  overflow: hidden;
+  font-family: var(--godesk-font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -221,6 +235,7 @@
 .extension-field { display: grid; gap: 4px; }
 .extension-field > label {
   display: flex;
+  flex-wrap: wrap;
   align-items: baseline;
   gap: 6px;
   color: var(--godesk-muted);
@@ -229,6 +244,7 @@
   font-weight: 500;
 }
 .extension-field-type { color: var(--godesk-muted); font-weight: 400; opacity: 0.8; }
+.extension-field > .extension-hint { overflow-wrap: anywhere; }
 .extension-field input[type='text'],
 .extension-field input[type='password'],
 .extension-field input[type='number'] {

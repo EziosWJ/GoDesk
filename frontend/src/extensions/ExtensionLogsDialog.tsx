@@ -1,7 +1,7 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Check, Copy, RefreshCw, Search, WrapText, X } from 'lucide-react'
 import { Highlight } from '../Highlight'
-import { ExtensionError, extensionErrorMessage, extensionsApi, type ExtensionPlugin } from './api'
+import { ExtensionError, extensionErrorMessage, extensionsApi, localizedPluginName, type ExtensionPlugin } from './api'
 
 const LOG_LINES = 200
 
@@ -100,7 +100,7 @@ export function ExtensionLogsDialog({ plugin, onClose }: {
     >
       <div className="extension-logs-header">
         <div className="extension-logs-title">
-          <h2 id={titleId}>{plugin.name} 日志</h2>
+          <h2 id={titleId}>{localizedPluginName(plugin)} 日志</h2>
           <span className="extension-id">{plugin.id} · {plugin.version}</span>
         </div>
         <button
@@ -177,7 +177,7 @@ export function ExtensionLogsDialog({ plugin, onClose }: {
             className="extension-log-view"
             data-wrap={wrap ? 'true' : 'false'}
             role="log"
-            aria-label={`${plugin.name} 的日志`}
+            aria-label={`${localizedPluginName(plugin)} 的日志`}
           >
             {visible.length === 0
               ? <p className="extension-hint">没有匹配的日志行</p>

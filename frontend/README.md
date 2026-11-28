@@ -30,7 +30,7 @@ pnpm dev
 ## 基于脚手架开发
 
 1. 在 `src/` 创建应用组件，并参照 `src/apps.ts` 中的 `monitor` 条目注册应用 ID、名称、图标、窗口默认尺寸和 `Content` 组件。桌面快捷方式和开始菜单会自动列出新应用，启动后可在任务栏切换。
-2. 在 `src/styles/theme.css` 统一调整颜色、字体和尺寸。新增界面可复用 `--react-web-desktop-*` CSS 变量及其 Tailwind 映射。布局和交互细节见 [UI 设计规范](docs/ui-design/01-design-principles.md) 和 [设计 Token](docs/ui-design/02-design-tokens.md)。
+2. 在 `src/styles/theme.css` 统一调整颜色、字体和尺寸。新增界面可复用 `--godesk-*` CSS 变量及其 Tailwind 映射。布局和交互细节见 [UI 设计规范](docs/ui-design/01-design-principles.md) 和 [设计 Token](docs/ui-design/02-design-tokens.md)。
 3. 定制品牌时，修改 `package.json` 中的包名、`index.html` 的页面标题、`public/favicon.svg` 的标识，以及登录页和桌面外壳中的显示名称。
 4. `src/Session.tsx` 根据后端会话状态显示初始化页、登录页或桌面。文件管理器、文本编辑器、终端、系统监控和服务管理连接 Linux 主机，数据与操作来自后端。
 
